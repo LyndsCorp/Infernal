@@ -14,3 +14,4 @@ void register_all_builtins(void) {
     register_io_builtins();
     register_system_builtins();
     register_string_builtins();
+}
