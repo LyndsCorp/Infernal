@@ -15,6 +15,9 @@ Error en 'router.inf', línea 48: Comando falló: bash $existeArchivoScript $con
 
 Por lo que el primer case ($configDir/username.txt) no expande el $, y simplemente se lo salta.
 
+Y tambien, cuando cambie eso por un script en bash normal sin cases, me rompio la terminal...
+No podia abrir nano simplemente y tuve que cerrar Konsole
+
 Código:
 #!/bin/infernal
 
