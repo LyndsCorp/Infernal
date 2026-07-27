@@ -1,16 +1,17 @@
 /*
- * Infernal: el lenguaje de programación. Copyright (C) 2026, GPL v3+ License, Lynds Corp., Aros Legendarios, David Baña Szymaniak.
+ * Infernal: el lenguaje de programación. Copyright (C) 2026, GPL v3+ License.
  * Código fuente de Infernal: vm/vm.c
-*/
+ */
 
 #include "vm.h"
 #include "core/value.h"
 #include "runtime/command.h"
 #include "runtime/error.h"
 #include "runtime/scope.h"
-#include "runtime/evaluator.h"
 #include "runtime/globals.h"
+#include "runtime/evaluator.h"
 #include "core/ast.h"
+#include "lexer/lexer.h"   // para TOK_LIST
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -142,7 +143,25 @@ Value vm_run(Chunk *chunk) {
             OP_PUSH_NULL:   push(val_make_null()); ip++; DISPATCH();
 
             OP_LOAD_VAR:    push(locals[ip->operand]); ip++; DISPATCH();
-            OP_STORE_VAR:   locals[ip->operand] = pop(); ip++; DISPATCH();
+            OP_STORE_VAR: {
+                Value val = pop();
+                int slot = ip->operand;
+                locals[slot] = val;
+
+                // Sincronizar con el ámbito de Infernal
+                if (slot < chunk->local_count && chunk->local_names[slot]) {
+                    const char *name = chunk->local_names[slot];
+                    VarEntry *e = scope_find(current_scope, name);
+                    if (e) {
+                        scope_assign(current_scope, name, val, 0);
+                    } else {
+                        int vtype = valtype_to_tokentype(val.type);
+                        scope_define(current_scope, name, vtype, val);
+                    }
+                }
+                ip++;
+                DISPATCH();
+            }
 
             OP_LOAD_GLOBAL:
             if (ip->operand < vm_global_count) push(vm_globals[ip->operand]);
@@ -299,11 +318,9 @@ Value vm_run(Chunk *chunk) {
             OP_CALL_USER: {
                 int func_index = ip->operand;
                 int arg_count = ip->operand2;
-                (void)arg_count; // evitar advertencia de no usado (por ahora)
+                (void)arg_count;
                 Chunk *func_code = vm_get_user_function(func_index);
                 if (!func_code) error(0, "Función de usuario no encontrada");
-                // Ejecutar la función (versión simple, sin recursión)
-                // Guardar el ip actual para restaurar después
                 Instruction *saved_ip = ip;
                 Value result = vm_run(func_code);
                 push(result);
@@ -401,7 +418,8 @@ Value vm_run(Chunk *chunk) {
                 free(expanded);
 
                 if (!fp) error(0, "Error al ejecutar comando: %s", cmd);
-                char buf[4096]; char *out = strdup("");
+                char buf[4096];
+                char *out = strdup("");
                 while (fgets(buf, sizeof(buf), fp)) {
                     out = realloc(out, strlen(out) + strlen(buf) + 1);
                     strcat(out, buf);
@@ -414,13 +432,48 @@ Value vm_run(Chunk *chunk) {
                     free(temp_path);
                 }
 
+                // Eliminar el último '\n' si existe
                 size_t len = strlen(out);
                 if (len > 0 && out[len-1] == '\n') out[len-1] = '\0';
-                Value result = val_string(out);
-                free(out);
 
-                locals[ip->operand2] = result;
-                ip++; DISPATCH();
+                int slot = ip->operand2;
+                int expected_type = chunk->local_types[slot];
+                Value final_val;
+
+                if (expected_type == TOK_LIST) {
+                    // Convertir a lista de líneas
+                    Value list = val_list_empty();
+                    char *dup = strdup(out);
+                    char *saveptr;
+                    char *line = strtok_r(dup, "\n", &saveptr);
+                    while (line) {
+                        val_list_append(&list, val_string(line));
+                        line = strtok_r(NULL, "\n", &saveptr);
+                    }
+                    free(dup);
+                    free(out);
+                    final_val = list;
+                } else {
+                    final_val = val_string(out);
+                    free(out);
+                }
+
+                locals[slot] = final_val;
+
+                // Sincronizar con el ámbito de Infernal
+                if (slot < chunk->local_count && chunk->local_names[slot]) {
+                    const char *name = chunk->local_names[slot];
+                    VarEntry *e = scope_find(current_scope, name);
+                    if (e) {
+                        scope_assign(current_scope, name, final_val, 0);
+                    } else {
+                        int vtype = valtype_to_tokentype(final_val.type);
+                        scope_define(current_scope, name, vtype, final_val);
+                    }
+                }
+
+                ip++;
+                DISPATCH();
             }
 
             OP_INTERPRET_NODE: {
@@ -448,14 +501,15 @@ Value vm_run(Chunk *chunk) {
                 }
                 current_scope = old_scope;
                 scope_free(temp_scope);
-                ip++; DISPATCH();
+                ip++;
+                DISPATCH();
             }
 
             #ifdef USE_COMPUTED_GOTO
-            // No se necesita nada más; el bucle termina con un return o un error.
+            // no hace falta más
             #else
-        }   // fin del switch
-    }       // fin del for(;;)
+        }
+    }
     #endif
 
     return val_make_null();
