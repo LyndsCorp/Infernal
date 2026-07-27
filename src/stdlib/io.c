@@ -14,52 +14,61 @@
 
 static Value builtin_printAllVars(int argc, Value *args) {
     (void)argc; (void)args;
+
     printf("Variables accesibles:\n");
+
     Scope *s = current_scope;
-    while (s && s != super_global_scope) {
-        for (VarEntry *e = s->vars; e; e = e->next) {
-            printf("  %s: ", e->name);
-            switch (e->value.type) {
-                case VAL_INT: printf("%d", e->value.data.ival); break;
-                case VAL_FLOAT: printf("%g", e->value.data.fval); break;
-                case VAL_BOOL: printf("%s", e->value.data.bval ? "true" : "false"); break;
-                case VAL_STRING: printf("\"%s\"", e->value.data.sval); break;
-                case VAL_LIST: {
-                    printf("[");
-                    for (int j = 0; j < e->value.data.list.count; j++) {
-                        if (j > 0) printf(", ");
-                        Value *item = &e->value.data.list.items[j];
-                        switch (item->type) {
-                            case VAL_INT: printf("%d", item->data.ival); break;
-                            case VAL_FLOAT: printf("%g", item->data.fval); break;
-                            case VAL_BOOL: printf("%s", item->data.bval ? "true" : "false"); break;
-                            case VAL_STRING: printf("\"%s\"", item->data.sval); break;
-                            default: printf("?");
+    int total_vars = 0;
+
+    while (s) {
+        // Solo mostrar el ámbito si tiene variables
+        if (s->vars) {
+            printf("  Scope %p:\n", (void*)s);
+            for (VarEntry *e = s->vars; e; e = e->next) {
+                total_vars++;
+                printf("    %s: ", e->name);
+                // Imprimir valor (igual que antes)...
+                switch (e->value.type) {
+                    case VAL_INT:    printf("%d", e->value.data.ival); break;
+                    case VAL_FLOAT:  printf("%g", e->value.data.fval); break;
+                    case VAL_BOOL:   printf("%s", e->value.data.bval ? "true" : "false"); break;
+                    case VAL_STRING: printf("\"%s\"", e->value.data.sval); break;
+                    case VAL_LIST: {
+                        printf("[");
+                        for (int j = 0; j < e->value.data.list.count; j++) {
+                            if (j > 0) printf(", ");
+                            Value *item = &e->value.data.list.items[j];
+                            switch (item->type) {
+                                case VAL_INT:    printf("%d", item->data.ival); break;
+                                case VAL_FLOAT:  printf("%g", item->data.fval); break;
+                                case VAL_BOOL:   printf("%s", item->data.bval ? "true" : "false"); break;
+                                case VAL_STRING: printf("\"%s\"", item->data.sval); break;
+                                default: printf("?");
+                            }
                         }
+                        printf("]");
+                        break;
                     }
-                    printf("]");
-                    break;
+                                default: printf("[?]");
                 }
-                default: printf("[?]");
+                if (e->vtype) {
+                    const char *tname = (e->vtype == TOK_INT) ? "int" :
+                    (e->vtype == TOK_FLOAT) ? "float" :
+                    (e->vtype == TOK_BOOL) ? "bool" :
+                    (e->vtype == TOK_STRING) ? "string" :
+                    (e->vtype == TOK_LIST) ? "list" : "?";
+                    printf(" (%s)", tname);
+                }
+                printf("\n");
             }
-            printf(" (%s)\n",
-                   e->vtype == TOK_INT ? "int" : e->vtype == TOK_FLOAT ? "float" :
-                   e->vtype == TOK_BOOL ? "bool" : e->vtype == TOK_STRING ? "string" :
-                   e->vtype == TOK_LIST ? "list" : "?");
         }
         s = s->parent;
     }
-    for (VarEntry *e = super_global_scope->vars; e; e = e->next) {
-        printf("  %s: ", e->name);
-        switch (e->value.type) {
-            case VAL_INT: printf("%d", e->value.data.ival); break;
-            case VAL_FLOAT: printf("%g", e->value.data.fval); break;
-            case VAL_BOOL: printf("%s", e->value.data.bval ? "true" : "false"); break;
-            case VAL_STRING: printf("\"%s\"", e->value.data.sval); break;
-            default: printf("[?]");
-        }
-        printf(" (global)\n");
+
+    if (total_vars == 0) {
+        printf("  (no hay variables definidas)\n");
     }
+
     return val_make_null();
 }
 
