@@ -1,2 +1,18 @@
-Infernal para amd64. Distribuido con Casata. Código fuente en https://github.com/LyndsCorp/Infernal/tree/casata
-La versión del intérprete es Infernal 1.6 (Stable)
+Infernal 1.6 (Stable)
+──────────────────────────────────────────────
+
+Versión:           1.6
+Edición:           Distribuido mediante Casata
+Arquitectura:      amd64
+Sistema operativo: POSIX (Linux, macOS)
+
+Distribuido por:   David Baña Szymaniak
+Proyecto:          Aros Legendarios
+Licencia:          GPL v3+
+
+
+Código fuente:     https://github.com/LyndsCorp/Infernal/tree/casata
+Repositorio:       https://github.com/LyndsCorp/Infernal
+Documentación:     https://github.com/LyndsCorp/Infernal-Documentation
+
+Copyright (C) Lynds Corp.
