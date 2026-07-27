@@ -1,0 +1,97 @@
+/*
+ * Infernal: el lenguaje de programación. Copyright (C) 2026, GPL v3+ License.
+ * Código fuente de Infernal: stdlib/string.c
+*/
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include "string.h"
+#include "core/value.h"
+#include "runtime/error.h"
+#include "runtime/globals.h"
+#include "vm/vm.h"
+
+/* --------------------------------------------------------------------------
+ *  head(str, n)  : devuelve los primeros n caracteres de str
+ *  head(str, sub): devuelve true si str comienza con sub
+ *  -------------------------------------------------------------------------- */
+static Value builtin_head(int argc, Value *args) {
+    if (argc < 2) error(0, "head requiere dos argumentos");
+    if (args[0].type != VAL_STRING) error(0, "head espera un string como primer argumento");
+
+    const char *s = args[0].data.sval;
+    int len = (int)strlen(s);
+
+    if (args[1].type == VAL_INT) {
+        int n = args[1].data.ival;
+        if (n < 0) n = 0;
+        if (n > len) n = len;
+        char *buf = (char*)malloc(n + 1);
+        if (!buf) error(0, "memoria insuficiente en head");
+        strncpy(buf, s, n);
+        buf[n] = '\0';
+        Value res = val_string(buf);
+        free(buf);
+        return res;
+    }
+    else if (args[1].type == VAL_STRING) {
+        const char *prefix = args[1].data.sval;
+        size_t plen = strlen(prefix);
+        bool starts = (len >= (int)plen && strncmp(s, prefix, plen) == 0);
+        return val_bool(starts);
+    }
+    else {
+        error(0, "head: el segundo argumento debe ser int o string");
+    }
+    return val_make_null(); // no se alcanza
+}
+
+/* --------------------------------------------------------------------------
+ *  tail(str, n)  : devuelve los últimos n caracteres de str
+ *  tail(str, sub): devuelve true si str termina con sub
+ *  -------------------------------------------------------------------------- */
+static Value builtin_tail(int argc, Value *args) {
+    if (argc < 2) error(0, "tail requiere dos argumentos");
+    if (args[0].type != VAL_STRING) error(0, "tail espera un string como primer argumento");
+
+    const char *s = args[0].data.sval;
+    int len = (int)strlen(s);
+
+    if (args[1].type == VAL_INT) {
+        int n = args[1].data.ival;
+        if (n < 0) n = 0;
+        if (n > len) n = len;
+        int start = len - n;
+        char *buf = (char*)malloc(n + 1);
+        if (!buf) error(0, "memoria insuficiente en tail");
+        strncpy(buf, s + start, n);
+        buf[n] = '\0';
+        Value res = val_string(buf);
+        free(buf);
+        return res;
+    }
+    else if (args[1].type == VAL_STRING) {
+        const char *suffix = args[1].data.sval;
+        size_t slen = strlen(suffix);
+        bool ends = false;
+        if (len >= (int)slen) {
+            ends = (strcmp(s + len - slen, suffix) == 0);
+        }
+        return val_bool(ends);
+    }
+    else {
+        error(0, "tail: el segundo argumento debe ser int o string");
+    }
+    return val_make_null();
+}
+
+/* --------------------------------------------------------------------------
+ *  Registro de las funciones integradas
+ *  -------------------------------------------------------------------------- */
+void register_string_builtins(void) {
+    func_register_builtin("head", builtin_head);
+    func_register_builtin("tail", builtin_tail);
+    vm_register_builtin("head", builtin_head);
+    vm_register_builtin("tail", builtin_tail);
+}
