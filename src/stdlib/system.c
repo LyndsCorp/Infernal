@@ -37,7 +37,9 @@ static Value builtin_getlooplimit(int argc, Value *args) {
 static Value builtin_here(int argc, Value *args) {
     (void)argc;
     (void)args;
-    return val_string(script_dir ? script_dir : ".");
+    const char *dir = script_dir;
+    if (!dir || dir[0] == '\0') dir = ".";
+    return val_string(dir);
 }
 
 static Value builtin_lower(int argc, Value *args) {

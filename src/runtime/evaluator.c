@@ -1,7 +1,8 @@
 /*
  * Infernal: el lenguaje de programación. Copyright (C) 2026, GPL v3+ License, Lynds Corp., Aros Legendarios, David Baña Szymaniak.
  * Código fuente de Infernal: runtime/evaluator.c
- */
+*/
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -146,13 +147,15 @@ Value eval_expr(ASTNode *expr) {
             if (!e) error(expr->line, "Variable no definida: %s", name);
             if (e->value.type == VAL_REFERENCE) {
                 VarEntry *list_var = scope_find(current_scope, e->value.data.ref.list_name);
-                if (!list_var || list_var->value.type != VAL_LIST)
+                if (!list_var || list_var->value.type != VAL_LIST) {
                     error(expr->line, "La referencia apunta a una lista inexistente '%s'",
                           e->value.data.ref.list_name);
-                int idx = e->value.data.ref.index;
-                if (idx < 1 || idx > list_var->value.data.list.count)
-                    error(expr->line, "Índice de referencia fuera de rango");
-                return list_var->value.data.list.items[idx - 1];
+                } else {
+                    int idx = e->value.data.ref.index;
+                    if (idx < 1 || idx > list_var->value.data.list.count)
+                        error(expr->line, "Índice de referencia fuera de rango");
+                    return list_var->value.data.list.items[idx - 1];
+                }
             }
             return e->value;
         }
@@ -183,20 +186,20 @@ Value eval_expr(ASTNode *expr) {
             if (left.type == VAL_LIST && expr->data.binop.op == TOK_PLUS &&
                 expr->data.binop.right->kind == NODE_INDEX) {
                 ASTNode *idx_node = expr->data.binop.right;
-                Value base = eval_expr(idx_node->data.idx.list);
-                Value index_val = eval_expr(idx_node->data.idx.index);
-                int pos = (index_val.type == VAL_INT) ? index_val.data.ival : 1;
-                Value new_list = val_list_copy(&left);
-                if (pos < 1 || pos > new_list.data.list.count + 1) {
-                    pos = new_list.data.list.count + 1;
-                }
-                val_list_append(&new_list, val_make_null());
-                for (int i = new_list.data.list.count - 1; i > pos - 1; i--) {
-                    new_list.data.list.items[i] = new_list.data.list.items[i - 1];
-                }
-                new_list.data.list.items[pos-1] = base;
-                return new_list;
+            Value base = eval_expr(idx_node->data.idx.list);
+            Value index_val = eval_expr(idx_node->data.idx.index);
+            int pos = (index_val.type == VAL_INT) ? index_val.data.ival : 1;
+            Value new_list = val_list_copy(&left);
+            if (pos < 1 || pos > new_list.data.list.count + 1) {
+                pos = new_list.data.list.count + 1;
             }
+            val_list_append(&new_list, val_make_null());
+            for (int i = new_list.data.list.count - 1; i > pos - 1; i--) {
+                new_list.data.list.items[i] = new_list.data.list.items[i - 1];
+            }
+            new_list.data.list.items[pos-1] = base;
+            return new_list;
+                }
 
                 Value right = eval_expr(expr->data.binop.right);
 
@@ -248,10 +251,10 @@ Value eval_expr(ASTNode *expr) {
                         const char *rs = right.type == VAL_STRING ? right.data.sval : rbuf;
                         if (left.type != VAL_STRING)
                             snprintf(lbuf, sizeof(lbuf), "%d", left.type == VAL_INT ? left.data.ival :
-                                     left.type == VAL_FLOAT ? (int)left.data.fval : left.data.bval ? 1 : 0);
+                            left.type == VAL_FLOAT ? (int)left.data.fval : left.data.bval ? 1 : 0);
                         if (right.type != VAL_STRING)
                             snprintf(rbuf, sizeof(rbuf), "%d", right.type == VAL_INT ? right.data.ival :
-                                     right.type == VAL_FLOAT ? (int)right.data.fval : right.data.bval ? 1 : 0);
+                            right.type == VAL_FLOAT ? (int)right.data.fval : right.data.bval ? 1 : 0);
                         size_t total = strlen(ls) + strlen(rs) + 1;
                         char *buf = malloc(total);
                         if (!buf) error(expr->line, "Memoria insuficiente al concatenar cadenas");
@@ -389,33 +392,36 @@ void exec_block_from(NodeList *block, int start_index) {
                 Value val;
                 if (stmt->data.assign.is_cmd) {
                     char *cmd = stmt->data.assign.cmd_str;
+                    // --- AQUÍ ESTÁ LA CORRECCIÓN: expandir el comando ---
+                    char *expanded_cmd = expand_command(cmd);
                     FILE *fp = NULL;
                     char *temp_path = NULL;
                     int is_embedded = 0;
 
-                    if (cmd[0] == '!' && cmd[strlen(cmd)-1] == '!') {
+                    if (expanded_cmd[0] == '!' && expanded_cmd[strlen(expanded_cmd)-1] == '!') {
                         is_embedded = 1;
-                        char *trimmed = strdup(cmd + 1);
+                        char *trimmed = strdup(expanded_cmd + 1);
                         trimmed[strlen(trimmed)-1] = '\0';
                         fp = popen_embedded_with_path(trimmed, "r", &temp_path);
                         free(trimmed);
                     } else {
-                        fp = popen(cmd, "r");
+                        fp = popen(expanded_cmd, "r");
                     }
 
                     if (!fp) {
                         if (is_embedded)
-                            error(stmt->line, "Comando embebido no encontrado: %s", cmd);
+                            error(stmt->line, "Comando embebido no encontrado: %s", expanded_cmd);
                         else
-                            error(stmt->line, "Error al ejecutar comando: %s", cmd);
+                            error(stmt->line, "Error al ejecutar comando: %s", expanded_cmd);
                     }
-                    char buf[4096]; char *out = strdup("");
+                    char buf[4096];
+                    char *out = strdup("");
                     while (fgets(buf, sizeof(buf), fp)) {
                         out = realloc(out, strlen(out) + strlen(buf) + 1);
                         strcat(out, buf);
                     }
                     int status = pclose(fp);
-                    if (status != 0) error(stmt->line, "Comando falló: %s", cmd);
+                    if (status != 0) error(stmt->line, "Comando falló: %s", expanded_cmd);
 
                     if (temp_path) {
                         unlink(temp_path);
@@ -426,6 +432,7 @@ void exec_block_from(NodeList *block, int start_index) {
                     if (len > 0 && out[len-1] == '\n') out[len-1] = '\0';
                     val = val_string(out);
                     free(out);
+                    free(expanded_cmd);   // liberar la copia expandida
                 } else {
                     if (stmt->data.assign.lhs_index) {
                         VarEntry *var = scope_find(current_scope, stmt->data.assign.name);
@@ -484,17 +491,17 @@ void exec_block_from(NodeList *block, int start_index) {
                     if (!stmt->data.assign.is_cmd && stmt->data.assign.value &&
                         stmt->data.assign.value->kind == NODE_VAR) {
                         const char *src_name = stmt->data.assign.value->data.var.name;
-                        if (src_name[0] == '$') src_name++;
-                        VarEntry *src_var = scope_find(current_scope, src_name);
+                    if (src_name[0] == '$') src_name++;
+                    VarEntry *src_var = scope_find(current_scope, src_name);
                         if (src_var && src_var->vtype != 0) {
                             vtype = src_var->vtype;
                         } else {
                             vtype = valtype_to_tokentype(val.type);
                         }
-                    } else {
-                        vtype = valtype_to_tokentype(val.type);
-                    }
-                    if (vtype == 0) vtype = TOK_STRING;
+                        } else {
+                            vtype = valtype_to_tokentype(val.type);
+                        }
+                        if (vtype == 0) vtype = TOK_STRING;
                 }
 
                 // ────────────────────────────────────────────────
@@ -533,7 +540,7 @@ void exec_block_from(NodeList *block, int start_index) {
                             var->vtype = vtype;
                         }
                     } else {
-                        scope_define(global_scope, stmt->data.assign.name, vtype, val);
+                        scope_define(current_scope, stmt->data.assign.name, vtype, val);
                     }
                 }
                 break;
@@ -820,7 +827,7 @@ void exec_block_from(NodeList *block, int start_index) {
                             free(handled);
                             break;
                         }
-                                                        default: error(stmt->line, "Sentencia no implementada");
+                        default: error(stmt->line, "Sentencia no implementada");
         }
 
         if (control_flow != CF_NONE) break;

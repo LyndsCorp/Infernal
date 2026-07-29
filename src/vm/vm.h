@@ -13,17 +13,29 @@ Value vm_run(Chunk *chunk);
 #define MAX_GLOBALS 256
 extern Value vm_globals[MAX_GLOBALS];
 extern int vm_global_count;
+extern char *vm_global_names[MAX_GLOBALS];
+
+/* ─── Ámbitos de variables globales ────────────────────────── */
+#define GLOBAL_SCRIPT 0   // variable global del script actual
+#define GLOBAL_SUPER  1   // variable global compartida entre scripts
 
 typedef Value (*VmBuiltin)(int argc, Value *args);
 extern VmBuiltin vm_builtins[256];
 extern int vm_builtin_count;
 
-int vm_register_global(const char *name, Value val);
+/* Registrar una variable global con su ámbito */
+int vm_register_global(const char *name, int scope_type);
+
+/* Registrar funciones nativas (builtins) */
 int vm_register_builtin(const char *name, VmBuiltin func);
+
+/* Buscar índice de una global por nombre */
 int vm_find_global_index(const char *name);
+
+/* Buscar índice de un builtin por nombre */
 int vm_find_builtin_index(const char *name);
 
-// Nuevas para funciones de usuario
+/* Registrar funciones de usuario compiladas */
 int vm_register_user_function(const char *name, Chunk *code);
 Chunk *vm_get_user_function(int index);
 
