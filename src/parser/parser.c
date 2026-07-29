@@ -416,10 +416,11 @@ NodeList parse_block(const char *terminator) {
             int use_embedded = 0;
             const unsigned char *emb_data = NULL;
             size_t emb_size = 0;
+
+            // Determinar el nombre del módulo y si es embebido
             if (nt.type == TOK_IDENT) {
                 module_name = strdup(nt.lexeme);
                 ts_advance();
-                // CORRECCIÓN: añadido NULL como cuarto argumento (compressed flag no se necesita aquí)
                 if (embedded_find(module_name, &emb_data, &emb_size, NULL)) {
                     use_embedded = 1;
                 }
@@ -441,22 +442,48 @@ NodeList parse_block(const char *terminator) {
             } else {
                 char *path = NULL;
                 if (nt.type == TOK_IDENT) {
-                    if (!valid_module_name(module_name))
-                        error(t.line, "Nombre de módulo inválido: %s", module_name);
-                    if (asprintf(&path, "/usr/share/infernal/fire/%s.fire", module_name) < 0)
-                        error(t.line, "Memoria insuficiente al construir la ruta del módulo");
+                    // Buscar primero en ~/.infernal/fire/, luego en /usr/share/infernal/fire/
+                    int found = 0;
+                    const char *home = getenv("HOME");
+                    if (home) {
+                        if (asprintf(&path, "%s/.infernal/fire/%s.fire", home, module_name) < 0)
+                            error(t.line, "Memoria insuficiente al construir la ruta local");
+                        FILE *fp = fopen(path, "r");
+                        if (fp) {
+                            tokenize_file(fp);
+                            fclose(fp);
+                            found = 1;
+                        }
+                        free(path);
+                        path = NULL;
+                    }
+                    if (!found) {
+                        if (asprintf(&path, "/usr/share/infernal/fire/%s.fire", module_name) < 0)
+                            error(t.line, "Memoria insuficiente al construir la ruta global");
+                        FILE *fp = fopen(path, "r");
+                        if (fp) {
+                            tokenize_file(fp);
+                            fclose(fp);
+                            found = 1;
+                        } else {
+                            error(t.line, "No se pudo abrir módulo '%s' (buscado en ~/.infernal/fire/ y /usr/share/infernal/fire/)", module_name);
+                        }
+                        free(path);
+                    }
                 } else {
+                    // Ruta literal entre comillas
                     if (!safe_module_path(nt.lexeme))
                         error(t.line, "Ruta de módulo inválida o insegura: %s", nt.lexeme);
                     path = strdup(nt.lexeme);
+                    FILE *fp = fopen(path, "r");
+                    if (!fp) error(t.line, "No se pudo abrir módulo: %s", path);
+                    tokenize_file(fp);
+                    fclose(fp);
+                    free(path);
                 }
-                FILE *fp = fopen(path, "r");
-                if (!fp) error(t.line, "No se pudo abrir módulo: %s", path);
-                tokenize_file(fp);
-                fclose(fp);
-                free(path);
             }
 
+            // Prefijo para las funciones importadas
             char *prefix_base = module_name;
             char *slash = strrchr(module_name, '/');
             if (slash) prefix_base = slash + 1;
