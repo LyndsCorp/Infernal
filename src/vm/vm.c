@@ -1,7 +1,7 @@
 /*
  * Infernal: el lenguaje de programación. Copyright (C) 2026, GPL v3+ License.
  * Código fuente de Infernal: vm/vm.c
- */
+*/
 
 #include "vm.h"
 #include "core/value.h"
@@ -11,7 +11,7 @@
 #include "runtime/globals.h"
 #include "runtime/evaluator.h"
 #include "core/ast.h"
-#include "lexer/lexer.h"   // para TOK_LIST
+#include "lexer/lexer.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -27,6 +27,7 @@ static inline Value pop(void)  { return *--sp; }
 static inline Value peek(int dist) { return *(sp - 1 - dist); }
 
 Value vm_globals[MAX_GLOBALS];
+char *vm_global_names[MAX_GLOBALS] = {0};
 int vm_global_count = 0;
 
 VmBuiltin vm_builtins[256];
@@ -44,9 +45,9 @@ static UserFunction user_functions[256];
 static int user_function_count = 0;
 
 int vm_register_global(const char *name, Value val) {
-    (void)name;
     if (vm_global_count >= MAX_GLOBALS) return -1;
     vm_globals[vm_global_count] = val;
+    vm_global_names[vm_global_count] = strdup(name);
     return vm_global_count++;
 }
 
@@ -167,10 +168,27 @@ Value vm_run(Chunk *chunk) {
             if (ip->operand < vm_global_count) push(vm_globals[ip->operand]);
             else error(0, "Acceso a global inválido");
             ip++; DISPATCH();
-            OP_STORE_GLOBAL:
-            if (ip->operand < vm_global_count) vm_globals[ip->operand] = pop();
-            else error(0, "Global inválido");
-            ip++; DISPATCH();
+            OP_STORE_GLOBAL: {
+                Value val = pop();
+                if (ip->operand < vm_global_count) {
+                    vm_globals[ip->operand] = val;
+                    // ─── Sincronizar con super_global_scope ───
+                    const char *gname = vm_global_names[ip->operand];
+                    if (gname) {
+                        VarEntry *e = scope_find(super_global_scope, gname);
+                        if (e) {
+                            scope_assign(super_global_scope, gname, val, 0);
+                        } else {
+                            int vtype = valtype_to_tokentype(val.type);
+                            scope_define(super_global_scope, gname, vtype, val);
+                        }
+                    }
+                } else {
+                    error(0, "Global inválido");
+                }
+                ip++;
+                DISPATCH();
+            }
 
             OP_ADD: {
                 Value b = pop(), a = pop();

@@ -13,6 +13,7 @@ Value vm_run(Chunk *chunk);
 #define MAX_GLOBALS 256
 extern Value vm_globals[MAX_GLOBALS];
 extern int vm_global_count;
+extern char *vm_global_names[MAX_GLOBALS];
 
 typedef Value (*VmBuiltin)(int argc, Value *args);
 extern VmBuiltin vm_builtins[256];
