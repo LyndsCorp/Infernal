@@ -1,7 +1,7 @@
 /*
  * Infernal: el lenguaje de programación. Copyright (C) 2026, GPL v3+ License, Lynds Corp., Aros Legendarios, David Baña Szymaniak.
  * Código fuente de Infernal: vm/vm.c
-*/
+ */
 
 #include "vm.h"
 #include "core/value.h"
@@ -544,11 +544,28 @@ Value vm_run(Chunk *chunk) {
                     Value result = eval_expr(node);
                     push(result);
                 }
-                // Copiar de vuelta las variables del scope temporal a locals
+                // Copiar de vuelta las variables del scope temporal a locales
                 for (int i = 0; i < chunk->local_count; i++) {
                     VarEntry *var = scope_find(temp_scope, chunk->local_names[i]);
                     if (var) locals[i] = var->value;
                 }
+
+                // Sincronizar variables globales con vm_globals y global_scope
+                for (VarEntry *var = temp_scope->vars; var; var = var->next) {
+                    // 1) Copiar a global_scope
+                    VarEntry *existing = scope_find(global_scope, var->name);
+                    if (existing) {
+                        scope_assign(global_scope, var->name, var->value, 0);
+                    } else {
+                        scope_define(global_scope, var->name, var->vtype, var->value);
+                    }
+                    // 2) Si está registrada en la VM, actualizar vm_globals
+                    int gidx = vm_find_global_index(var->name);
+                    if (gidx >= 0) {
+                        vm_globals[gidx] = var->value;
+                    }
+                }
+
                 current_scope = old_scope;
                 scope_free(temp_scope);
                 ip++;
