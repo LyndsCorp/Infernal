@@ -91,14 +91,20 @@ NodeList parse_block(const char *terminator) {
 
         ASTNode *stmt = NULL;
 
+        /***** COMANDOS CON ! *****/
         if (t.type == TOK_BANG) {
             ts_advance();
             char cmd[4096] = {0};
             bool last_was_no_space = false;
+            bool last_was_slash = false;
             while (ts_peek().type != TOK_BANG && ts_peek().type != TOK_NEWLINE && ts_peek().type != TOK_EOF) {
                 Token ct = ts_advance();
                 bool prepend_space = true;
-                if (last_was_no_space) prepend_space = false;
+                if (last_was_no_space || last_was_slash) prepend_space = false;
+                if (ct.type == TOK_SLASH || strcmp(ct.lexeme, "/") == 0) prepend_space = false;
+                if (ct.type == TOK_IDENT && ct.lexeme[0] == '/') prepend_space = false;
+                if (ct.type == TOK_IDENT && ct.lexeme[0] == '$' && cmd[0] != '\0' && cmd[strlen(cmd)-1] == '/')
+                    prepend_space = false;
                 if (prepend_space && cmd[0] != '\0') strcat(cmd, " ");
                 if (ct.type == TOK_STRING_LITERAL) {
                     strcat(cmd, "\"");
@@ -108,6 +114,8 @@ NodeList parse_block(const char *terminator) {
                     strcat(cmd, ct.lexeme);
                 }
                 last_was_no_space = (ct.type == TOK_MINUS || ct.type == TOK_PLUS);
+                last_was_slash = (ct.type == TOK_SLASH || strcmp(ct.lexeme, "/") == 0 ||
+                (ct.type == TOK_IDENT && ct.lexeme[0] == '/'));
             }
             if (ts_peek().type == TOK_BANG) ts_advance();
             stmt = node_create(NODE_CMD_STMT, t.line);
@@ -120,10 +128,15 @@ NodeList parse_block(const char *terminator) {
                     ts_advance();
                     char cmd2[4096] = {0};
                     bool last_was_no_space2 = false;
+                    bool last_was_slash2 = false;
                     while (ts_peek().type != TOK_BANG && ts_peek().type != TOK_NEWLINE && ts_peek().type != TOK_EOF) {
                         Token ct2 = ts_advance();
                         bool prepend_space = true;
-                        if (last_was_no_space2) prepend_space = false;
+                        if (last_was_no_space2 || last_was_slash2) prepend_space = false;
+                        if (ct2.type == TOK_SLASH || strcmp(ct2.lexeme, "/") == 0) prepend_space = false;
+                        if (ct2.type == TOK_IDENT && ct2.lexeme[0] == '/') prepend_space = false;
+                        if (ct2.type == TOK_IDENT && ct2.lexeme[0] == '$' && cmd2[0] != '\0' && cmd2[strlen(cmd2)-1] == '/')
+                            prepend_space = false;
                         if (prepend_space && cmd2[0] != '\0') strcat(cmd2, " ");
                         if (ct2.type == TOK_STRING_LITERAL) {
                             strcat(cmd2, "\"");
@@ -133,6 +146,8 @@ NodeList parse_block(const char *terminator) {
                             strcat(cmd2, ct2.lexeme);
                         }
                         last_was_no_space2 = (ct2.type == TOK_MINUS || ct2.type == TOK_PLUS);
+                        last_was_slash2 = (ct2.type == TOK_SLASH || strcmp(ct2.lexeme, "/") == 0 ||
+                        (ct2.type == TOK_IDENT && ct2.lexeme[0] == '/'));
                     }
                     if (ts_peek().type == TOK_BANG) ts_advance();
                     next_stmt = node_create(NODE_CMD_STMT, next.line);
@@ -143,12 +158,15 @@ NodeList parse_block(const char *terminator) {
                     strcpy(cmd2, first2.lexeme);
                     bool last_was_no_space2 = false;
                     bool last_was_lbrace2 = (first2.type == TOK_LBRACE);
+                    bool last_was_slash2 = false;
                     while (ts_peek().type != TOK_NEWLINE && ts_peek().type != TOK_EOF && ts_peek().type != TOK_OR) {
                         Token ct2 = ts_advance();
                         bool prepend_space = true;
-                        if (last_was_lbrace2 || ct2.type == TOK_RBRACE)
+                        if (last_was_lbrace2 || ct2.type == TOK_RBRACE || last_was_no_space2 || last_was_slash2)
                             prepend_space = false;
-                        else if (last_was_no_space2)
+                        if (ct2.type == TOK_SLASH || strcmp(ct2.lexeme, "/") == 0) prepend_space = false;
+                        if (ct2.type == TOK_IDENT && ct2.lexeme[0] == '/') prepend_space = false;
+                        if (ct2.type == TOK_IDENT && ct2.lexeme[0] == '$' && cmd2[0] != '\0' && cmd2[strlen(cmd2)-1] == '/')
                             prepend_space = false;
                         if (prepend_space) strcat(cmd2, " ");
                         if (ct2.type == TOK_STRING_LITERAL) {
@@ -160,6 +178,8 @@ NodeList parse_block(const char *terminator) {
                         }
                         last_was_lbrace2 = (ct2.type == TOK_LBRACE);
                         last_was_no_space2 = (ct2.type == TOK_MINUS || ct2.type == TOK_PLUS);
+                        last_was_slash2 = (ct2.type == TOK_SLASH || strcmp(ct2.lexeme, "/") == 0 ||
+                        (ct2.type == TOK_IDENT && ct2.lexeme[0] == '/'));
                     }
                     next_stmt = node_create(NODE_SHELL_CMD, next.line);
                     next_stmt->data.shell_cmd.cmd = strdup(cmd2);
@@ -176,18 +196,23 @@ NodeList parse_block(const char *terminator) {
             continue;
         }
 
-        // NUEVO: comandos que empiezan con una cadena literal (ej. "$RutaScript/infernal" args)
+        /***** COMANDOS QUE EMPIEZAN CON CADENA LITERAL *****/
         if (t.type == TOK_STRING_LITERAL) {
             char cmd[4096] = {0};
-            Token first = ts_advance();  // consumir la primera cadena
+            Token first = ts_advance();
             strcat(cmd, "\"");
             strcat(cmd, first.lexeme);
             strcat(cmd, "\"");
             bool last_was_no_space = false;
+            bool last_was_slash = false;
             while (ts_peek().type != TOK_NEWLINE && ts_peek().type != TOK_EOF) {
                 Token ct = ts_advance();
                 bool prepend_space = true;
-                if (last_was_no_space) prepend_space = false;
+                if (last_was_no_space || last_was_slash) prepend_space = false;
+                if (ct.type == TOK_SLASH || strcmp(ct.lexeme, "/") == 0) prepend_space = false;
+                if (ct.type == TOK_IDENT && ct.lexeme[0] == '/') prepend_space = false;
+                if (ct.type == TOK_IDENT && ct.lexeme[0] == '$' && cmd[0] != '\0' && cmd[strlen(cmd)-1] == '/')
+                    prepend_space = false;
                 if (prepend_space) strcat(cmd, " ");
                 if (ct.type == TOK_STRING_LITERAL) {
                     strcat(cmd, "\"");
@@ -197,6 +222,8 @@ NodeList parse_block(const char *terminator) {
                     strcat(cmd, ct.lexeme);
                 }
                 last_was_no_space = (ct.type == TOK_MINUS || ct.type == TOK_PLUS);
+                last_was_slash = (ct.type == TOK_SLASH || strcmp(ct.lexeme, "/") == 0 ||
+                (ct.type == TOK_IDENT && ct.lexeme[0] == '/'));
             }
             stmt = node_create(NODE_SHELL_CMD, t.line);
             stmt->data.shell_cmd.cmd = strdup(cmd);
@@ -208,10 +235,15 @@ NodeList parse_block(const char *terminator) {
                     ts_advance();
                     char cmd2[4096] = {0};
                     bool last_was_no_space2 = false;
+                    bool last_was_slash2 = false;
                     while (ts_peek().type != TOK_BANG && ts_peek().type != TOK_NEWLINE && ts_peek().type != TOK_EOF) {
                         Token ct2 = ts_advance();
                         bool prepend_space = true;
-                        if (last_was_no_space2) prepend_space = false;
+                        if (last_was_no_space2 || last_was_slash2) prepend_space = false;
+                        if (ct2.type == TOK_SLASH || strcmp(ct2.lexeme, "/") == 0) prepend_space = false;
+                        if (ct2.type == TOK_IDENT && ct2.lexeme[0] == '/') prepend_space = false;
+                        if (ct2.type == TOK_IDENT && ct2.lexeme[0] == '$' && cmd2[0] != '\0' && cmd2[strlen(cmd2)-1] == '/')
+                            prepend_space = false;
                         if (prepend_space && cmd2[0] != '\0') strcat(cmd2, " ");
                         if (ct2.type == TOK_STRING_LITERAL) {
                             strcat(cmd2, "\"");
@@ -221,6 +253,8 @@ NodeList parse_block(const char *terminator) {
                             strcat(cmd2, ct2.lexeme);
                         }
                         last_was_no_space2 = (ct2.type == TOK_MINUS || ct2.type == TOK_PLUS);
+                        last_was_slash2 = (ct2.type == TOK_SLASH || strcmp(ct2.lexeme, "/") == 0 ||
+                        (ct2.type == TOK_IDENT && ct2.lexeme[0] == '/'));
                     }
                     if (ts_peek().type == TOK_BANG) ts_advance();
                     next_stmt = node_create(NODE_CMD_STMT, next.line);
@@ -231,12 +265,15 @@ NodeList parse_block(const char *terminator) {
                     strcpy(cmd2, first2.lexeme);
                     bool last_was_no_space2 = false;
                     bool last_was_lbrace2 = (first2.type == TOK_LBRACE);
+                    bool last_was_slash2 = false;
                     while (ts_peek().type != TOK_NEWLINE && ts_peek().type != TOK_EOF && ts_peek().type != TOK_OR) {
                         Token ct2 = ts_advance();
                         bool prepend_space = true;
-                        if (last_was_lbrace2 || ct2.type == TOK_RBRACE)
+                        if (last_was_lbrace2 || ct2.type == TOK_RBRACE || last_was_no_space2 || last_was_slash2)
                             prepend_space = false;
-                        else if (last_was_no_space2)
+                        if (ct2.type == TOK_SLASH || strcmp(ct2.lexeme, "/") == 0) prepend_space = false;
+                        if (ct2.type == TOK_IDENT && ct2.lexeme[0] == '/') prepend_space = false;
+                        if (ct2.type == TOK_IDENT && ct2.lexeme[0] == '$' && cmd2[0] != '\0' && cmd2[strlen(cmd2)-1] == '/')
                             prepend_space = false;
                         if (prepend_space) strcat(cmd2, " ");
                         if (ct2.type == TOK_STRING_LITERAL) {
@@ -248,6 +285,8 @@ NodeList parse_block(const char *terminator) {
                         }
                         last_was_lbrace2 = (ct2.type == TOK_LBRACE);
                         last_was_no_space2 = (ct2.type == TOK_MINUS || ct2.type == TOK_PLUS);
+                        last_was_slash2 = (ct2.type == TOK_SLASH || strcmp(ct2.lexeme, "/") == 0 ||
+                        (ct2.type == TOK_IDENT && ct2.lexeme[0] == '/'));
                     }
                     next_stmt = node_create(NODE_SHELL_CMD, next.line);
                     next_stmt->data.shell_cmd.cmd = strdup(cmd2);
@@ -262,6 +301,7 @@ NodeList parse_block(const char *terminator) {
             goto stmt_done;
         }
 
+        /***** PORTALES *****/
         if (t.type == TOK_AT) {
             ts_advance();
             if (ts_peek().type != TOK_IDENT) error(t.line, "Se esperaba nombre de portal después de '@'");
@@ -274,6 +314,7 @@ NodeList parse_block(const char *terminator) {
             continue;
         }
 
+        /***** FLAGS *****/
         if (t.type == TOK_FLAG) {
             ts_advance();
             stmt = parse_flags();
@@ -282,6 +323,7 @@ NodeList parse_block(const char *terminator) {
             continue;
         }
 
+        /***** ESTRUCTURAS DE CONTROL *****/
         if (t.type == TOK_IF) {
             stmt = parse_if_statement();
         } else if (t.type == TOK_WHILE) {
@@ -370,7 +412,6 @@ NodeList parse_block(const char *terminator) {
                 func_register(strdup(prefixed), stmt);
             }
 
-            // La compilacion
             if (stmt) {
                 Chunk *func_chunk = compile_function(stmt);
                 if (func_chunk) {
@@ -380,7 +421,6 @@ NodeList parse_block(const char *terminator) {
                     }
                 }
             }
-
         } else if (t.type == TOK_RETURN) {
             ts_advance();
             ASTNode *expr = NULL;
@@ -416,10 +456,10 @@ NodeList parse_block(const char *terminator) {
             int use_embedded = 0;
             const unsigned char *emb_data = NULL;
             size_t emb_size = 0;
+
             if (nt.type == TOK_IDENT) {
                 module_name = strdup(nt.lexeme);
                 ts_advance();
-                // CORRECCIÓN: añadido NULL como cuarto argumento (compressed flag no se necesita aquí)
                 if (embedded_find(module_name, &emb_data, &emb_size, NULL)) {
                     use_embedded = 1;
                 }
@@ -441,20 +481,43 @@ NodeList parse_block(const char *terminator) {
             } else {
                 char *path = NULL;
                 if (nt.type == TOK_IDENT) {
-                    if (!valid_module_name(module_name))
-                        error(t.line, "Nombre de módulo inválido: %s", module_name);
-                    if (asprintf(&path, "/usr/share/infernal/fire/%s.fire", module_name) < 0)
-                        error(t.line, "Memoria insuficiente al construir la ruta del módulo");
+                    int found = 0;
+                    const char *home = getenv("HOME");
+                    if (home) {
+                        if (asprintf(&path, "%s/.infernal/fire/%s.fire", home, module_name) < 0)
+                            error(t.line, "Memoria insuficiente al construir la ruta local");
+                        FILE *fp = fopen(path, "r");
+                        if (fp) {
+                            tokenize_file(fp);
+                            fclose(fp);
+                            found = 1;
+                        }
+                        free(path);
+                        path = NULL;
+                    }
+                    if (!found) {
+                        if (asprintf(&path, "/usr/share/infernal/fire/%s.fire", module_name) < 0)
+                            error(t.line, "Memoria insuficiente al construir la ruta global");
+                        FILE *fp = fopen(path, "r");
+                        if (fp) {
+                            tokenize_file(fp);
+                            fclose(fp);
+                            found = 1;
+                        } else {
+                            error(t.line, "No se pudo abrir módulo '%s' (buscado en ~/.infernal/fire/ y /usr/share/infernal/fire/)", module_name);
+                        }
+                        free(path);
+                    }
                 } else {
                     if (!safe_module_path(nt.lexeme))
                         error(t.line, "Ruta de módulo inválida o insegura: %s", nt.lexeme);
                     path = strdup(nt.lexeme);
+                    FILE *fp = fopen(path, "r");
+                    if (!fp) error(t.line, "No se pudo abrir módulo: %s", path);
+                    tokenize_file(fp);
+                    fclose(fp);
+                    free(path);
                 }
-                FILE *fp = fopen(path, "r");
-                if (!fp) error(t.line, "No se pudo abrir módulo: %s", path);
-                tokenize_file(fp);
-                fclose(fp);
-                free(path);
             }
 
             char *prefix_base = module_name;
@@ -523,75 +586,33 @@ NodeList parse_block(const char *terminator) {
             bool is_cmd = false;
             char *cmd_str = NULL;
 
-            if (ts_peek().type == TOK_IDENT && strcmp(ts_peek().lexeme, vname) == 0) {
+            // ----- NUEVA LÓGICA PARA RHS -----
+            if (ts_peek().type == TOK_IDENT && ts_peek().lexeme[0] == '$') {
                 value = parse_expression(0);
             } else if (ts_peek().type == TOK_IDENT) {
-                if (ts.pos + 1 < ts.count &&
-                    (ts.tokens[ts.pos + 1].type == TOK_LBRACKET ||
-                    ts.tokens[ts.pos + 1].type == TOK_LPAREN)) {
+                // Verificar si el siguiente token es '(' para detectar llamada a función
+                int next_pos = ts.pos + 1;
+                if (next_pos < ts.count && ts.tokens[next_pos].type == TOK_LPAREN) {
                     value = parse_expression(0);
-                    } else {
-                        char *rhs_name = ts_peek().lexeme;
-                        if (rhs_name[0] == '$') {
-                            value = parse_expression(0);
-                        } else if (!scope_find_script(current_scope, rhs_name) && !func_lookup(rhs_name)) {
-                            is_cmd = true;
-                            cmd_str = extract_command_string(t.line);
-                            while (ts_peek().type != TOK_NEWLINE && ts_peek().type != TOK_EOF) ts_advance();
-                        } else {
-                            value = parse_expression(0);
-                        }
-                    }
-            } else if (ts_peek().type == TOK_LBRACE) {
-                value = parse_expression(0);
-            } else if (ts_peek().type == TOK_LBRACKET || ts_peek().type == TOK_LPAREN ||
-                ts_peek().type == TOK_NUMBER || ts_peek().type == TOK_STRING_LITERAL ||
-                ts_peek().type == TOK_TRUE || ts_peek().type == TOK_FALSE ||
-                ts_peek().type == TOK_MINUS) {
-                value = parse_expression(0);
                 } else {
-                    int saved = ts.pos;
-                    jmp_buf saved_env; memcpy(&saved_env, &exception_env, sizeof(jmp_buf));
-                    int saved_raised = exception_raised;
-                    exception_raised = 0;
-                    if (!setjmp(exception_env)) {
-                        value = parse_expression(0);
-                        if (ts_peek().type == TOK_NEWLINE || ts_peek().type == TOK_EOF) {
-                            memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
-                            exception_raised = saved_raised;
-                        } else {
-                            ts.pos = saved;
-                            exception_raised = 0;
-                            is_cmd = true;
-                            cmd_str = extract_command_string(t.line);
-                            while (ts_peek().type != TOK_NEWLINE && ts_peek().type != TOK_EOF) ts_advance();
-                            memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
-                            exception_raised = saved_raised;
-                            value = NULL;
-                        }
-                    } else {
-                        ts.pos = saved;
-                        exception_raised = 0;
-                        is_cmd = true;
-                        cmd_str = extract_command_string(t.line);
-                        while (ts_peek().type != TOK_NEWLINE && ts_peek().type != TOK_EOF) ts_advance();
-                        memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
-                        exception_raised = saved_raised;
-                        value = NULL;
-                    }
+                    is_cmd = true;
+                    cmd_str = extract_command_string(t.line);
+                    while (ts_peek().type != TOK_NEWLINE && ts_peek().type != TOK_EOF) ts_advance();
                 }
+            } else {
+                value = parse_expression(0);
+            }
 
-                stmt = node_create(NODE_ASSIGN, t.line);
-                stmt->data.assign.name = vname;
-                stmt->data.assign.is_cmd = is_cmd;
-                stmt->data.assign.cmd_str = cmd_str;
-                stmt->data.assign.value = value;
-                stmt->data.assign.vtype = vtype;
-                stmt->data.assign.is_local = is_local;
-                stmt->data.assign.is_global = is_global;
-                stmt->data.assign.lhs_index = lhs_index;
+            stmt = node_create(NODE_ASSIGN, t.line);
+            stmt->data.assign.name = vname;
+            stmt->data.assign.is_cmd = is_cmd;
+            stmt->data.assign.cmd_str = cmd_str;
+            stmt->data.assign.value = value;
+            stmt->data.assign.vtype = vtype;
+            stmt->data.assign.is_local = is_local;
+            stmt->data.assign.is_global = is_global;
+            stmt->data.assign.lhs_index = lhs_index;
 
-                /* NUEVO: Declaraciones con tipo explícito sin local/global (ej: int x = 5) */
         } else if (t.type == TOK_INT || t.type == TOK_FLOAT || t.type == TOK_BOOL ||
             t.type == TOK_STRING || t.type == TOK_LIST) {
             int vtype = ts_advance().type;
@@ -612,73 +633,32 @@ NodeList parse_block(const char *terminator) {
             bool is_cmd = false;
             char *cmd_str = NULL;
 
-            if (ts_peek().type == TOK_IDENT && strcmp(ts_peek().lexeme, vname) == 0) {
+            // ----- NUEVA LÓGICA PARA RHS -----
+            if (ts_peek().type == TOK_IDENT && ts_peek().lexeme[0] == '$') {
                 value = parse_expression(0);
             } else if (ts_peek().type == TOK_IDENT) {
-                if (ts.pos + 1 < ts.count &&
-                    (ts.tokens[ts.pos + 1].type == TOK_LBRACKET ||
-                    ts.tokens[ts.pos + 1].type == TOK_LPAREN)) {
+                // Verificar si el siguiente token es '(' para detectar llamada a función
+                int next_pos = ts.pos + 1;
+                if (next_pos < ts.count && ts.tokens[next_pos].type == TOK_LPAREN) {
                     value = parse_expression(0);
-                    } else {
-                        char *rhs_name = ts_peek().lexeme;
-                        if (rhs_name[0] == '$') {
-                            value = parse_expression(0);
-                        } else if (!scope_find_script(current_scope, rhs_name) && !func_lookup(rhs_name)) {
-                            is_cmd = true;
-                            cmd_str = extract_command_string(t.line);
-                            while (ts_peek().type != TOK_NEWLINE && ts_peek().type != TOK_EOF) ts_advance();
-                        } else {
-                            value = parse_expression(0);
-                        }
-                    }
-            } else if (ts_peek().type == TOK_LBRACE) {
-                value = parse_expression(0);
-            } else if (ts_peek().type == TOK_LBRACKET || ts_peek().type == TOK_LPAREN ||
-                ts_peek().type == TOK_NUMBER || ts_peek().type == TOK_STRING_LITERAL ||
-                ts_peek().type == TOK_TRUE || ts_peek().type == TOK_FALSE ||
-                ts_peek().type == TOK_MINUS) {
-                value = parse_expression(0);
                 } else {
-                    int saved = ts.pos;
-                    jmp_buf saved_env; memcpy(&saved_env, &exception_env, sizeof(jmp_buf));
-                    int saved_raised = exception_raised;
-                    exception_raised = 0;
-                    if (!setjmp(exception_env)) {
-                        value = parse_expression(0);
-                        if (ts_peek().type == TOK_NEWLINE || ts_peek().type == TOK_EOF) {
-                            memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
-                            exception_raised = saved_raised;
-                        } else {
-                            ts.pos = saved;
-                            exception_raised = 0;
-                            is_cmd = true;
-                            cmd_str = extract_command_string(t.line);
-                            while (ts_peek().type != TOK_NEWLINE && ts_peek().type != TOK_EOF) ts_advance();
-                            memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
-                            exception_raised = saved_raised;
-                            value = NULL;
-                        }
-                    } else {
-                        ts.pos = saved;
-                        exception_raised = 0;
-                        is_cmd = true;
-                        cmd_str = extract_command_string(t.line);
-                        while (ts_peek().type != TOK_NEWLINE && ts_peek().type != TOK_EOF) ts_advance();
-                        memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
-                        exception_raised = saved_raised;
-                        value = NULL;
-                    }
+                    is_cmd = true;
+                    cmd_str = extract_command_string(t.line);
+                    while (ts_peek().type != TOK_NEWLINE && ts_peek().type != TOK_EOF) ts_advance();
                 }
+            } else {
+                value = parse_expression(0);
+            }
 
-                stmt = node_create(NODE_ASSIGN, t.line);
-                stmt->data.assign.name = vname;
-                stmt->data.assign.is_cmd = is_cmd;
-                stmt->data.assign.cmd_str = cmd_str;
-                stmt->data.assign.value = value;
-                stmt->data.assign.vtype = vtype;
-                stmt->data.assign.is_local = false;
-                stmt->data.assign.is_global = false;
-                stmt->data.assign.lhs_index = lhs_index;
+            stmt = node_create(NODE_ASSIGN, t.line);
+            stmt->data.assign.name = vname;
+            stmt->data.assign.is_cmd = is_cmd;
+            stmt->data.assign.cmd_str = cmd_str;
+            stmt->data.assign.value = value;
+            stmt->data.assign.vtype = vtype;
+            stmt->data.assign.is_local = false;
+            stmt->data.assign.is_global = false;
+            stmt->data.assign.lhs_index = lhs_index;
 
             } else if (t.type == TOK_IDENT) {
                 Token saved_t = t;
@@ -699,73 +679,32 @@ NodeList parse_block(const char *terminator) {
                     bool is_cmd = false;
                     char *cmd_str = NULL;
 
-                    if (ts_peek().type == TOK_IDENT && strcmp(ts_peek().lexeme, vname) == 0) {
+                    // ----- NUEVA LÓGICA PARA RHS -----
+                    if (ts_peek().type == TOK_IDENT && ts_peek().lexeme[0] == '$') {
                         value = parse_expression(0);
                     } else if (ts_peek().type == TOK_IDENT) {
-                        if (ts.pos + 1 < ts.count &&
-                            (ts.tokens[ts.pos + 1].type == TOK_LBRACKET ||
-                            ts.tokens[ts.pos + 1].type == TOK_LPAREN)) {
+                        // Verificar si el siguiente token es '(' para detectar llamada a función
+                        int next_pos = ts.pos + 1;
+                        if (next_pos < ts.count && ts.tokens[next_pos].type == TOK_LPAREN) {
                             value = parse_expression(0);
-                            } else {
-                                char *rhs_name = ts_peek().lexeme;
-                                if (rhs_name[0] == '$') {
-                                    value = parse_expression(0);
-                                } else if (!scope_find_script(current_scope, rhs_name) && !func_lookup(rhs_name)) {
-                                    is_cmd = true;
-                                    cmd_str = extract_command_string(saved_t.line);
-                                    while (ts_peek().type != TOK_NEWLINE && ts_peek().type != TOK_EOF) ts_advance();
-                                } else {
-                                    value = parse_expression(0);
-                                }
-                            }
-                    } else if (ts_peek().type == TOK_LBRACE) {
-                        value = parse_expression(0);
-                    } else if (ts_peek().type == TOK_LBRACKET || ts_peek().type == TOK_LPAREN ||
-                        ts_peek().type == TOK_NUMBER || ts_peek().type == TOK_STRING_LITERAL ||
-                        ts_peek().type == TOK_TRUE || ts_peek().type == TOK_FALSE ||
-                        ts_peek().type == TOK_MINUS) {
-                        value = parse_expression(0);
                         } else {
-                            int saved = ts.pos;
-                            jmp_buf saved_env; memcpy(&saved_env, &exception_env, sizeof(jmp_buf));
-                            int saved_raised = exception_raised;
-                            exception_raised = 0;
-                            if (!setjmp(exception_env)) {
-                                value = parse_expression(0);
-                                if (ts_peek().type == TOK_NEWLINE || ts_peek().type == TOK_EOF) {
-                                    memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
-                                    exception_raised = saved_raised;
-                                } else {
-                                    ts.pos = saved;
-                                    exception_raised = 0;
-                                    is_cmd = true;
-                                    cmd_str = extract_command_string(saved_t.line);
-                                    while (ts_peek().type != TOK_NEWLINE && ts_peek().type != TOK_EOF) ts_advance();
-                                    memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
-                                    exception_raised = saved_raised;
-                                    value = NULL;
-                                }
-                            } else {
-                                ts.pos = saved;
-                                exception_raised = 0;
-                                is_cmd = true;
-                                cmd_str = extract_command_string(saved_t.line);
-                                while (ts_peek().type != TOK_NEWLINE && ts_peek().type != TOK_EOF) ts_advance();
-                                memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
-                                exception_raised = saved_raised;
-                                value = NULL;
-                            }
+                            is_cmd = true;
+                            cmd_str = extract_command_string(saved_t.line);
+                            while (ts_peek().type != TOK_NEWLINE && ts_peek().type != TOK_EOF) ts_advance();
                         }
+                    } else {
+                        value = parse_expression(0);
+                    }
 
-                        stmt = node_create(NODE_ASSIGN, saved_t.line);
-                        stmt->data.assign.name = vname;
-                        stmt->data.assign.is_cmd = is_cmd;
-                        stmt->data.assign.cmd_str = cmd_str;
-                        stmt->data.assign.value = value;
-                        stmt->data.assign.vtype = 0;
-                        stmt->data.assign.is_local = false;
-                        stmt->data.assign.is_global = false;
-                        stmt->data.assign.lhs_index = lhs_index;
+                    stmt = node_create(NODE_ASSIGN, saved_t.line);
+                    stmt->data.assign.name = vname;
+                    stmt->data.assign.is_cmd = is_cmd;
+                    stmt->data.assign.cmd_str = cmd_str;
+                    stmt->data.assign.value = value;
+                    stmt->data.assign.vtype = 0;
+                    stmt->data.assign.is_local = false;
+                    stmt->data.assign.is_global = false;
+                    stmt->data.assign.lhs_index = lhs_index;
                 } else {
                     ts.pos--;
 
@@ -798,17 +737,21 @@ NodeList parse_block(const char *terminator) {
                         exception_raised = 0;
                     }
 
+                    /***** COMANDO SHELL NORMAL (sin ! ni comillas) *****/
                     char cmd[4096] = {0};
                     Token first = ts_advance();
                     strcpy(cmd, first.lexeme);
                     bool last_was_no_space = false;
                     bool last_was_lbrace = (first.type == TOK_LBRACE);
+                    bool last_was_slash = false;
                     while (ts_peek().type != TOK_NEWLINE && ts_peek().type != TOK_EOF) {
                         Token ct = ts_advance();
                         bool prepend_space = true;
-                        if (last_was_lbrace || ct.type == TOK_RBRACE)
+                        if (last_was_lbrace || ct.type == TOK_RBRACE || last_was_no_space || last_was_slash)
                             prepend_space = false;
-                        else if (last_was_no_space)
+                        if (ct.type == TOK_SLASH || strcmp(ct.lexeme, "/") == 0) prepend_space = false;
+                        if (ct.type == TOK_IDENT && ct.lexeme[0] == '/') prepend_space = false;
+                        if (ct.type == TOK_IDENT && ct.lexeme[0] == '$' && cmd[0] != '\0' && cmd[strlen(cmd)-1] == '/')
                             prepend_space = false;
                         if (prepend_space) strcat(cmd, " ");
                         if (ct.type == TOK_STRING_LITERAL) {
@@ -820,6 +763,8 @@ NodeList parse_block(const char *terminator) {
                         }
                         last_was_lbrace = (ct.type == TOK_LBRACE);
                         last_was_no_space = (ct.type == TOK_MINUS || ct.type == TOK_PLUS);
+                        last_was_slash = (ct.type == TOK_SLASH || strcmp(ct.lexeme, "/") == 0 ||
+                        (ct.type == TOK_IDENT && ct.lexeme[0] == '/'));
                     }
                     stmt = node_create(NODE_SHELL_CMD, t.line);
                     stmt->data.shell_cmd.cmd = strdup(cmd);
@@ -831,10 +776,15 @@ NodeList parse_block(const char *terminator) {
                             ts_advance();
                             char cmd2[4096] = {0};
                             bool last_was_no_space2 = false;
+                            bool last_was_slash2 = false;
                             while (ts_peek().type != TOK_BANG && ts_peek().type != TOK_NEWLINE && ts_peek().type != TOK_EOF) {
                                 Token ct2 = ts_advance();
                                 bool prepend_space = true;
-                                if (last_was_no_space2) prepend_space = false;
+                                if (last_was_no_space2 || last_was_slash2) prepend_space = false;
+                                if (ct2.type == TOK_SLASH || strcmp(ct2.lexeme, "/") == 0) prepend_space = false;
+                                if (ct2.type == TOK_IDENT && ct2.lexeme[0] == '/') prepend_space = false;
+                                if (ct2.type == TOK_IDENT && ct2.lexeme[0] == '$' && cmd2[0] != '\0' && cmd2[strlen(cmd2)-1] == '/')
+                                    prepend_space = false;
                                 if (prepend_space && cmd2[0] != '\0') strcat(cmd2, " ");
                                 if (ct2.type == TOK_STRING_LITERAL) {
                                     strcat(cmd2, "\"");
@@ -844,6 +794,8 @@ NodeList parse_block(const char *terminator) {
                                     strcat(cmd2, ct2.lexeme);
                                 }
                                 last_was_no_space2 = (ct2.type == TOK_MINUS || ct2.type == TOK_PLUS);
+                                last_was_slash2 = (ct2.type == TOK_SLASH || strcmp(ct2.lexeme, "/") == 0 ||
+                                (ct2.type == TOK_IDENT && ct2.lexeme[0] == '/'));
                             }
                             if (ts_peek().type == TOK_BANG) ts_advance();
                             next_stmt = node_create(NODE_CMD_STMT, next.line);
@@ -854,12 +806,15 @@ NodeList parse_block(const char *terminator) {
                             strcpy(cmd2, first2.lexeme);
                             bool last_was_no_space2 = false;
                             bool last_was_lbrace2 = (first2.type == TOK_LBRACE);
+                            bool last_was_slash2 = false;
                             while (ts_peek().type != TOK_NEWLINE && ts_peek().type != TOK_EOF && ts_peek().type != TOK_OR) {
                                 Token ct2 = ts_advance();
                                 bool prepend_space = true;
-                                if (last_was_lbrace2 || ct2.type == TOK_RBRACE)
+                                if (last_was_lbrace2 || ct2.type == TOK_RBRACE || last_was_no_space2 || last_was_slash2)
                                     prepend_space = false;
-                                else if (last_was_no_space2)
+                                if (ct2.type == TOK_SLASH || strcmp(ct2.lexeme, "/") == 0) prepend_space = false;
+                                if (ct2.type == TOK_IDENT && ct2.lexeme[0] == '/') prepend_space = false;
+                                if (ct2.type == TOK_IDENT && ct2.lexeme[0] == '$' && cmd2[0] != '\0' && cmd2[strlen(cmd2)-1] == '/')
                                     prepend_space = false;
                                 if (prepend_space) strcat(cmd2, " ");
                                 if (ct2.type == TOK_STRING_LITERAL) {
@@ -871,6 +826,8 @@ NodeList parse_block(const char *terminator) {
                                 }
                                 last_was_lbrace2 = (ct2.type == TOK_LBRACE);
                                 last_was_no_space2 = (ct2.type == TOK_MINUS || ct2.type == TOK_PLUS);
+                                last_was_slash2 = (ct2.type == TOK_SLASH || strcmp(ct2.lexeme, "/") == 0 ||
+                                (ct2.type == TOK_IDENT && ct2.lexeme[0] == '/'));
                             }
                             next_stmt = node_create(NODE_SHELL_CMD, next.line);
                             next_stmt->data.shell_cmd.cmd = strdup(cmd2);
