@@ -533,7 +533,7 @@ void exec_block_from(NodeList *block, int start_index) {
                             var->vtype = vtype;
                         }
                     } else {
-                        scope_define(global_scope, stmt->data.assign.name, vtype, val);
+                        scope_define(current_scope, stmt->data.assign.name, vtype, val);
                     }
                 }
                 break;

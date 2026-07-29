@@ -68,7 +68,10 @@ int vm_find_builtin_index(const char *name) {
 }
 
 int vm_find_global_index(const char *name) {
-    (void)name;
+    for (int i = 0; i < vm_global_count; i++) {
+        if (vm_global_names[i] && strcmp(vm_global_names[i], name) == 0)
+            return i;
+    }
     return -1;
 }
 

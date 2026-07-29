@@ -82,14 +82,16 @@ static void compile_expr(Compiler *c, ASTNode *expr) {
             break;
                 case NODE_VAR: {
                     const char *name = expr->data.var.name;
-                    int slot = resolve_local(c, name);
-                    if (slot >= 0) {
-                        emit(c->chunk, OP_LOAD_VAR, slot);
+                    // Buscar en globales primero
+                    int gidx = vm_find_global_index(name);
+                    if (gidx >= 0) {
+                        emit(c->chunk, OP_LOAD_GLOBAL, gidx);
                     } else {
-                        int gidx = vm_find_global_index(name);
-                        if (gidx >= 0) {
-                            emit(c->chunk, OP_LOAD_GLOBAL, gidx);
+                        int slot = resolve_local(c, name);
+                        if (slot >= 0) {
+                            emit(c->chunk, OP_LOAD_VAR, slot);
                         } else {
+                            // Si no es local ni global, usar interpretación
                             int const_idx = add_constant(c, val_ptr(expr));
                             emit(c->chunk, OP_INTERPRET_NODE, const_idx);
                             c->chunk->code[c->chunk->code_count - 1].operand2 = 1;
@@ -182,19 +184,46 @@ static void compile_stmt(Compiler *c, ASTNode *stmt) {
             break;
         case NODE_ASSIGN: {
             const char *name = stmt->data.assign.name;
-            int slot = resolve_local(c, name);
-            if (slot < 0) slot = add_local(c, name);
-            // Guardar tipo fijo si existe (por ej. "list" en "list archivo = ls")
-            if (stmt->data.assign.vtype != 0) {
-                c->local_types[slot] = stmt->data.assign.vtype;
-            }
-            if (stmt->data.assign.is_cmd) {
-                int const_idx = add_constant(c, val_string(stmt->data.assign.cmd_str));
-                emit(c->chunk, OP_CMD_ASSIGN, const_idx);
-                c->chunk->code[c->chunk->code_count - 1].operand2 = slot;
+            if (stmt->data.assign.is_global) {
+                // Registrar la global si no existe
+                int gidx = vm_find_global_index(name);
+                if (gidx < 0) {
+                    // Registrar con valor nulo (se asignará después)
+                    gidx = vm_register_global(name, val_make_null());
+                }
+                // Compilar el valor
+                if (stmt->data.assign.is_cmd) {
+                    // Para asignación de comando, compilar y almacenar en global
+                    int const_idx = add_constant(c, val_string(stmt->data.assign.cmd_str));
+                    emit(c->chunk, OP_CMD_ASSIGN, const_idx);
+                    // Guardamos el índice global en operand2, pero necesitamos un slot de global
+                    // Mejor emitimos OP_STORE_GLOBAL después de ejecutar el comando.
+                    // Como OP_CMD_ASSIGN asigna a un local, no sirve para global.
+                    // Para simplificar, convertimos la asignación de comando a interpretación.
+                    // O implementamos una variante de OP_CMD_ASSIGN_GLOBAL.
+                    // Por ahora, usamos el enfoque antiguo: asignar a local y luego copiar a global.
+                    // Pero eso no es limpio.
+                    // Una solución rápida: forzar que la asignación de comando se compile como interpretada.
+                    int const_node = add_constant(c, val_ptr(stmt));
+                    emit(c->chunk, OP_INTERPRET_NODE, const_node);
+                    c->chunk->code[c->chunk->code_count - 1].operand2 = 0;
+                } else {
+                    compile_expr(c, stmt->data.assign.value);
+                    emit(c->chunk, OP_STORE_GLOBAL, gidx);
+                }
             } else {
-                compile_expr(c, stmt->data.assign.value);
-                emit(c->chunk, OP_STORE_VAR, slot);
+                // Manejo normal (local)
+                int slot = resolve_local(c, name);
+                if (slot < 0) slot = add_local(c, name);
+                if (stmt->data.assign.vtype != 0) c->local_types[slot] = stmt->data.assign.vtype;
+                if (stmt->data.assign.is_cmd) {
+                    int const_idx = add_constant(c, val_string(stmt->data.assign.cmd_str));
+                    emit(c->chunk, OP_CMD_ASSIGN, const_idx);
+                    c->chunk->code[c->chunk->code_count - 1].operand2 = slot;
+                } else {
+                    compile_expr(c, stmt->data.assign.value);
+                    emit(c->chunk, OP_STORE_VAR, slot);
+                }
             }
             break;
         }
