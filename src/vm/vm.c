@@ -1,5 +1,5 @@
 /*
- * Infernal: el lenguaje de programación. Copyright (C) 2026, GPL v3+ License.
+ * Infernal: el lenguaje de programación. Copyright (C) 2026, GPL v3+ License, Lynds Corp., Aros Legendarios, David Baña Szymaniak.
  * Código fuente de Infernal: vm/vm.c
 */
 
@@ -26,9 +26,22 @@ static inline void push(Value v) { *sp++ = v; }
 static inline Value pop(void)  { return *--sp; }
 static inline Value peek(int dist) { return *(sp - 1 - dist); }
 
-Value vm_globals[MAX_GLOBALS];
-char *vm_global_names[MAX_GLOBALS] = {0};
+/* ─── Globales de la VM ───────────────────────────────────────── */
+typedef struct {
+    char *name;
+    int scope_type;   // GLOBAL_SCRIPT o GLOBAL_SUPER
+} GlobalEntry;
+
+#define GLOBAL_SCRIPT 0
+#define GLOBAL_SUPER  1
+
+GlobalEntry vm_global_entries[MAX_GLOBALS];
 int vm_global_count = 0;
+
+// Para compatibilidad con código antiguo (opcional)
+char *vm_global_names[MAX_GLOBALS];
+
+Value vm_globals[MAX_GLOBALS];
 
 VmBuiltin vm_builtins[256];
 int vm_builtin_count = 0;
@@ -36,7 +49,7 @@ int vm_builtin_count = 0;
 static struct { const char *name; VmBuiltin func; } builtin_names[256];
 static int builtin_names_count = 0;
 
-// Tabla de funciones de usuario (compiladas)
+/* ─── Funciones de usuario compiladas ───────────────────────── */
 typedef struct {
     char *name;
     Chunk *code;
@@ -44,13 +57,27 @@ typedef struct {
 static UserFunction user_functions[256];
 static int user_function_count = 0;
 
-int vm_register_global(const char *name, Value val) {
+/* ─── Registro de globales ────────────────────────────────────── */
+int vm_register_global(const char *name, int scope_type) {
     if (vm_global_count >= MAX_GLOBALS) return -1;
-    vm_globals[vm_global_count] = val;
-    vm_global_names[vm_global_count] = strdup(name);
+    vm_global_entries[vm_global_count].name = strdup(name);
+    vm_global_entries[vm_global_count].scope_type = scope_type;
+    vm_globals[vm_global_count] = val_make_null();
+    // También mantener vm_global_names por si acaso
+    vm_global_names[vm_global_count] = vm_global_entries[vm_global_count].name;
     return vm_global_count++;
 }
 
+/* ─── Buscar índice de global por nombre ────────────────────── */
+int vm_find_global_index(const char *name) {
+    for (int i = 0; i < vm_global_count; i++) {
+        if (vm_global_entries[i].name && strcmp(vm_global_entries[i].name, name) == 0)
+            return i;
+    }
+    return -1;
+}
+
+/* ─── Registro de builtins ────────────────────────────────────── */
 int vm_register_builtin(const char *name, VmBuiltin func) {
     if (vm_builtin_count >= 256) return -1;
     builtin_names[builtin_names_count].name = name;
@@ -67,14 +94,7 @@ int vm_find_builtin_index(const char *name) {
     return -1;
 }
 
-int vm_find_global_index(const char *name) {
-    for (int i = 0; i < vm_global_count; i++) {
-        if (vm_global_names[i] && strcmp(vm_global_names[i], name) == 0)
-            return i;
-    }
-    return -1;
-}
-
+/* ─── Registro de funciones de usuario ───────────────────────── */
 int vm_register_user_function(const char *name, Chunk *code) {
     if (user_function_count >= 256) return -1;
     user_functions[user_function_count].name = strdup(name);
@@ -87,6 +107,7 @@ Chunk *vm_get_user_function(int index) {
     return user_functions[index].code;
 }
 
+/* ─── Llamada a builtin ───────────────────────────────────────── */
 static int call_builtin(int index, int arg_count) {
     if (index >= vm_builtin_count) error(0, "Índice de builtin inválido");
     Value *args = sp - arg_count;
@@ -96,17 +117,24 @@ static int call_builtin(int index, int arg_count) {
     return 1;
 }
 
-/* ─── Expansión de variables usando las locales de la VM ─── */
+/* ─── Expansión de comandos usando locales y globales ─────────── */
 static char *expand_command_vm(Chunk *chunk, Value *locals, const char *cmd) {
-    return expand_command_with_locals(cmd, chunk->local_names, locals, chunk->local_count);
+    // Primero expandimos con los locales de la VM
+    char *expanded = expand_command_with_locals(cmd, chunk->local_names, locals, chunk->local_count);
+    // Si aún hay variables sin expandir, podríamos hacer una segunda pasada con globales,
+    // pero expand_command_with_locals ya busca en los ámbitos (scope_find),
+    // que están sincronizados con las globales de la VM, así que no hace falta.
+    return expanded;
 }
 
+/* ─── Computed goto ────────────────────────────────────────────── */
 #if defined(__GNUC__) || defined(__clang__)
 #define USE_COMPUTED_GOTO 1
 #endif
 
 extern Scope *global_scope;
 
+/* ─── Ejecución de bytecode ────────────────────────────────────── */
 Value vm_run(Chunk *chunk) {
     if (!chunk || chunk->code_count == 0) return val_make_null();
 
@@ -171,19 +199,22 @@ Value vm_run(Chunk *chunk) {
             if (ip->operand < vm_global_count) push(vm_globals[ip->operand]);
             else error(0, "Acceso a global inválido");
             ip++; DISPATCH();
+
             OP_STORE_GLOBAL: {
                 Value val = pop();
-                if (ip->operand < vm_global_count) {
-                    vm_globals[ip->operand] = val;
-                    // ─── Sincronizar con super_global_scope ───
-                    const char *gname = vm_global_names[ip->operand];
+                int idx = ip->operand;
+                int scope_type = ip->operand2;  // GLOBAL_SCRIPT o GLOBAL_SUPER
+                if (idx < vm_global_count) {
+                    vm_globals[idx] = val;
+                    const char *gname = vm_global_entries[idx].name;
                     if (gname) {
-                        VarEntry *e = scope_find(super_global_scope, gname);
+                        Scope *target_scope = (scope_type == GLOBAL_SUPER) ? super_global_scope : global_scope;
+                        VarEntry *e = scope_find(target_scope, gname);
                         if (e) {
-                            scope_assign(super_global_scope, gname, val, 0);
+                            scope_assign(target_scope, gname, val, 0);
                         } else {
                             int vtype = valtype_to_tokentype(val.type);
-                            scope_define(super_global_scope, gname, vtype, val);
+                            scope_define(target_scope, gname, vtype, val);
                         }
                     }
                 } else {
@@ -395,7 +426,7 @@ Value vm_run(Chunk *chunk) {
                 ip++; DISPATCH();
             }
             OP_INDEX_ASSIGN:
-            error(0, "Asignación con índice no implementada en VM demo");
+            error(0, "Asignación con índice no implementada en VM");
             ip++; DISPATCH();
 
             OP_EMBEDDED_CMD: {
@@ -417,7 +448,7 @@ Value vm_run(Chunk *chunk) {
                 ip++; DISPATCH();
             }
             OP_FLAGS:
-            error(0, "flags no soportados en VM demo");
+            error(0, "flags no soportados en VM");
             ip++; DISPATCH();
 
             OP_CMD_ASSIGN: {
@@ -453,7 +484,6 @@ Value vm_run(Chunk *chunk) {
                     free(temp_path);
                 }
 
-                // Eliminar el último '\n' si existe
                 size_t len = strlen(out);
                 if (len > 0 && out[len-1] == '\n') out[len-1] = '\0';
 
@@ -462,7 +492,6 @@ Value vm_run(Chunk *chunk) {
                 Value final_val;
 
                 if (expected_type == TOK_LIST) {
-                    // Convertir a lista de líneas
                     Value list = val_list_empty();
                     char *dup = strdup(out);
                     char *saveptr;

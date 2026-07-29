@@ -1,7 +1,7 @@
 /*
- * Infernal: el lenguaje de programación. Copyright (C) 2026, GPL v3+ License.
+ * Infernal: el lenguaje de programación. Copyright (C) 2026, GPL v3+ License, Lynds Corp., Aros Legendarios, David Baña Szymaniak.
  * Código fuente de Infernal: vm/compiler.c
- */
+*/
 
 #include <stdlib.h>
 #include <string.h>
@@ -21,6 +21,7 @@ typedef struct {
     int local_types[MAX_LOCALS];   // guarda el tipo fijo (TOK_LIST, etc.) 0 = ninguno
     int local_count;
     bool in_function;
+    bool top_level;   // si estamos compilando el nivel raíz del script
 } Compiler;
 
 static int add_constant(Compiler *c, Value v) {
@@ -67,9 +68,11 @@ static void patch_jump(Chunk *ch, int offset, int target) {
     ch->code[offset].operand = target - offset;
 }
 
+/* ─── Declaraciones adelantadas ───────────────────────────────── */
 static void compile_expr(Compiler *c, ASTNode *expr);
 static void compile_block(Compiler *c, NodeList *block);
 
+/* ─── Compilación de expresiones ────────────────────────────── */
 static void compile_expr(Compiler *c, ASTNode *expr) {
     switch (expr->kind) {
         case NODE_LITERAL:
@@ -82,21 +85,22 @@ static void compile_expr(Compiler *c, ASTNode *expr) {
             break;
                 case NODE_VAR: {
                     const char *name = expr->data.var.name;
-                    // Buscar en globales primero
+                    // 1) Buscar en globales de la VM
                     int gidx = vm_find_global_index(name);
                     if (gidx >= 0) {
                         emit(c->chunk, OP_LOAD_GLOBAL, gidx);
-                    } else {
-                        int slot = resolve_local(c, name);
-                        if (slot >= 0) {
-                            emit(c->chunk, OP_LOAD_VAR, slot);
-                        } else {
-                            // Si no es local ni global, usar interpretación
-                            int const_idx = add_constant(c, val_ptr(expr));
-                            emit(c->chunk, OP_INTERPRET_NODE, const_idx);
-                            c->chunk->code[c->chunk->code_count - 1].operand2 = 1;
-                        }
+                        break;
                     }
+                    // 2) Buscar en locales
+                    int slot = resolve_local(c, name);
+                    if (slot >= 0) {
+                        emit(c->chunk, OP_LOAD_VAR, slot);
+                        break;
+                    }
+                    // 3) Si no está en ningún lado, interpretar en tiempo de ejecución
+                    int const_idx = add_constant(c, val_ptr(expr));
+                    emit(c->chunk, OP_INTERPRET_NODE, const_idx);
+                    c->chunk->code[c->chunk->code_count - 1].operand2 = 1;
                     break;
                 }
                 case NODE_BINOP: {
@@ -176,6 +180,7 @@ static void compile_expr(Compiler *c, ASTNode *expr) {
     }
 }
 
+/* ─── Compilación de sentencias ────────────────────────────── */
 static void compile_stmt(Compiler *c, ASTNode *stmt) {
     switch (stmt->kind) {
         case NODE_EXPR_STMT:
@@ -184,38 +189,45 @@ static void compile_stmt(Compiler *c, ASTNode *stmt) {
             break;
         case NODE_ASSIGN: {
             const char *name = stmt->data.assign.name;
+            int vtype = stmt->data.assign.vtype;
+
             if (stmt->data.assign.is_global) {
-                // Registrar la global si no existe
+                // Variable global compartida (superglobal)
                 int gidx = vm_find_global_index(name);
                 if (gidx < 0) {
-                    // Registrar con valor nulo (se asignará después)
-                    gidx = vm_register_global(name, val_make_null());
+                    gidx = vm_register_global(name, GLOBAL_SUPER);
                 }
-                // Compilar el valor
                 if (stmt->data.assign.is_cmd) {
-                    // Para asignación de comando, compilar y almacenar en global
-                    int const_idx = add_constant(c, val_string(stmt->data.assign.cmd_str));
-                    emit(c->chunk, OP_CMD_ASSIGN, const_idx);
-                    // Guardamos el índice global en operand2, pero necesitamos un slot de global
-                    // Mejor emitimos OP_STORE_GLOBAL después de ejecutar el comando.
-                    // Como OP_CMD_ASSIGN asigna a un local, no sirve para global.
-                    // Para simplificar, convertimos la asignación de comando a interpretación.
-                    // O implementamos una variante de OP_CMD_ASSIGN_GLOBAL.
-                    // Por ahora, usamos el enfoque antiguo: asignar a local y luego copiar a global.
-                    // Pero eso no es limpio.
-                    // Una solución rápida: forzar que la asignación de comando se compile como interpretada.
+                    // Asignación de comando a global: usamos interpretación para simplificar
+                    // (esto es raro, pero puede ocurrir)
                     int const_node = add_constant(c, val_ptr(stmt));
                     emit(c->chunk, OP_INTERPRET_NODE, const_node);
                     c->chunk->code[c->chunk->code_count - 1].operand2 = 0;
                 } else {
                     compile_expr(c, stmt->data.assign.value);
                     emit(c->chunk, OP_STORE_GLOBAL, gidx);
+                    c->chunk->code[c->chunk->code_count - 1].operand2 = GLOBAL_SUPER;
+                }
+            } else if (c->top_level && !stmt->data.assign.is_local) {
+                // Variable global del script (sin 'global' en nivel superior)
+                int gidx = vm_find_global_index(name);
+                if (gidx < 0) {
+                    gidx = vm_register_global(name, GLOBAL_SCRIPT);
+                }
+                if (stmt->data.assign.is_cmd) {
+                    int const_node = add_constant(c, val_ptr(stmt));
+                    emit(c->chunk, OP_INTERPRET_NODE, const_node);
+                    c->chunk->code[c->chunk->code_count - 1].operand2 = 0;
+                } else {
+                    compile_expr(c, stmt->data.assign.value);
+                    emit(c->chunk, OP_STORE_GLOBAL, gidx);
+                    c->chunk->code[c->chunk->code_count - 1].operand2 = GLOBAL_SCRIPT;
                 }
             } else {
-                // Manejo normal (local)
+                // Variable local (dentro de función o declarada con 'local')
                 int slot = resolve_local(c, name);
                 if (slot < 0) slot = add_local(c, name);
-                if (stmt->data.assign.vtype != 0) c->local_types[slot] = stmt->data.assign.vtype;
+                if (vtype != 0) c->local_types[slot] = vtype;
                 if (stmt->data.assign.is_cmd) {
                     int const_idx = add_constant(c, val_string(stmt->data.assign.cmd_str));
                     emit(c->chunk, OP_CMD_ASSIGN, const_idx);
@@ -284,12 +296,13 @@ static void compile_block(Compiler *c, NodeList *block) {
     }
 }
 
+/* ─── Compilación del programa principal ────────────────────── */
 Chunk *compile_program(NodeList *program) {
     Compiler c;
     c.chunk = calloc(1, sizeof(Chunk));
     c.local_count = 0;
     c.in_function = false;
-
+    c.top_level = true;
     compile_block(&c, program);
     emit(c.chunk, OP_RETURN, 0);
 
@@ -306,17 +319,18 @@ Chunk *compile_program(NodeList *program) {
     return c.chunk;
 }
 
+/* ─── Compilación de funciones ────────────────────────────────── */
 Chunk *compile_function(ASTNode *func_node) {
     if (func_node->kind != NODE_FUNC_DEF) return NULL;
     Compiler c;
     c.chunk = calloc(1, sizeof(Chunk));
     c.local_count = 0;
     c.in_function = true;
+    c.top_level = false;
 
     // Parámetros como locales
     for (int i = 0; i < func_node->data.func.param_count; i++) {
         int slot = add_local(&c, func_node->data.func.params[i]);
-        // Si el parámetro tiene tipo definido, se guarda
         if (func_node->data.func.ptypes && func_node->data.func.ptypes[i] != 0) {
             c.local_types[slot] = func_node->data.func.ptypes[i];
         }

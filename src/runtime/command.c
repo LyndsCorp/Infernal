@@ -21,6 +21,7 @@
 #include "runtime/scope.h"
 #include "runtime/globals.h"
 #include "stdlib/embedded.h"
+#include "vm/vm.h"          // <-- AÑADIDO: para acceder a vm_globals y vm_find_global_index
 
 /* ─── Límite de seguridad para descompresión ─── */
 #define MAX_DECOMPRESSED_SIZE (500 * 1024 * 1024)  /* 500 MiB */
@@ -122,11 +123,26 @@ char *expand_command_with_locals(const char *cmd, char **names, Value *values, i
                     break;
                 }
             }
-            // 2) Si no se encontró, buscar en los scopes globales
+            // 2) Si no se encontró, buscar en los scopes de Infernal
             if (!val) {
                 VarEntry *e = scope_find(current_scope, name);
                 if (e) {
                     Value v = e->value;
+                    char buf[256];
+                    switch (v.type) {
+                        case VAL_INT: snprintf(buf, sizeof(buf), "%d", v.data.ival); val = strdup(buf); break;
+                        case VAL_FLOAT: snprintf(buf, sizeof(buf), "%g", v.data.fval); val = strdup(buf); break;
+                        case VAL_BOOL: val = strdup(v.data.bval ? "true" : "false"); break;
+                        case VAL_STRING: val = strdup(v.data.sval); break;
+                        default: val = NULL;
+                    }
+                }
+            }
+            // 3) Si aún no se encontró, buscar directamente en las globales de la VM
+            if (!val) {
+                int gidx = vm_find_global_index(name);
+                if (gidx >= 0) {
+                    Value v = vm_globals[gidx];
                     char buf[256];
                     switch (v.type) {
                         case VAL_INT: snprintf(buf, sizeof(buf), "%d", v.data.ival); val = strdup(buf); break;
@@ -179,15 +195,15 @@ static unsigned char *gunzip_data(const unsigned char *compressed, size_t compre
                 !dlsym(zlib_handle, "inflate") ||
                 !dlsym(zlib_handle, "inflateEnd")) {
                 dlclose(zlib_handle);
-                zlib_handle = NULL;
-                zlib_available = 0;
-            } else {
-                // Obtener versión real de zlib
-                typedef const char *(*zlibVersion_t)(void);
-                zlibVersion_t p_zlibVersion = (zlibVersion_t)dlsym(zlib_handle, "zlibVersion");
-                zlib_version_str = p_zlibVersion ? p_zlibVersion() : "1.2.0";
-                zlib_available = 1;
-            }
+            zlib_handle = NULL;
+            zlib_available = 0;
+                } else {
+                    // Obtener versión real de zlib
+                    typedef const char *(*zlibVersion_t)(void);
+                    zlibVersion_t p_zlibVersion = (zlibVersion_t)dlsym(zlib_handle, "zlibVersion");
+                    zlib_version_str = p_zlibVersion ? p_zlibVersion() : "1.2.0";
+                    zlib_available = 1;
+                }
         }
     }
 
@@ -311,10 +327,10 @@ static char *prepare_embedded_binary(const char *cmd_name) {
         if (dir_len > 0 && (size_t)dir_len < sizeof(work_dir) &&
             (mkdir(work_dir, 0700) == 0 || errno == EEXIST)) {
             int path_len = snprintf(tmp_path, sizeof(tmp_path), "%s/infernal_XXXXXX", work_dir);
-            if (path_len > 0 && (size_t)path_len < sizeof(tmp_path)) {
-                fd = mkstemp(tmp_path);
-            }
+        if (path_len > 0 && (size_t)path_len < sizeof(tmp_path)) {
+            fd = mkstemp(tmp_path);
         }
+            }
     }
 
     if (fd == -1) {
