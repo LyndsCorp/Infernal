@@ -118,7 +118,6 @@ void tokenize_file(FILE *fp) {
             if (isspace(*p)) { p++; continue; }
 
             int start_col = (int)(p - line);
-            int end_col = start_col;
 
             // Operadores de dos caracteres
             if (*p == '&' && *(p+1) == '&') {

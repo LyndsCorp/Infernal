@@ -160,7 +160,15 @@ Value vm_run(Chunk *chunk) {
             OP_PUSH_BOOL:   push(chunk->constants[ip->operand]); ip++; DISPATCH();
             OP_PUSH_NULL:   push(val_make_null()); ip++; DISPATCH();
 
-            OP_LOAD_VAR:    push(locals[ip->operand]); ip++; DISPATCH();
+            OP_LOAD_VAR: {
+                Value v = locals[ip->operand];
+                if (v.type == VAL_NULL) {
+                    error(0, "Variable local no definida");
+                }
+                push(v);
+                ip++;
+                DISPATCH();
+            }
             OP_STORE_VAR: {
                 Value val = pop();
                 int slot = ip->operand;
@@ -175,13 +183,23 @@ Value vm_run(Chunk *chunk) {
                         scope_define(current_scope, name, vtype, val);
                     }
                 }
-                ip++; DISPATCH();
+                ip++;
+                DISPATCH();
             }
 
-            OP_LOAD_GLOBAL:
-            if (ip->operand < vm_global_count) push(vm_globals[ip->operand]);
-            else error(0, "Acceso a global inválido");
-            ip++; DISPATCH();
+            OP_LOAD_GLOBAL: {
+                if (ip->operand < vm_global_count) {
+                    Value v = vm_globals[ip->operand];
+                    if (v.type == VAL_NULL) {
+                        error(0, "Variable global no definida: %s", vm_global_names[ip->operand]);
+                    }
+                    push(v);
+                } else {
+                    error(0, "Acceso a global inválido");
+                }
+                ip++;
+                DISPATCH();
+            }
 
             OP_STORE_GLOBAL: {
                 Value val = pop();
@@ -203,7 +221,8 @@ Value vm_run(Chunk *chunk) {
                 } else {
                     error(0, "Global inválido");
                 }
-                ip++; DISPATCH();
+                ip++;
+                DISPATCH();
             }
 
             OP_ADD: {
@@ -346,7 +365,8 @@ Value vm_run(Chunk *chunk) {
                 int builtin_idx = ip->operand;
                 int arg_count = ip->operand2;
                 if (!call_builtin(builtin_idx, arg_count)) error(0, "Error en builtin");
-                ip++; DISPATCH();
+                ip++;
+                DISPATCH();
             }
 
             OP_CALL_USER: {
@@ -386,7 +406,8 @@ Value vm_run(Chunk *chunk) {
                 Value item = pop();
                 Value *list = sp - 1;
                 val_list_append(list, item);
-                ip++; DISPATCH();
+                ip++;
+                DISPATCH();
             }
 
             OP_INDEX: {
@@ -405,11 +426,13 @@ Value vm_run(Chunk *chunk) {
                     char c[2] = {base.data.sval[i-1], 0};
                     push(val_string(c));
                 } else error(0, "Indexación no soportada");
-                ip++; DISPATCH();
+                ip++;
+                DISPATCH();
             }
             OP_INDEX_ASSIGN:
             error(0, "Asignación con índice no implementada en VM");
-            ip++; DISPATCH();
+            ip++;
+            DISPATCH();
 
             OP_EMBEDDED_CMD: {
                 Value cmd_val = chunk->constants[ip->operand];
@@ -418,7 +441,8 @@ Value vm_run(Chunk *chunk) {
                 int ret = execute_embedded(expanded);
                 if (ret == -1) error(0, "Comando embebido falló");
                 free(expanded);
-                ip++; DISPATCH();
+                ip++;
+                DISPATCH();
             }
             OP_SHELL_CMD: {
                 Value cmd_val = chunk->constants[ip->operand];
@@ -427,11 +451,13 @@ Value vm_run(Chunk *chunk) {
                 int ret = system(expanded);
                 if (ret != 0) error(0, "Comando shell falló");
                 free(expanded);
-                ip++; DISPATCH();
+                ip++;
+                DISPATCH();
             }
             OP_FLAGS:
             error(0, "flags no soportados en VM");
-            ip++; DISPATCH();
+            ip++;
+            DISPATCH();
 
             OP_CMD_ASSIGN: {
                 Value cmd_val = chunk->constants[ip->operand];
@@ -509,7 +535,7 @@ Value vm_run(Chunk *chunk) {
 
             OP_INTERPRET_NODE: {
                 ASTNode *node = (ASTNode*)chunk->constants[ip->operand].data.ptr;
-                Scope *temp_scope = scope_new(global_scope);
+                Scope *temp_scope = scope_new(global_scope, NULL);
                 for (int i = 0; i < chunk->local_count; i++) {
                     if (chunk->local_names[i]) {
                         scope_define(temp_scope, chunk->local_names[i],

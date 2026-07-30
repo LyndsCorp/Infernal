@@ -143,8 +143,10 @@ Value eval_expr(ASTNode *expr) {
                 name++;
                 if (*name == '\0') error(expr->line, "Nombre de variable vacío tras $");
             }
+            // Buscar en la cadena de ámbitos (local → global → superglobal)
             VarEntry *e = scope_find(current_scope, name);
             if (!e) error(expr->line, "Variable no definida: %s", name);
+            // Si es una referencia a una lista, resolverla
             if (e->value.type == VAL_REFERENCE) {
                 VarEntry *list_var = scope_find(current_scope, e->value.data.ref.list_name);
                 if (!list_var || list_var->value.type != VAL_LIST) {
@@ -309,7 +311,7 @@ Value eval_expr(ASTNode *expr) {
                                           expr->data.call.name, func->data.func.param_count,
                                           expr->data.call.argc);
                                 }
-                                Scope *new_scope = scope_new(current_scope);
+                                Scope *new_scope = scope_new(current_scope, expr->data.call.name);
                                 Scope *prev_scope = current_scope;
                                 current_scope = new_scope;
                                 for (int i = 0; i < func->data.func.param_count; i++) {
@@ -536,7 +538,7 @@ void exec_block_from(NodeList *block, int start_index) {
                         case NODE_IF: {
                             Value cond = eval_expr(stmt->data.if_stmt.cond);
                             bool truthy = val_is_truthy(cond);
-                            Scope *block_scope = scope_new(current_scope);
+                            Scope *block_scope = scope_new(current_scope, NULL);
                             Scope *old_scope = current_scope;
                             current_scope = block_scope;
                             if (truthy)
@@ -555,7 +557,7 @@ void exec_block_from(NodeList *block, int start_index) {
                                 iter_count++;
                                 Value cond = eval_expr(stmt->data.while_stmt.cond);
                                 if (!val_is_truthy(cond)) break;
-                                Scope *block_scope = scope_new(current_scope);
+                                Scope *block_scope = scope_new(current_scope, NULL);
                                 Scope *old_scope = current_scope;
                                 current_scope = block_scope;
                                 exec_block(&stmt->data.while_stmt.body);
@@ -569,7 +571,7 @@ void exec_block_from(NodeList *block, int start_index) {
                         }
                         case NODE_FOR: {
                             Value init_val = eval_expr(stmt->data.for_stmt.init);
-                            Scope *for_scope = scope_new(current_scope);
+                            Scope *for_scope = scope_new(current_scope, NULL);
                             Scope *old_scope = current_scope;
                             current_scope = for_scope;
                             scope_define(for_scope, stmt->data.for_stmt.var, stmt->data.for_stmt.vtype, init_val);
@@ -594,7 +596,7 @@ void exec_block_from(NodeList *block, int start_index) {
                             Value list_val = eval_expr(stmt->data.for_in.list_expr);
                             if (list_val.type != VAL_LIST) error(stmt->line, "Se esperaba una lista en for-in");
                             for (int i = 0; i < list_val.data.list.count; i++) {
-                                Scope *iter_scope = scope_new(current_scope);
+                                Scope *iter_scope = scope_new(current_scope, NULL);
                                 Scope *old_scope = current_scope;
                                 current_scope = iter_scope;
                                 scope_define(iter_scope, stmt->data.for_in.var, 0, list_val.data.list.items[i]);

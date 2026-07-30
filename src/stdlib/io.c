@@ -56,7 +56,7 @@ static Value builtin_printAllVars(int argc, Value *args) {
         }
     }
 
-    // 2. Ámbitos normales (global y locales)
+    // 2. Ámbito del script (global_scope) y ámbitos locales
     Scope *s = current_scope;
     int total_vars = 0;
 
@@ -67,7 +67,14 @@ static Value builtin_printAllVars(int argc, Value *args) {
             continue;
         }
         if (s->vars) {
-            printf("  Scope %p:\n", (void*)s);
+            // Determinar el nombre del ámbito
+            if (s == global_scope) {
+                printf("  Ámbito del script:\n");
+            } else if (s->function_name) {
+                printf("  Ámbito local de función '%s':\n", s->function_name);
+            } else {
+                printf("  Scope %p:\n", (void*)s);
+            }
             for (VarEntry *e = s->vars; e; e = e->next) {
                 total_vars++;
                 printf("    %s: ", e->name);
