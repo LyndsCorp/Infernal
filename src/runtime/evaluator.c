@@ -1,7 +1,7 @@
 /*
- * Infernal: el lenguaje de programación. Copyright (C) 2026, GPL v3+ License, Lynds Corp., Aros Legendarios, David Baña Szymaniak.
+ * Infernal: el lenguaje de programación. Copyright (C) 2026, GPL v3+ License.
  * Código fuente de Infernal: runtime/evaluator.c
-*/
+ */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -143,8 +143,10 @@ Value eval_expr(ASTNode *expr) {
                 name++;
                 if (*name == '\0') error(expr->line, "Nombre de variable vacío tras $");
             }
+            // Buscar en la cadena de ámbitos (local → global → superglobal)
             VarEntry *e = scope_find(current_scope, name);
             if (!e) error(expr->line, "Variable no definida: %s", name);
+            // Si es una referencia a una lista, resolverla
             if (e->value.type == VAL_REFERENCE) {
                 VarEntry *list_var = scope_find(current_scope, e->value.data.ref.list_name);
                 if (!list_var || list_var->value.type != VAL_LIST) {
@@ -229,7 +231,6 @@ Value eval_expr(ASTNode *expr) {
                     return val_bool(expr->data.binop.op == TOK_EEQ ? equal : !equal);
                 }
 
-                /* Comparaciones <, >, <=, >= */
                 if (expr->data.binop.op == TOK_LT_OP || expr->data.binop.op == TOK_GT_OP ||
                     expr->data.binop.op == TOK_LE    || expr->data.binop.op == TOK_GE) {
                     double lv = (left.type == VAL_INT) ? left.data.ival :
@@ -310,7 +311,7 @@ Value eval_expr(ASTNode *expr) {
                                           expr->data.call.name, func->data.func.param_count,
                                           expr->data.call.argc);
                                 }
-                                Scope *new_scope = scope_new(current_scope);
+                                Scope *new_scope = scope_new(current_scope, expr->data.call.name);
                                 Scope *prev_scope = current_scope;
                                 current_scope = new_scope;
                                 for (int i = 0; i < func->data.func.param_count; i++) {
@@ -392,7 +393,6 @@ void exec_block_from(NodeList *block, int start_index) {
                 Value val;
                 if (stmt->data.assign.is_cmd) {
                     char *cmd = stmt->data.assign.cmd_str;
-                    // --- AQUÍ ESTÁ LA CORRECCIÓN: expandir el comando ---
                     char *expanded_cmd = expand_command(cmd);
                     FILE *fp = NULL;
                     char *temp_path = NULL;
@@ -432,7 +432,7 @@ void exec_block_from(NodeList *block, int start_index) {
                     if (len > 0 && out[len-1] == '\n') out[len-1] = '\0';
                     val = val_string(out);
                     free(out);
-                    free(expanded_cmd);   // liberar la copia expandida
+                    free(expanded_cmd);
                 } else {
                     if (stmt->data.assign.lhs_index) {
                         VarEntry *var = scope_find(current_scope, stmt->data.assign.name);
@@ -504,43 +504,33 @@ void exec_block_from(NodeList *block, int start_index) {
                         if (vtype == 0) vtype = TOK_STRING;
                 }
 
-                // ────────────────────────────────────────────────
-                // MODIFICACIÓN: exportar con prefijo de tipo
-                // ────────────────────────────────────────────────
+                // ─── ÁMBITO ──────────────────────────────────────
                 if (stmt->data.assign.is_global) {
                     scope_define(super_global_scope, stmt->data.assign.name, vtype, val);
                     char env_name[512];
                     snprintf(env_name, sizeof(env_name), "INFERNAL_VAR_%s", stmt->data.assign.name);
                     char *str_val = NULL;
                     switch (val.type) {
-                        case VAL_INT:
-                            asprintf(&str_val, "i:%d", val.data.ival);
-                            break;
-                        case VAL_FLOAT:
-                            asprintf(&str_val, "f:%g", val.data.fval);
-                            break;
-                        case VAL_BOOL:
-                            asprintf(&str_val, "b:%s", val.data.bval ? "true" : "false");
-                            break;
-                        case VAL_STRING:
-                            asprintf(&str_val, "s:%s", val.data.sval);
-                            break;
-                        default:
-                            str_val = strdup("s:");
+                        case VAL_INT:   asprintf(&str_val, "i:%d", val.data.ival); break;
+                        case VAL_FLOAT: asprintf(&str_val, "f:%g", val.data.fval); break;
+                        case VAL_BOOL:  asprintf(&str_val, "b:%s", val.data.bval ? "true" : "false"); break;
+                        case VAL_STRING: asprintf(&str_val, "s:%s", val.data.sval); break;
+                        default:        str_val = strdup("s:");
                     }
                     setenv(env_name, str_val, 1);
                     free(str_val);
                 } else if (stmt->data.assign.is_local) {
                     scope_define(current_scope, stmt->data.assign.name, vtype, val);
                 } else {
-                    VarEntry *var = scope_find(current_scope, stmt->data.assign.name);
+                    // Sin calificador → global del script (global_scope)
+                    VarEntry *var = scope_find(global_scope, stmt->data.assign.name);
                     if (var) {
-                        scope_assign(current_scope, stmt->data.assign.name, val, stmt->line);
+                        scope_assign(global_scope, stmt->data.assign.name, val, stmt->line);
                         if (var->vtype == 0 && vtype != 0) {
                             var->vtype = vtype;
                         }
                     } else {
-                        scope_define(current_scope, stmt->data.assign.name, vtype, val);
+                        scope_define(global_scope, stmt->data.assign.name, vtype, val);
                     }
                 }
                 break;
@@ -548,7 +538,7 @@ void exec_block_from(NodeList *block, int start_index) {
                         case NODE_IF: {
                             Value cond = eval_expr(stmt->data.if_stmt.cond);
                             bool truthy = val_is_truthy(cond);
-                            Scope *block_scope = scope_new(current_scope);
+                            Scope *block_scope = scope_new(current_scope, NULL);
                             Scope *old_scope = current_scope;
                             current_scope = block_scope;
                             if (truthy)
@@ -567,7 +557,7 @@ void exec_block_from(NodeList *block, int start_index) {
                                 iter_count++;
                                 Value cond = eval_expr(stmt->data.while_stmt.cond);
                                 if (!val_is_truthy(cond)) break;
-                                Scope *block_scope = scope_new(current_scope);
+                                Scope *block_scope = scope_new(current_scope, NULL);
                                 Scope *old_scope = current_scope;
                                 current_scope = block_scope;
                                 exec_block(&stmt->data.while_stmt.body);
@@ -581,7 +571,7 @@ void exec_block_from(NodeList *block, int start_index) {
                         }
                         case NODE_FOR: {
                             Value init_val = eval_expr(stmt->data.for_stmt.init);
-                            Scope *for_scope = scope_new(current_scope);
+                            Scope *for_scope = scope_new(current_scope, NULL);
                             Scope *old_scope = current_scope;
                             current_scope = for_scope;
                             scope_define(for_scope, stmt->data.for_stmt.var, stmt->data.for_stmt.vtype, init_val);
@@ -606,7 +596,7 @@ void exec_block_from(NodeList *block, int start_index) {
                             Value list_val = eval_expr(stmt->data.for_in.list_expr);
                             if (list_val.type != VAL_LIST) error(stmt->line, "Se esperaba una lista en for-in");
                             for (int i = 0; i < list_val.data.list.count; i++) {
-                                Scope *iter_scope = scope_new(current_scope);
+                                Scope *iter_scope = scope_new(current_scope, NULL);
                                 Scope *old_scope = current_scope;
                                 current_scope = iter_scope;
                                 scope_define(iter_scope, stmt->data.for_in.var, 0, list_val.data.list.items[i]);
@@ -803,9 +793,7 @@ void exec_block_from(NodeList *block, int start_index) {
                                                         break;
                                                     }
                                                 }
-                                                if (found) {
-                                                    break;
-                                                }
+                                                if (found) break;
                                             }
                                             if (!found && catch_all) {
                                                 scope_define(current_scope, "_", 0, val_string(sn));
@@ -827,7 +815,7 @@ void exec_block_from(NodeList *block, int start_index) {
                             free(handled);
                             break;
                         }
-                        default: error(stmt->line, "Sentencia no implementada");
+                                                        default: error(stmt->line, "Sentencia no implementada");
         }
 
         if (control_flow != CF_NONE) break;

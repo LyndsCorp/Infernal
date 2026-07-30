@@ -1,7 +1,7 @@
 /*
  * Infernal: el lenguaje de programación. Copyright (C) 2026, GPL v3+ License, Lynds Corp., Aros Legendarios, David Baña Szymaniak.
  * Código fuente de Infernal: core/types.h
-*/
+ */
 
 #ifndef CORE_TYPES_H
 #define CORE_TYPES_H
@@ -10,7 +10,7 @@
 #include <setjmp.h>
 
 /* ─── Forward declarations ────────────────────────────────── */
-typedef struct Chunk Chunk;   // <-- AÑADIDO: declaración adelantada de Chunk
+typedef struct Chunk Chunk;
 
 /* ─── Token types ────────────────────────────────────────── */
 typedef enum {
@@ -40,6 +40,8 @@ typedef struct {
     TokenType type;
     char *lexeme;
     int line;
+    int start_col;   // columna donde comienza (0‑based, relativa a la línea)
+    int end_col;     // columna donde termina (excluyente)
 } Token;
 
 /* ─── AST nodes ──────────────────────────────────────────── */
@@ -95,10 +97,10 @@ typedef Value (*BuiltinFunc)(int argc, Value *args);
 typedef struct FuncObject {
     enum { FUNC_USER, FUNC_BUILTIN } kind;
     union {
-        ASTNode *def;           // definición AST (para funciones de usuario)
-        BuiltinFunc builtin;    // puntero a función C (built-in)
+        ASTNode *def;
+        BuiltinFunc builtin;
     };
-    Chunk *code;                // <-- CORREGIDO: ahora usa 'Chunk *' (gracias a la forward declaration)
+    Chunk *code;
 } FuncObject;
 
 /* ─── AST node structure ──────────────────────────────────── */

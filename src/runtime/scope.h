@@ -1,5 +1,5 @@
 /*
- * Infernal: el lenguaje de programación. Copyright (C) 2026, GPL v3+ License, Lynds Corp., Aros Legendarios, David Baña Szymaniak.
+ * Infernal: el lenguaje de programación. Copyright (C) 2026, GPL v3+ License.
  * Código fuente de Infernal: runtime/scope.h
 */
 
@@ -25,10 +25,12 @@ typedef struct Scope {
     VarEntry *vars;
     PortalEntry *portals;
     struct Scope *parent;
+    char *function_name;  // nombre de la función si es un ámbito de función, o NULL
 } Scope;
 
-Scope *scope_new(Scope *parent);
+Scope *scope_new(Scope *parent, const char *function_name);
 VarEntry *scope_find(Scope *scope, const char *name);
+VarEntry *scope_find_current(Scope *scope, const char *name); // solo en el ámbito actual
 VarEntry *scope_find_script(Scope *scope, const char *name);
 void scope_define(Scope *scope, const char *name, int vtype, Value val);
 void scope_assign(Scope *scope, const char *name, Value val, int line);
@@ -37,6 +39,6 @@ PortalEntry *portal_find(Scope *scope, const char *name);
 PortalEntry *portal_find_in_scope(Scope *scope, const char *name);
 void portal_define(Scope *scope, const char *name, int line);
 
-void scope_free(Scope *s);   // libera recursivamente todas las variables y portales
+void scope_free(Scope *s);
 
 #endif

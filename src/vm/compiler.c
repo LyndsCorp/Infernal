@@ -1,7 +1,7 @@
 /*
- * Infernal: el lenguaje de programación. Copyright (C) 2026, GPL v3+ License, Lynds Corp., Aros Legendarios, David Baña Szymaniak.
+ * Infernal: el lenguaje de programación. Copyright (C) 2026, GPL v3+ License.
  * Código fuente de Infernal: vm/compiler.c
-*/
+ */
 
 #include <stdlib.h>
 #include <string.h>
@@ -18,10 +18,10 @@
 typedef struct {
     Chunk *chunk;
     char *local_names[MAX_LOCALS];
-    int local_types[MAX_LOCALS];   // guarda el tipo fijo (TOK_LIST, etc.) 0 = ninguno
+    int local_types[MAX_LOCALS];
     int local_count;
     bool in_function;
-    bool top_level;   // si estamos compilando el nivel raíz del script
+    bool top_level;
 } Compiler;
 
 static int add_constant(Compiler *c, Value v) {
@@ -37,7 +37,7 @@ static int add_constant(Compiler *c, Value v) {
 static int add_local(Compiler *c, const char *name) {
     if (c->local_count >= MAX_LOCALS) error(0, "Demasiadas variables locales");
     c->local_names[c->local_count] = strdup(name);
-    c->local_types[c->local_count] = 0;   // sin tipo fijo por defecto
+    c->local_types[c->local_count] = 0;
     return c->local_count++;
 }
 
@@ -68,11 +68,9 @@ static void patch_jump(Chunk *ch, int offset, int target) {
     ch->code[offset].operand = target - offset;
 }
 
-/* ─── Declaraciones adelantadas ───────────────────────────────── */
 static void compile_expr(Compiler *c, ASTNode *expr);
 static void compile_block(Compiler *c, NodeList *block);
 
-/* ─── Compilación de expresiones ────────────────────────────── */
 static void compile_expr(Compiler *c, ASTNode *expr) {
     switch (expr->kind) {
         case NODE_LITERAL:
@@ -85,7 +83,7 @@ static void compile_expr(Compiler *c, ASTNode *expr) {
             break;
                 case NODE_VAR: {
                     const char *name = expr->data.var.name;
-                    // 1) Buscar en globales de la VM
+                    // 1) Buscar en globales de la VM (incluye superglobal y script)
                     int gidx = vm_find_global_index(name);
                     if (gidx >= 0) {
                         emit(c->chunk, OP_LOAD_GLOBAL, gidx);
@@ -97,10 +95,10 @@ static void compile_expr(Compiler *c, ASTNode *expr) {
                         emit(c->chunk, OP_LOAD_VAR, slot);
                         break;
                     }
-                    // 3) Si no está en ningún lado, interpretar en tiempo de ejecución
+                    // 3) Si no está en ningún lado, interpretar (lanzará error si no existe)
                     int const_idx = add_constant(c, val_ptr(expr));
                     emit(c->chunk, OP_INTERPRET_NODE, const_idx);
-                    c->chunk->code[c->chunk->code_count - 1].operand2 = 1;
+                    c->chunk->code[c->chunk->code_count - 1].operand2 = 1; // modo expresión
                     break;
                 }
                 case NODE_BINOP: {
@@ -180,7 +178,6 @@ static void compile_expr(Compiler *c, ASTNode *expr) {
     }
 }
 
-/* ─── Compilación de sentencias ────────────────────────────── */
 static void compile_stmt(Compiler *c, ASTNode *stmt) {
     switch (stmt->kind) {
         case NODE_EXPR_STMT:
@@ -192,14 +189,11 @@ static void compile_stmt(Compiler *c, ASTNode *stmt) {
             int vtype = stmt->data.assign.vtype;
 
             if (stmt->data.assign.is_global) {
-                // Variable global compartida (superglobal)
+                // Variable superglobal (compartida entre scripts)
                 int gidx = vm_find_global_index(name);
-                if (gidx < 0) {
-                    gidx = vm_register_global(name, GLOBAL_SUPER);
-                }
+                if (gidx < 0) gidx = vm_register_global(name, GLOBAL_SUPER);
                 if (stmt->data.assign.is_cmd) {
-                    // Asignación de comando a global: usamos interpretación para simplificar
-                    // (esto es raro, pero puede ocurrir)
+                    // Asignación de comando: interpretamos todo el nodo
                     int const_node = add_constant(c, val_ptr(stmt));
                     emit(c->chunk, OP_INTERPRET_NODE, const_node);
                     c->chunk->code[c->chunk->code_count - 1].operand2 = 0;
@@ -208,23 +202,8 @@ static void compile_stmt(Compiler *c, ASTNode *stmt) {
                     emit(c->chunk, OP_STORE_GLOBAL, gidx);
                     c->chunk->code[c->chunk->code_count - 1].operand2 = GLOBAL_SUPER;
                 }
-            } else if (c->top_level && !stmt->data.assign.is_local) {
-                // Variable global del script (sin 'global' en nivel superior)
-                int gidx = vm_find_global_index(name);
-                if (gidx < 0) {
-                    gidx = vm_register_global(name, GLOBAL_SCRIPT);
-                }
-                if (stmt->data.assign.is_cmd) {
-                    int const_node = add_constant(c, val_ptr(stmt));
-                    emit(c->chunk, OP_INTERPRET_NODE, const_node);
-                    c->chunk->code[c->chunk->code_count - 1].operand2 = 0;
-                } else {
-                    compile_expr(c, stmt->data.assign.value);
-                    emit(c->chunk, OP_STORE_GLOBAL, gidx);
-                    c->chunk->code[c->chunk->code_count - 1].operand2 = GLOBAL_SCRIPT;
-                }
-            } else {
-                // Variable local (dentro de función o declarada con 'local')
+            } else if (stmt->data.assign.is_local) {
+                // Variable local
                 int slot = resolve_local(c, name);
                 if (slot < 0) slot = add_local(c, name);
                 if (vtype != 0) c->local_types[slot] = vtype;
@@ -235,6 +214,20 @@ static void compile_stmt(Compiler *c, ASTNode *stmt) {
                 } else {
                     compile_expr(c, stmt->data.assign.value);
                     emit(c->chunk, OP_STORE_VAR, slot);
+                }
+            } else {
+                // Sin calificador → global del script (GLOBAL_SCRIPT)
+                int gidx = vm_find_global_index(name);
+                if (gidx < 0) gidx = vm_register_global(name, GLOBAL_SCRIPT);
+                if (stmt->data.assign.is_cmd) {
+                    // Para comandos, usamos interpretación y luego sincronizamos
+                    int const_node = add_constant(c, val_ptr(stmt));
+                    emit(c->chunk, OP_INTERPRET_NODE, const_node);
+                    c->chunk->code[c->chunk->code_count - 1].operand2 = 0;
+                } else {
+                    compile_expr(c, stmt->data.assign.value);
+                    emit(c->chunk, OP_STORE_GLOBAL, gidx);
+                    c->chunk->code[c->chunk->code_count - 1].operand2 = GLOBAL_SCRIPT;
                 }
             }
             break;
@@ -296,7 +289,6 @@ static void compile_block(Compiler *c, NodeList *block) {
     }
 }
 
-/* ─── Compilación del programa principal ────────────────────── */
 Chunk *compile_program(NodeList *program) {
     Compiler c;
     c.chunk = calloc(1, sizeof(Chunk));
@@ -319,7 +311,6 @@ Chunk *compile_program(NodeList *program) {
     return c.chunk;
 }
 
-/* ─── Compilación de funciones ────────────────────────────────── */
 Chunk *compile_function(ASTNode *func_node) {
     if (func_node->kind != NODE_FUNC_DEF) return NULL;
     Compiler c;
@@ -328,7 +319,6 @@ Chunk *compile_function(ASTNode *func_node) {
     c.in_function = true;
     c.top_level = false;
 
-    // Parámetros como locales
     for (int i = 0; i < func_node->data.func.param_count; i++) {
         int slot = add_local(&c, func_node->data.func.params[i]);
         if (func_node->data.func.ptypes && func_node->data.func.ptypes[i] != 0) {

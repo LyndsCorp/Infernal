@@ -1,5 +1,5 @@
 /*
- * Infernal: el lenguaje de programación. Copyright (C) 2026, GPL v3+ License, Lynds Corp., Aros Legendarios, David Baña Szymaniak.
+ * Infernal: el lenguaje de programación. Copyright (C) 2026, GPL v3+ License.
  * Código fuente de Infernal: runtime/scope.c
 */
 
@@ -10,11 +10,12 @@
 #include "runtime/error.h"
 #include "core/memory.h"
 
-Scope *scope_new(Scope *parent) {
+Scope *scope_new(Scope *parent, const char *function_name) {
     Scope *s = infernal_malloc(sizeof(Scope));
     s->vars = NULL;
     s->portals = NULL;
     s->parent = parent;
+    s->function_name = function_name ? infernal_strdup(function_name) : NULL;
     return s;
 }
 
@@ -24,6 +25,14 @@ VarEntry *scope_find(Scope *scope, const char *name) {
             if (strcmp(e->name, name) == 0) return e;
         }
         scope = scope->parent;
+    }
+    return NULL;
+}
+
+VarEntry *scope_find_current(Scope *scope, const char *name) {
+    if (!scope) return NULL;
+    for (VarEntry *e = scope->vars; e; e = e->next) {
+        if (strcmp(e->name, name) == 0) return e;
     }
     return NULL;
 }
@@ -110,5 +119,6 @@ void scope_free(Scope *s) {
         free(p);
         p = next;
     }
+    free(s->function_name);
     free(s);
 }

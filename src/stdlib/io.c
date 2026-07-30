@@ -1,7 +1,7 @@
 /*
- * Infernal: el lenguaje de programación. Copyright (C) 2026, GPL v3+ License, Lynds Corp., Aros Legendarios, David Baña Szymaniak.
+ * Infernal: el lenguaje de programación. Copyright (C) 2026, GPL v3+ License.
  * Código fuente de Infernal: stdlib/io.c
-*/
+ */
 
 #include <stdio.h>
 #include <string.h>
@@ -12,45 +12,73 @@
 #include "runtime/error.h"
 #include "vm/vm.h"
 
+/* ─── Función auxiliar para imprimir un valor ──────────────── */
+static void print_value(Value v) {
+    switch (v.type) {
+        case VAL_INT:    printf("%d", v.data.ival); break;
+        case VAL_FLOAT:  printf("%g", v.data.fval); break;
+        case VAL_BOOL:   printf("%s", v.data.bval ? "true" : "false"); break;
+        case VAL_STRING: printf("\"%s\"", v.data.sval); break;
+        case VAL_LIST: {
+            printf("[");
+            for (int j = 0; j < v.data.list.count; j++) {
+                if (j > 0) printf(", ");
+                print_value(v.data.list.items[j]);
+            }
+            printf("]");
+            break;
+        }
+        default: printf("null");
+    }
+}
+
+/* ─── printAllVars mejorado ────────────────────────────────── */
 static Value builtin_printAllVars(int argc, Value *args) {
     (void)argc; (void)args;
 
     printf("Variables accesibles:\n");
 
+    // 1. Ámbito superglobal (compartido entre scripts)
+    if (super_global_scope && super_global_scope->vars) {
+        printf("  Ámbito superglobal (compartido entre scripts):\n");
+        for (VarEntry *e = super_global_scope->vars; e; e = e->next) {
+            printf("    %s: ", e->name);
+            print_value(e->value);
+            if (e->vtype) {
+                const char *tname = (e->vtype == TOK_INT) ? "int" :
+                (e->vtype == TOK_FLOAT) ? "float" :
+                (e->vtype == TOK_BOOL) ? "bool" :
+                (e->vtype == TOK_STRING) ? "string" :
+                (e->vtype == TOK_LIST) ? "list" : "?";
+                printf(" (%s)", tname);
+            }
+            printf("\n");
+        }
+    }
+
+    // 2. Ámbito del script (global_scope) y ámbitos locales
     Scope *s = current_scope;
     int total_vars = 0;
 
     while (s) {
-        // Solo mostrar el ámbito si tiene variables
+        // No mostrar el superglobal de nuevo si ya se mostró
+        if (s == super_global_scope) {
+            s = s->parent;
+            continue;
+        }
         if (s->vars) {
-            printf("  Scope %p:\n", (void*)s);
+            // Determinar el nombre del ámbito
+            if (s == global_scope) {
+                printf("  Ámbito del script:\n");
+            } else if (s->function_name) {
+                printf("  Ámbito local de función '%s':\n", s->function_name);
+            } else {
+                printf("  Scope %p:\n", (void*)s);
+            }
             for (VarEntry *e = s->vars; e; e = e->next) {
                 total_vars++;
                 printf("    %s: ", e->name);
-                // Imprimir valor (igual que antes)...
-                switch (e->value.type) {
-                    case VAL_INT:    printf("%d", e->value.data.ival); break;
-                    case VAL_FLOAT:  printf("%g", e->value.data.fval); break;
-                    case VAL_BOOL:   printf("%s", e->value.data.bval ? "true" : "false"); break;
-                    case VAL_STRING: printf("\"%s\"", e->value.data.sval); break;
-                    case VAL_LIST: {
-                        printf("[");
-                        for (int j = 0; j < e->value.data.list.count; j++) {
-                            if (j > 0) printf(", ");
-                            Value *item = &e->value.data.list.items[j];
-                            switch (item->type) {
-                                case VAL_INT:    printf("%d", item->data.ival); break;
-                                case VAL_FLOAT:  printf("%g", item->data.fval); break;
-                                case VAL_BOOL:   printf("%s", item->data.bval ? "true" : "false"); break;
-                                case VAL_STRING: printf("\"%s\"", item->data.sval); break;
-                                default: printf("?");
-                            }
-                        }
-                        printf("]");
-                        break;
-                    }
-                                default: printf("[?]");
-                }
+                print_value(e->value);
                 if (e->vtype) {
                     const char *tname = (e->vtype == TOK_INT) ? "int" :
                     (e->vtype == TOK_FLOAT) ? "float" :
@@ -65,7 +93,7 @@ static Value builtin_printAllVars(int argc, Value *args) {
         s = s->parent;
     }
 
-    if (total_vars == 0) {
+    if (total_vars == 0 && (!super_global_scope || !super_global_scope->vars)) {
         printf("  (no hay variables definidas)\n");
     }
 
