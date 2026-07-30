@@ -1,2 +1,18 @@
-Código fuente de Infernal, configurado de forma base para modificarlo facilmente.
-Esta es la versión 1.8 (stable).
+Infernal 1.10 (Stable)
+──────────────────────────────────────────────
+
+Versión:           1.10
+Edición:           Código fuente de Infernal
+Arquitectura:      La que compiles
+Sistema operativo: POSIX (Linux, macOS)
+
+Distribuido por:   David Baña Szymaniak
+Proyecto:          Aros Legendarios
+Licencia:          GPL v3+
+
+
+Código fuente:     https://github.com/LyndsCorp/Infernal/tree/casata
+Repositorio:       https://github.com/LyndsCorp/Infernal
+Documentación:     https://github.com/LyndsCorp/Infernal-Documentation
+
+Copyright (C) Lynds Corp.

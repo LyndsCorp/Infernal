@@ -91,7 +91,7 @@ int main(int argc, char **argv) {
 
     current_source_file = argv[1];
 
-    super_global_scope = scope_new(NULL);
+    super_global_scope = scope_new(NULL, NULL);
     extern char **environ;
     for (char **env = environ; *env; env++) {
         if (strncmp(*env, "INFERNAL_VAR_", 13) == 0) {
@@ -118,7 +118,7 @@ int main(int argc, char **argv) {
         }
     }
 
-    global_scope = scope_new(super_global_scope);
+    global_scope = scope_new(super_global_scope, NULL);
     current_scope = global_scope;
 
     register_all_builtins();

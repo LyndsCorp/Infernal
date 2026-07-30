@@ -1,3 +1,8 @@
+/*
+ * Infernal: el lenguaje de programación. Copyright (C) 2026, GPL v3+ License, Lynds Corp., Aros Legendarios, David Baña Szymaniak.
+ * Código fuente de Infernal: lexer/lexer.c
+*/
+
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
@@ -21,12 +26,12 @@ void ts_add(Token t) {
 
 Token ts_peek() {
     if (ts.pos < ts.count) return ts.tokens[ts.pos];
-    return (Token){TOK_EOF, "", 0};
+    return (Token){TOK_EOF, "", 0, 0, 0};
 }
 
 Token ts_advance() {
     if (ts.pos < ts.count) return ts.tokens[ts.pos++];
-    return (Token){TOK_EOF, "", 0};
+    return (Token){TOK_EOF, "", 0, 0, 0};
 }
 
 bool ts_match(TokenType t) {
@@ -112,28 +117,68 @@ void tokenize_file(FILE *fp) {
             if (*p == '#') break;
             if (isspace(*p)) { p++; continue; }
 
-            if (*p == '&' && *(p+1) == '&') { ts_add((Token){TOK_AND, "&&", lineno}); p+=2; continue; }
-            if (*p == '|' && *(p+1) == '|') { ts_add((Token){TOK_OR, "||", lineno}); p+=2; continue; }
-            if (*p == '=' && *(p+1) == '=') { ts_add((Token){TOK_EEQ, "==", lineno}); p+=2; continue; }
-            if (*p == '!' && *(p+1) == '=') { ts_add((Token){TOK_NEQ, "!=", lineno}); p+=2; continue; }
-            if (*p == '<' && *(p+1) == '=') { ts_add((Token){TOK_LE, "<=", lineno}); p+=2; continue; }
-            if (*p == '>' && *(p+1) == '=') { ts_add((Token){TOK_GE, ">=", lineno}); p+=2; continue; }
-            if (*p == '>' && *(p+1) == '>') { ts_add((Token){TOK_GGT, ">>", lineno}); p+=2; continue; }
-            if (*p == '|') { ts_add((Token){TOK_PIPE, "|", lineno}); p++; continue; }
-            if (*p == '>') { ts_add((Token){TOK_GT_OP, ">", lineno}); p++; continue; }
-            if (*p == '<') { ts_add((Token){TOK_LT_OP, "<", lineno}); p++; continue; }
-            if (*p == '(') { ts_add((Token){TOK_LPAREN, "(", lineno}); p++; continue; }
-            if (*p == ')') { ts_add((Token){TOK_RPAREN, ")", lineno}); p++; continue; }
-            if (*p == '[') { ts_add((Token){TOK_LBRACKET, "[", lineno}); p++; continue; }
-            if (*p == ']') { ts_add((Token){TOK_RBRACKET, "]", lineno}); p++; continue; }
-            if (*p == '{') { ts_add((Token){TOK_LBRACE, "{", lineno}); p++; continue; }
-            if (*p == '}') { ts_add((Token){TOK_RBRACE, "}", lineno}); p++; continue; }
-            if (*p == ';') { ts_add((Token){TOK_SEMI, ";", lineno}); p++; continue; }
-            if (*p == ',') { ts_add((Token){TOK_COMMA, ",", lineno}); p++; continue; }
-            if (*p == '+') { ts_add((Token){TOK_PLUS, "+", lineno}); p++; continue; }
-            if (*p == '-') { ts_add((Token){TOK_MINUS, "-", lineno}); p++; continue; }
-            if (*p == '*') { ts_add((Token){TOK_STAR, "*", lineno}); p++; continue; }
-            if (*p == '%') { ts_add((Token){TOK_PERCENT, "%", lineno}); p++; continue; }
+            int start_col = (int)(p - line);
+
+            // Operadores de dos caracteres
+            if (*p == '&' && *(p+1) == '&') {
+                Token t = {TOK_AND, "&&", lineno, start_col, start_col + 2};
+                ts_add(t);
+                p += 2;
+                continue;
+            }
+            if (*p == '|' && *(p+1) == '|') {
+                Token t = {TOK_OR, "||", lineno, start_col, start_col + 2};
+                ts_add(t);
+                p += 2;
+                continue;
+            }
+            if (*p == '=' && *(p+1) == '=') {
+                Token t = {TOK_EEQ, "==", lineno, start_col, start_col + 2};
+                ts_add(t);
+                p += 2;
+                continue;
+            }
+            if (*p == '!' && *(p+1) == '=') {
+                Token t = {TOK_NEQ, "!=", lineno, start_col, start_col + 2};
+                ts_add(t);
+                p += 2;
+                continue;
+            }
+            if (*p == '<' && *(p+1) == '=') {
+                Token t = {TOK_LE, "<=", lineno, start_col, start_col + 2};
+                ts_add(t);
+                p += 2;
+                continue;
+            }
+            if (*p == '>' && *(p+1) == '=') {
+                Token t = {TOK_GE, ">=", lineno, start_col, start_col + 2};
+                ts_add(t);
+                p += 2;
+                continue;
+            }
+            if (*p == '>' && *(p+1) == '>') {
+                Token t = {TOK_GGT, ">>", lineno, start_col, start_col + 2};
+                ts_add(t);
+                p += 2;
+                continue;
+            }
+
+            // Operadores de un carácter
+            if (*p == '|') { Token t = {TOK_PIPE, "|", lineno, start_col, start_col + 1}; ts_add(t); p++; continue; }
+            if (*p == '>') { Token t = {TOK_GT_OP, ">", lineno, start_col, start_col + 1}; ts_add(t); p++; continue; }
+            if (*p == '<') { Token t = {TOK_LT_OP, "<", lineno, start_col, start_col + 1}; ts_add(t); p++; continue; }
+            if (*p == '(') { Token t = {TOK_LPAREN, "(", lineno, start_col, start_col + 1}; ts_add(t); p++; continue; }
+            if (*p == ')') { Token t = {TOK_RPAREN, ")", lineno, start_col, start_col + 1}; ts_add(t); p++; continue; }
+            if (*p == '[') { Token t = {TOK_LBRACKET, "[", lineno, start_col, start_col + 1}; ts_add(t); p++; continue; }
+            if (*p == ']') { Token t = {TOK_RBRACKET, "]", lineno, start_col, start_col + 1}; ts_add(t); p++; continue; }
+            if (*p == '{') { Token t = {TOK_LBRACE, "{", lineno, start_col, start_col + 1}; ts_add(t); p++; continue; }
+            if (*p == '}') { Token t = {TOK_RBRACE, "}", lineno, start_col, start_col + 1}; ts_add(t); p++; continue; }
+            if (*p == ';') { Token t = {TOK_SEMI, ";", lineno, start_col, start_col + 1}; ts_add(t); p++; continue; }
+            if (*p == ',') { Token t = {TOK_COMMA, ",", lineno, start_col, start_col + 1}; ts_add(t); p++; continue; }
+            if (*p == '+') { Token t = {TOK_PLUS, "+", lineno, start_col, start_col + 1}; ts_add(t); p++; continue; }
+            if (*p == '-') { Token t = {TOK_MINUS, "-", lineno, start_col, start_col + 1}; ts_add(t); p++; continue; }
+            if (*p == '*') { Token t = {TOK_STAR, "*", lineno, start_col, start_col + 1}; ts_add(t); p++; continue; }
+            if (*p == '%') { Token t = {TOK_PERCENT, "%", lineno, start_col, start_col + 1}; ts_add(t); p++; continue; }
 
             if (*p == '/') {
                 char *next = p + 1;
@@ -143,25 +188,34 @@ void tokenize_file(FILE *fp) {
                     char buf[256]; int len = p - start;
                     memcpy(buf, start, len); buf[len] = '\0';
                     TokenType k = lookup_keyword(buf);
-                    ts_add((Token){k != TOK_IDENT ? k : TOK_IDENT, strdup(buf), lineno});
+                    Token t;
+                    t.type = (k != TOK_IDENT) ? k : TOK_IDENT;
+                    t.lexeme = strdup(buf);
+                    t.line = lineno;
+                    t.start_col = start_col;
+                    t.end_col = (int)(p - line);
+                    ts_add(t);
                     continue;
                 } else {
-                    ts_add((Token){TOK_SLASH, "/", lineno});
+                    Token t = {TOK_SLASH, "/", lineno, start_col, start_col + 1};
+                    ts_add(t);
                     p++;
                     continue;
                 }
             }
 
-            if (*p == '=') { ts_add((Token){TOK_EQ, "=", lineno}); p++; continue; }
+            if (*p == '=') { Token t = {TOK_EQ, "=", lineno, start_col, start_col + 1}; ts_add(t); p++; continue; }
 
             if (*p == '!') {
-                ts_add((Token){TOK_BANG, "!", lineno});
+                Token t = {TOK_BANG, "!", lineno, start_col, start_col + 1};
+                ts_add(t);
                 p++;
                 continue;
             }
 
             if (*p == '@') {
-                ts_add((Token){TOK_AT, "@", lineno});
+                Token t = {TOK_AT, "@", lineno, start_col, start_col + 1};
+                ts_add(t);
                 p++;
                 continue;
             }
@@ -179,7 +233,8 @@ void tokenize_file(FILE *fp) {
                 } else {
                     error(lineno, "Cadena de texto sin cerrar: %c%s", quote, buf);
                 }
-                ts_add((Token){TOK_STRING_LITERAL, strdup(buf), lineno});
+                Token t = {TOK_STRING_LITERAL, strdup(buf), lineno, start_col, (int)(p - line)};
+                ts_add(t);
                 continue;
             }
 
@@ -192,7 +247,8 @@ void tokenize_file(FILE *fp) {
                 }
                 char buf[128]; int len = p - start;
                 memcpy(buf, start, len); buf[len] = '\0';
-                ts_add((Token){TOK_NUMBER, strdup(buf), lineno});
+                Token t = {TOK_NUMBER, strdup(buf), lineno, start_col, (int)(p - line)};
+                ts_add(t);
                 continue;
             }
 
@@ -204,7 +260,8 @@ void tokenize_file(FILE *fp) {
                 char buf[256];
                 memcpy(buf, start, len);
                 buf[len] = '\0';
-                ts_add((Token){TOK_IDENT, strdup(buf), lineno});
+                Token t = {TOK_IDENT, strdup(buf), lineno, start_col, (int)(p - line)};
+                ts_add(t);
                 continue;
             }
 
@@ -214,12 +271,19 @@ void tokenize_file(FILE *fp) {
                 char buf[256]; int len = p - start;
                 memcpy(buf, start, len); buf[len] = '\0';
                 TokenType k = lookup_keyword(buf);
-                ts_add((Token){k != TOK_IDENT ? k : TOK_IDENT, strdup(buf), lineno});
+                Token t;
+                t.type = (k != TOK_IDENT) ? k : TOK_IDENT;
+                t.lexeme = strdup(buf);
+                t.line = lineno;
+                t.start_col = start_col;
+                t.end_col = (int)(p - line);
+                ts_add(t);
                 continue;
             }
             p++;
         }
-        ts_add((Token){TOK_NEWLINE, "\n", lineno});
+        Token t = {TOK_NEWLINE, "\n", lineno, 0, 0};
+        ts_add(t);
     }
     free(line);
 }
