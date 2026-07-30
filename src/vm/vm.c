@@ -1,5 +1,5 @@
 /*
- * Infernal: el lenguaje de programación. Copyright (C) 2026, GPL v3+ License, Lynds Corp., Aros Legendarios, David Baña Szymaniak.
+ * Infernal: el lenguaje de programación. Copyright (C) 2026, GPL v3+ License.
  * Código fuente de Infernal: vm/vm.c
  */
 
@@ -37,10 +37,7 @@ typedef struct {
 
 GlobalEntry vm_global_entries[MAX_GLOBALS];
 int vm_global_count = 0;
-
-// Para compatibilidad con código antiguo (opcional)
 char *vm_global_names[MAX_GLOBALS];
-
 Value vm_globals[MAX_GLOBALS];
 
 VmBuiltin vm_builtins[256];
@@ -49,7 +46,6 @@ int vm_builtin_count = 0;
 static struct { const char *name; VmBuiltin func; } builtin_names[256];
 static int builtin_names_count = 0;
 
-/* ─── Funciones de usuario compiladas ───────────────────────── */
 typedef struct {
     char *name;
     Chunk *code;
@@ -63,12 +59,10 @@ int vm_register_global(const char *name, int scope_type) {
     vm_global_entries[vm_global_count].name = strdup(name);
     vm_global_entries[vm_global_count].scope_type = scope_type;
     vm_globals[vm_global_count] = val_make_null();
-    // También mantener vm_global_names por si acaso
     vm_global_names[vm_global_count] = vm_global_entries[vm_global_count].name;
     return vm_global_count++;
 }
 
-/* ─── Buscar índice de global por nombre ────────────────────── */
 int vm_find_global_index(const char *name) {
     for (int i = 0; i < vm_global_count; i++) {
         if (vm_global_entries[i].name && strcmp(vm_global_entries[i].name, name) == 0)
@@ -107,7 +101,6 @@ Chunk *vm_get_user_function(int index) {
     return user_functions[index].code;
 }
 
-/* ─── Llamada a builtin ───────────────────────────────────────── */
 static int call_builtin(int index, int arg_count) {
     if (index >= vm_builtin_count) error(0, "Índice de builtin inválido");
     Value *args = sp - arg_count;
@@ -117,17 +110,10 @@ static int call_builtin(int index, int arg_count) {
     return 1;
 }
 
-/* ─── Expansión de comandos usando locales y globales ─────────── */
 static char *expand_command_vm(Chunk *chunk, Value *locals, const char *cmd) {
-    // Primero expandimos con los locales de la VM
-    char *expanded = expand_command_with_locals(cmd, chunk->local_names, locals, chunk->local_count);
-    // Si aún hay variables sin expandir, podríamos hacer una segunda pasada con globales,
-    // pero expand_command_with_locals ya busca en los ámbitos (scope_find),
-    // que están sincronizados con las globales de la VM, así que no hace falta.
-    return expanded;
+    return expand_command_with_locals(cmd, chunk->local_names, locals, chunk->local_count);
 }
 
-/* ─── Computed goto ────────────────────────────────────────────── */
 #if defined(__GNUC__) || defined(__clang__)
 #define USE_COMPUTED_GOTO 1
 #endif
@@ -160,7 +146,7 @@ Value vm_run(Chunk *chunk) {
         &&OP_CMD_ASSIGN, &&OP_INTERPRET_NODE
     };
     #define DISPATCH() goto *dispatch_table[ip->op]
-    goto *dispatch_table[ip->op];   // salto inicial
+    goto *dispatch_table[ip->op];
     #else
     for (;;) {
         switch (ip->op) {
@@ -179,8 +165,6 @@ Value vm_run(Chunk *chunk) {
                 Value val = pop();
                 int slot = ip->operand;
                 locals[slot] = val;
-
-                // Sincronizar con el ámbito de Infernal
                 if (slot < chunk->local_count && chunk->local_names[slot]) {
                     const char *name = chunk->local_names[slot];
                     VarEntry *e = scope_find(current_scope, name);
@@ -191,8 +175,7 @@ Value vm_run(Chunk *chunk) {
                         scope_define(current_scope, name, vtype, val);
                     }
                 }
-                ip++;
-                DISPATCH();
+                ip++; DISPATCH();
             }
 
             OP_LOAD_GLOBAL:
@@ -203,7 +186,7 @@ Value vm_run(Chunk *chunk) {
             OP_STORE_GLOBAL: {
                 Value val = pop();
                 int idx = ip->operand;
-                int scope_type = ip->operand2;  // GLOBAL_SCRIPT o GLOBAL_SUPER
+                int scope_type = ip->operand2;
                 if (idx < vm_global_count) {
                     vm_globals[idx] = val;
                     const char *gname = vm_global_entries[idx].name;
@@ -220,8 +203,7 @@ Value vm_run(Chunk *chunk) {
                 } else {
                     error(0, "Global inválido");
                 }
-                ip++;
-                DISPATCH();
+                ip++; DISPATCH();
             }
 
             OP_ADD: {
@@ -510,7 +492,6 @@ Value vm_run(Chunk *chunk) {
 
                 locals[slot] = final_val;
 
-                // Sincronizar con el ámbito de Infernal
                 if (slot < chunk->local_count && chunk->local_names[slot]) {
                     const char *name = chunk->local_names[slot];
                     VarEntry *e = scope_find(current_scope, name);
@@ -552,15 +533,36 @@ Value vm_run(Chunk *chunk) {
 
                 // Sincronizar variables globales con vm_globals y global_scope
                 for (VarEntry *var = temp_scope->vars; var; var = var->next) {
-                    // 1) Copiar a global_scope
                     VarEntry *existing = scope_find(global_scope, var->name);
                     if (existing) {
                         scope_assign(global_scope, var->name, var->value, 0);
                     } else {
                         scope_define(global_scope, var->name, var->vtype, var->value);
                     }
-                    // 2) Si está registrada en la VM, actualizar vm_globals
                     int gidx = vm_find_global_index(var->name);
+                    if (gidx >= 0) {
+                        vm_globals[gidx] = var->value;
+                    }
+                }
+
+                // ─── NUEVO: Sincronizar global_scope con vm_globals, registrando automáticamente ───
+                for (VarEntry *var = global_scope->vars; var; var = var->next) {
+                    int gidx = vm_find_global_index(var->name);
+                    if (gidx < 0) {
+                        // Registramos automáticamente como GLOBAL_SCRIPT
+                        gidx = vm_register_global(var->name, GLOBAL_SCRIPT);
+                    }
+                    if (gidx >= 0) {
+                        vm_globals[gidx] = var->value;
+                    }
+                }
+
+                // También sincronizar super_global_scope con vm_globals (por si acaso)
+                for (VarEntry *var = super_global_scope->vars; var; var = var->next) {
+                    int gidx = vm_find_global_index(var->name);
+                    if (gidx < 0) {
+                        gidx = vm_register_global(var->name, GLOBAL_SUPER);
+                    }
                     if (gidx >= 0) {
                         vm_globals[gidx] = var->value;
                     }
@@ -573,7 +575,6 @@ Value vm_run(Chunk *chunk) {
             }
 
             #ifdef USE_COMPUTED_GOTO
-            // no hace falta más
             #else
         }
     }

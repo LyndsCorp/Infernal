@@ -1,7 +1,7 @@
 /*
- * Infernal: el lenguaje de programación. Copyright (C) 2026, GPL v3+ License, Lynds Corp., Aros Legendarios, David Baña Szymaniak.
+ * Infernal: el lenguaje de programación. Copyright (C) 2026, GPL v3+ License.
  * Código fuente de Infernal: runtime/evaluator.c
-*/
+ */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -229,7 +229,6 @@ Value eval_expr(ASTNode *expr) {
                     return val_bool(expr->data.binop.op == TOK_EEQ ? equal : !equal);
                 }
 
-                /* Comparaciones <, >, <=, >= */
                 if (expr->data.binop.op == TOK_LT_OP || expr->data.binop.op == TOK_GT_OP ||
                     expr->data.binop.op == TOK_LE    || expr->data.binop.op == TOK_GE) {
                     double lv = (left.type == VAL_INT) ? left.data.ival :
@@ -392,7 +391,6 @@ void exec_block_from(NodeList *block, int start_index) {
                 Value val;
                 if (stmt->data.assign.is_cmd) {
                     char *cmd = stmt->data.assign.cmd_str;
-                    // --- AQUÍ ESTÁ LA CORRECCIÓN: expandir el comando ---
                     char *expanded_cmd = expand_command(cmd);
                     FILE *fp = NULL;
                     char *temp_path = NULL;
@@ -432,7 +430,7 @@ void exec_block_from(NodeList *block, int start_index) {
                     if (len > 0 && out[len-1] == '\n') out[len-1] = '\0';
                     val = val_string(out);
                     free(out);
-                    free(expanded_cmd);   // liberar la copia expandida
+                    free(expanded_cmd);
                 } else {
                     if (stmt->data.assign.lhs_index) {
                         VarEntry *var = scope_find(current_scope, stmt->data.assign.name);
@@ -504,43 +502,33 @@ void exec_block_from(NodeList *block, int start_index) {
                         if (vtype == 0) vtype = TOK_STRING;
                 }
 
-                // ────────────────────────────────────────────────
-                // MODIFICACIÓN: exportar con prefijo de tipo
-                // ────────────────────────────────────────────────
+                // ─── ÁMBITO ──────────────────────────────────────
                 if (stmt->data.assign.is_global) {
                     scope_define(super_global_scope, stmt->data.assign.name, vtype, val);
                     char env_name[512];
                     snprintf(env_name, sizeof(env_name), "INFERNAL_VAR_%s", stmt->data.assign.name);
                     char *str_val = NULL;
                     switch (val.type) {
-                        case VAL_INT:
-                            asprintf(&str_val, "i:%d", val.data.ival);
-                            break;
-                        case VAL_FLOAT:
-                            asprintf(&str_val, "f:%g", val.data.fval);
-                            break;
-                        case VAL_BOOL:
-                            asprintf(&str_val, "b:%s", val.data.bval ? "true" : "false");
-                            break;
-                        case VAL_STRING:
-                            asprintf(&str_val, "s:%s", val.data.sval);
-                            break;
-                        default:
-                            str_val = strdup("s:");
+                        case VAL_INT:   asprintf(&str_val, "i:%d", val.data.ival); break;
+                        case VAL_FLOAT: asprintf(&str_val, "f:%g", val.data.fval); break;
+                        case VAL_BOOL:  asprintf(&str_val, "b:%s", val.data.bval ? "true" : "false"); break;
+                        case VAL_STRING: asprintf(&str_val, "s:%s", val.data.sval); break;
+                        default:        str_val = strdup("s:");
                     }
                     setenv(env_name, str_val, 1);
                     free(str_val);
                 } else if (stmt->data.assign.is_local) {
                     scope_define(current_scope, stmt->data.assign.name, vtype, val);
                 } else {
-                    VarEntry *var = scope_find(current_scope, stmt->data.assign.name);
+                    // Sin calificador → global del script (global_scope)
+                    VarEntry *var = scope_find(global_scope, stmt->data.assign.name);
                     if (var) {
-                        scope_assign(current_scope, stmt->data.assign.name, val, stmt->line);
+                        scope_assign(global_scope, stmt->data.assign.name, val, stmt->line);
                         if (var->vtype == 0 && vtype != 0) {
                             var->vtype = vtype;
                         }
                     } else {
-                        scope_define(current_scope, stmt->data.assign.name, vtype, val);
+                        scope_define(global_scope, stmt->data.assign.name, vtype, val);
                     }
                 }
                 break;
@@ -803,9 +791,7 @@ void exec_block_from(NodeList *block, int start_index) {
                                                         break;
                                                     }
                                                 }
-                                                if (found) {
-                                                    break;
-                                                }
+                                                if (found) break;
                                             }
                                             if (!found && catch_all) {
                                                 scope_define(current_scope, "_", 0, val_string(sn));
@@ -827,7 +813,7 @@ void exec_block_from(NodeList *block, int start_index) {
                             free(handled);
                             break;
                         }
-                        default: error(stmt->line, "Sentencia no implementada");
+                                                        default: error(stmt->line, "Sentencia no implementada");
         }
 
         if (control_flow != CF_NONE) break;
