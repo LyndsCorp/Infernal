@@ -1,7 +1,8 @@
 /*
- * Infernal: el lenguaje de programación. Copyright (C) 2026, GPL v3+ License.
- * Código fuente de Infernal: vm/vm.c
- */
+ * Infernal: el lenguaje de programación.
+ * Copyright (C) 2026, Lynds Corp., David Baña Szymaniak, GPL v3+ License.
+ * Código fuente de Infernal: vm/bytecode.h
+*/
 
 #include "vm.h"
 #include "core/value.h"
@@ -143,7 +144,8 @@ Value vm_run(Chunk *chunk) {
         &&OP_NEW_LIST, &&OP_LIST_APPEND,
         &&OP_INDEX, &&OP_INDEX_ASSIGN,
         &&OP_EMBEDDED_CMD, &&OP_SHELL_CMD, &&OP_FLAGS,
-        &&OP_CMD_ASSIGN, &&OP_INTERPRET_NODE
+        &&OP_CMD_ASSIGN, &&OP_INTERPRET_NODE,
+        &&OP_LIST_INSERT   // <-- NUEVO
     };
     #define DISPATCH() goto *dispatch_table[ip->op]
     goto *dispatch_table[ip->op];
@@ -422,7 +424,7 @@ Value vm_run(Chunk *chunk) {
                     if (idx.type != VAL_INT) error(0, "Índice de string debe ser entero");
                     int i = idx.data.ival;
                     size_t len = strlen(base.data.sval);
-                    if (i < 1 || (size_t)i > len) error(0, "Índice fuera de rango");
+                    if (i < 1 || (size_t)i > len) error(0, "Índice de string fuera de rango");
                     char c[2] = {base.data.sval[i-1], 0};
                     push(val_string(c));
                 } else error(0, "Indexación no soportada");
@@ -596,6 +598,32 @@ Value vm_run(Chunk *chunk) {
 
                 current_scope = old_scope;
                 scope_free(temp_scope);
+                ip++;
+                DISPATCH();
+            }
+
+            /* ─── NUEVO OPCODE PARA INSERCIÓN EN LISTA ─── */
+            OP_LIST_INSERT: {
+                Value idx = pop();
+                Value elem = pop();
+                Value list = pop();
+                if (list.type != VAL_LIST) {
+                    error(0, "Se esperaba una lista para la operación de inserción");
+                }
+                int pos = (idx.type == VAL_INT) ? idx.data.ival : 1;
+                // Ajustar fuera de rango: si pos < 1 o pos > len+1, se pone al final
+                if (pos < 1 || pos > list.data.list.count + 1) {
+                    pos = list.data.list.count + 1;
+                }
+                // Copiar la lista
+                Value new_list = val_list_copy(&list);
+                // Insertar: añadir un hueco y desplazar
+                val_list_append(&new_list, val_make_null());
+                for (int i = new_list.data.list.count - 1; i > pos - 1; i--) {
+                    new_list.data.list.items[i] = new_list.data.list.items[i - 1];
+                }
+                new_list.data.list.items[pos - 1] = elem;
+                push(new_list);
                 ip++;
                 DISPATCH();
             }

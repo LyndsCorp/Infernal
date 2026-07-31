@@ -1,5 +1,6 @@
 /*
- * Infernal: el lenguaje de programación. Copyright (C) 2026, GPL v3+ License.
+ * Infernal: el lenguaje de programación.
+ * Copyright (C) 2026, Lynds Corp., David Baña Szymaniak, GPL v3+ License.
  * Código fuente de Infernal: vm/bytecode.h
 */
 
@@ -33,7 +34,8 @@ typedef enum {
     OP_FLAGS,
     OP_CMD_ASSIGN,
     OP_INTERPRET_NODE,
-    OP_REPEAT_LINE
+    OP_REPEAT_LINE,
+    OP_LIST_INSERT   // <-- NUEVO
 } OpCode;
 
 typedef struct {

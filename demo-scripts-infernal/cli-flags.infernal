@@ -1,9 +1,0 @@
-# Uso: infernal examples/cli.infernal --nombre Ada
-flags(0,
-    --nombre | -n = string nombre {
-        print("Hola, " + nombre)
-    },
-    * {
-        warn("Argumento no reconocido: " + _)
-    }
-)
