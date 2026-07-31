@@ -1,7 +1,8 @@
 /*
- * Infernal: el lenguaje de programación. Copyright (C) 2026, GPL v3+ License.
- * Código fuente de Infernal: vm/compiler.c
- */
+ * Infernal: el lenguaje de programación.
+ * Copyright (C) 2026, Lynds Corp., David Baña Szymaniak, GPL v3+ License.
+ * Código fuente de Infernal: vm/bytecode.h
+*/
 
 #include <stdlib.h>
 #include <string.h>
@@ -83,98 +84,107 @@ static void compile_expr(Compiler *c, ASTNode *expr) {
             break;
                 case NODE_VAR: {
                     const char *name = expr->data.var.name;
-                    // 1) Buscar en globales de la VM (incluye superglobal y script)
-                    int gidx = vm_find_global_index(name);
+                    const char *clean_name = name;
+                    if (name[0] == '$') clean_name = name + 1;
+                    int gidx = vm_find_global_index(clean_name);
                     if (gidx >= 0) {
                         emit(c->chunk, OP_LOAD_GLOBAL, gidx);
                         break;
                     }
-                    // 2) Buscar en locales
-                    int slot = resolve_local(c, name);
+                    int slot = resolve_local(c, clean_name);
                     if (slot >= 0) {
                         emit(c->chunk, OP_LOAD_VAR, slot);
                         break;
                     }
-                    // 3) Si no está en ningún lado, interpretar (lanzará error si no existe)
                     int const_idx = add_constant(c, val_ptr(expr));
                     emit(c->chunk, OP_INTERPRET_NODE, const_idx);
-                    c->chunk->code[c->chunk->code_count - 1].operand2 = 1; // modo expresión
+                    c->chunk->code[c->chunk->code_count - 1].operand2 = 1;
                     break;
                 }
                 case NODE_BINOP: {
-                    if (expr->data.binop.op == TOK_AND) {
-                        compile_expr(c, expr->data.binop.left);
-                        compile_expr(c, expr->data.binop.right);
-                        emit(c->chunk, OP_AND, 0);
-                    } else if (expr->data.binop.op == TOK_OR) {
-                        compile_expr(c, expr->data.binop.left);
-                        compile_expr(c, expr->data.binop.right);
-                        emit(c->chunk, OP_OR, 0);
-                    } else {
-                        compile_expr(c, expr->data.binop.left);
-                        compile_expr(c, expr->data.binop.right);
-                        switch (expr->data.binop.op) {
-                            case TOK_PLUS:  emit(c->chunk, OP_ADD, 0); break;
-                            case TOK_MINUS: emit(c->chunk, OP_SUB, 0); break;
-                            case TOK_STAR:  emit(c->chunk, OP_MUL, 0); break;
-                            case TOK_SLASH: emit(c->chunk, OP_DIV, 0); break;
-                            case TOK_PERCENT: emit(c->chunk, OP_MOD, 0); break;
-                            case TOK_EEQ:   emit(c->chunk, OP_EQ, 0); break;
-                            case TOK_NEQ:   emit(c->chunk, OP_NEQ, 0); break;
-                            case TOK_LT_OP: emit(c->chunk, OP_LT, 0); break;
-                            case TOK_GT_OP: emit(c->chunk, OP_GT, 0); break;
-                            case TOK_LE:    emit(c->chunk, OP_LE, 0); break;
-                            case TOK_GE:    emit(c->chunk, OP_GE, 0); break;
-                            default: {
-                                int const_idx = add_constant(c, val_ptr(expr));
-                                emit(c->chunk, OP_INTERPRET_NODE, const_idx);
-                                c->chunk->code[c->chunk->code_count - 1].operand2 = 1;
+                    // Detectar inserción en lista: lista + elemento[pos]
+                    if (expr->data.binop.op == TOK_PLUS &&
+                        expr->data.binop.right != NULL &&
+                        expr->data.binop.right->kind == NODE_INDEX) {
+                        int const_idx = add_constant(c, val_ptr(expr));
+                    emit(c->chunk, OP_INTERPRET_NODE, const_idx);
+                    c->chunk->code[c->chunk->code_count - 1].operand2 = 1;
+                    break;
+                        }
+
+                        if (expr->data.binop.op == TOK_AND) {
+                            compile_expr(c, expr->data.binop.left);
+                            compile_expr(c, expr->data.binop.right);
+                            emit(c->chunk, OP_AND, 0);
+                        } else if (expr->data.binop.op == TOK_OR) {
+                            compile_expr(c, expr->data.binop.left);
+                            compile_expr(c, expr->data.binop.right);
+                            emit(c->chunk, OP_OR, 0);
+                        } else {
+                            compile_expr(c, expr->data.binop.left);
+                            compile_expr(c, expr->data.binop.right);
+                            switch (expr->data.binop.op) {
+                                case TOK_PLUS:  emit(c->chunk, OP_ADD, 0); break;
+                                case TOK_MINUS: emit(c->chunk, OP_SUB, 0); break;
+                                case TOK_STAR:  emit(c->chunk, OP_MUL, 0); break;
+                                case TOK_SLASH: emit(c->chunk, OP_DIV, 0); break;
+                                case TOK_PERCENT: emit(c->chunk, OP_MOD, 0); break;
+                                case TOK_EEQ:   emit(c->chunk, OP_EQ, 0); break;
+                                case TOK_NEQ:   emit(c->chunk, OP_NEQ, 0); break;
+                                case TOK_LT_OP: emit(c->chunk, OP_LT, 0); break;
+                                case TOK_GT_OP: emit(c->chunk, OP_GT, 0); break;
+                                case TOK_LE:    emit(c->chunk, OP_LE, 0); break;
+                                case TOK_GE:    emit(c->chunk, OP_GE, 0); break;
+                                default: {
+                                    int const_idx = add_constant(c, val_ptr(expr));
+                                    emit(c->chunk, OP_INTERPRET_NODE, const_idx);
+                                    c->chunk->code[c->chunk->code_count - 1].operand2 = 1;
+                                }
                             }
                         }
-                    }
-                    break;
+                        break;
                 }
-                            case NODE_CALL: {
-                                for (int i = 0; i < expr->data.call.argc; i++)
-                                    compile_expr(c, expr->data.call.args[i]);
-                                int builtin_idx = vm_find_builtin_index(expr->data.call.name);
-                                if (builtin_idx >= 0) {
-                                    int call_pos = c->chunk->code_count;
-                                    emit(c->chunk, OP_CALL_BUILTIN, builtin_idx);
-                                    c->chunk->code[call_pos].operand2 = expr->data.call.argc;
-                                } else {
-                                    FuncObject *fobj = func_lookup(expr->data.call.name);
-                                    if (fobj && fobj->kind == FUNC_USER && fobj->code != NULL) {
-                                        int const_idx = add_constant(c, val_ptr(expr));
-                                        emit(c->chunk, OP_INTERPRET_NODE, const_idx);
-                                        c->chunk->code[c->chunk->code_count - 1].operand2 = 1;
+                                case NODE_CALL: {
+                                    for (int i = 0; i < expr->data.call.argc; i++)
+                                        compile_expr(c, expr->data.call.args[i]);
+                                    int builtin_idx = vm_find_builtin_index(expr->data.call.name);
+                                    if (builtin_idx >= 0) {
+                                        int call_pos = c->chunk->code_count;
+                                        emit(c->chunk, OP_CALL_BUILTIN, builtin_idx);
+                                        c->chunk->code[call_pos].operand2 = expr->data.call.argc;
                                     } else {
-                                        int const_idx = add_constant(c, val_ptr(expr));
-                                        emit(c->chunk, OP_INTERPRET_NODE, const_idx);
-                                        c->chunk->code[c->chunk->code_count - 1].operand2 = 1;
+                                        FuncObject *fobj = func_lookup(expr->data.call.name);
+                                        if (fobj && fobj->kind == FUNC_USER && fobj->code != NULL) {
+                                            int const_idx = add_constant(c, val_ptr(expr));
+                                            emit(c->chunk, OP_INTERPRET_NODE, const_idx);
+                                            c->chunk->code[c->chunk->code_count - 1].operand2 = 1;
+                                        } else {
+                                            int const_idx = add_constant(c, val_ptr(expr));
+                                            emit(c->chunk, OP_INTERPRET_NODE, const_idx);
+                                            c->chunk->code[c->chunk->code_count - 1].operand2 = 1;
+                                        }
                                     }
+                                    break;
                                 }
-                                break;
-                            }
-                            case NODE_LIST:
-                                emit(c->chunk, OP_NEW_LIST, 0);
-                                for (int i = 0; i < expr->data.list_lit.count; i++) {
-                                    compile_expr(c, expr->data.list_lit.items[i]);
-                                    emit(c->chunk, OP_LIST_APPEND, 0);
+                                case NODE_LIST:
+                                    emit(c->chunk, OP_NEW_LIST, 0);
+                                    for (int i = 0; i < expr->data.list_lit.count; i++) {
+                                        compile_expr(c, expr->data.list_lit.items[i]);
+                                        emit(c->chunk, OP_LIST_APPEND, 0);
+                                    }
+                                    break;
+                                case NODE_INDEX: {
+                                    compile_expr(c, expr->data.idx.list);
+                                    compile_expr(c, expr->data.idx.index);
+                                    emit(c->chunk, OP_INDEX, 0);
+                                    break;
                                 }
-                                break;
-                            case NODE_INDEX: {
-                                compile_expr(c, expr->data.idx.list);
-                                compile_expr(c, expr->data.idx.index);
-                                emit(c->chunk, OP_INDEX, 0);
-                                break;
-                            }
-                            default: {
-                                int const_idx = add_constant(c, val_ptr(expr));
-                                emit(c->chunk, OP_INTERPRET_NODE, const_idx);
-                                c->chunk->code[c->chunk->code_count - 1].operand2 = 1;
-                                break;
-                            }
+                                default: {
+                                    int const_idx = add_constant(c, val_ptr(expr));
+                                    emit(c->chunk, OP_INTERPRET_NODE, const_idx);
+                                    c->chunk->code[c->chunk->code_count - 1].operand2 = 1;
+                                    break;
+                                }
     }
 }
 
@@ -189,11 +199,9 @@ static void compile_stmt(Compiler *c, ASTNode *stmt) {
             int vtype = stmt->data.assign.vtype;
 
             if (stmt->data.assign.is_global) {
-                // Variable superglobal (compartida entre scripts)
                 int gidx = vm_find_global_index(name);
                 if (gidx < 0) gidx = vm_register_global(name, GLOBAL_SUPER);
                 if (stmt->data.assign.is_cmd) {
-                    // Asignación de comando: interpretamos todo el nodo
                     int const_node = add_constant(c, val_ptr(stmt));
                     emit(c->chunk, OP_INTERPRET_NODE, const_node);
                     c->chunk->code[c->chunk->code_count - 1].operand2 = 0;
@@ -203,7 +211,6 @@ static void compile_stmt(Compiler *c, ASTNode *stmt) {
                     c->chunk->code[c->chunk->code_count - 1].operand2 = GLOBAL_SUPER;
                 }
             } else if (stmt->data.assign.is_local) {
-                // Variable local
                 int slot = resolve_local(c, name);
                 if (slot < 0) slot = add_local(c, name);
                 if (vtype != 0) c->local_types[slot] = vtype;
@@ -216,11 +223,9 @@ static void compile_stmt(Compiler *c, ASTNode *stmt) {
                     emit(c->chunk, OP_STORE_VAR, slot);
                 }
             } else {
-                // Sin calificador → global del script (GLOBAL_SCRIPT)
                 int gidx = vm_find_global_index(name);
                 if (gidx < 0) gidx = vm_register_global(name, GLOBAL_SCRIPT);
                 if (stmt->data.assign.is_cmd) {
-                    // Para comandos, usamos interpretación y luego sincronizamos
                     int const_node = add_constant(c, val_ptr(stmt));
                     emit(c->chunk, OP_INTERPRET_NODE, const_node);
                     c->chunk->code[c->chunk->code_count - 1].operand2 = 0;

@@ -345,6 +345,15 @@ NodeList parse_block(const char *terminator) {
             ts_advance();
             if (ts_peek().type != TOK_IDENT) error(t.line, "Se esperaba nombre de función");
             char *fname = strdup(ts_advance().lexeme);
+
+            // ─── COMPROBACIÓN DE NOMBRE DUPLICADO (builtin o definida) ───
+            if (func_lookup(fname) != NULL) {
+                fprintf(stderr, "Error al declarar función, línea: %d: '%s' es una función interna y no puede ser redefinida. Si quieres crear una función, usa otro nombre.\n",
+                        t.line, fname);
+                exit(1);
+            }
+            // ─── FIN COMPROBACIÓN ───
+
             if (!ts_match(TOK_LPAREN)) error(t.line, "Se esperaba '('");
             char **params = NULL; int *ptypes = NULL; int pcount = 0;
             if (!ts_match(TOK_RPAREN)) {
