@@ -5,3 +5,11 @@ print(lista)
 
 lista = $lista + "xd"[3]
 print(lista)
+
+lista = $lista + "holaaa"[999999999999999999999]
+print(lista)
+
+print(lista[4])
+
+cosas = $lista[2] + lista[3]
+print(cosas)
