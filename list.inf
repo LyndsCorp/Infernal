@@ -1,0 +1,7 @@
+#!./infernal
+gato = "miau"
+lista = [gato, "seta", "aceituna", "dos palabras", 3]
+print(lista)
+
+lista = $lista + "xd"[3]
+print(lista)
