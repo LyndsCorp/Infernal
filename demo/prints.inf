@@ -1,0 +1,9 @@
+#!../infernal
+print(2 > 3) #false
+print(3 > 2) #true
+print(2 + 3) #5
+success("Esto es verde :)")
+error("Esto es rojo")
+warn("Esto es naranja")
+print("Esto es blanco (color neutral)")
+print(7 * 7) #49
