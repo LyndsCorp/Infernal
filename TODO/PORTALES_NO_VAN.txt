@@ -1,0 +1,12 @@
+#FILE: PORTALES_NO_VAN.txt
+casata6@lyndsos-casata6:~$ infernal portales.inf
+Hola
+casata6@lyndsos-casata6:~$ cat portales.inf
+@start
+
+print("Hola")
+
+repeat @start
+
+__________________________________________________
+Este script debería ejecutar el portal start en bucle indefinido sin parar, pero solo imprime el Hola una vez, no infinitas.
