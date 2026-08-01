@@ -20,7 +20,6 @@ Comportamiento actual:
   - El tipo original se clona, ignorando el tipado explícito.
   - Esto puede causar errores difíciles de depurar.
 
-Sugerencia:
-  - Opción 1: Hacer que `$` convierta al tipo declarado.
-  - Opción 2: Crear funciones `tonumber()`, `tostring()` para conversión explícita.
-  - Opción 3: Lanzar advertencia/error si los tipos no coinciden.
+Sugerencia: Hacer que `$` convierta al tipo declarado y adapte el valor al tipo.
+
+Nota: ya lo intenté arreglar, pero no lo logré.
