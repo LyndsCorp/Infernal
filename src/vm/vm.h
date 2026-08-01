@@ -12,6 +12,7 @@ Value vm_run(Chunk *chunk);
 
 #define MAX_GLOBALS 256
 extern Value vm_globals[MAX_GLOBALS];
+extern int vm_global_types[MAX_GLOBALS];   // <-- NUEVO: tipos de globales
 extern int vm_global_count;
 extern char *vm_global_names[MAX_GLOBALS];
 
@@ -23,8 +24,8 @@ typedef Value (*VmBuiltin)(int argc, Value *args);
 extern VmBuiltin vm_builtins[256];
 extern int vm_builtin_count;
 
-/* Registrar una variable global con su ámbito */
-int vm_register_global(const char *name, int scope_type);
+/* Registrar una variable global con su ámbito y tipo (vtype: TOK_INT, etc.; 0 si sin tipo) */
+int vm_register_global(const char *name, int scope_type, int vtype);
 
 /* Registrar funciones nativas (builtins) */
 int vm_register_builtin(const char *name, VmBuiltin func);
