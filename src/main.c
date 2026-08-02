@@ -1,7 +1,7 @@
 /*
  * Infernal: el lenguaje de programación. Copyright (C) 2026, GPL v3+ License, Lynds Corp., Aros Legendarios, David Baña Szymaniak.
  * Código fuente de Infernal: main.c
-*/
+ */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -18,10 +18,10 @@
 #include "stdlib/builtins.h"
 #include "vm/vm.h"
 #include "vm/compiler.h"
+#include "developer/debug.h"
 
 extern const char* get_metadata(const char *type);
 
-// ─── Función auxiliar para liberar un chunk ──────────────────
 void chunk_free(Chunk *ch) {
     if (!ch) return;
     free(ch->constants);
@@ -30,7 +30,6 @@ void chunk_free(Chunk *ch) {
     free(ch->code);
     free(ch);
 }
-// ─────────────────────────────────────────────────────────────────
 
 int main(int argc, char **argv) {
     if (argc < 2) {
@@ -61,10 +60,37 @@ int main(int argc, char **argv) {
         return 0;
     }
 
+    // ─── Procesar argumentos: --shell ──────────────────────────
+    char *script_file = NULL;
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--shell") == 0) {
+            if (i + 1 < argc && argv[i+1][0] != '-') {
+                // Con argumento
+                if (infernal_shell) free(infernal_shell);
+                infernal_shell = strdup(argv[i + 1]);
+                DEBUG_INFO("Shell especificado por línea de comandos: %s", infernal_shell);
+                i++; // saltar el valor
+                continue;
+            } else {
+                // Sin argumento: mostrar info y salir
+                show_shell_info();
+                return 0;
+            }
+        }
+        if (argv[i][0] != '-') {
+            script_file = argv[i];
+        }
+    }
+
+    if (!script_file) {
+        fprintf(stderr, "Error: no se especificó ningún archivo de script.\n");
+        return 1;
+    }
+
     script_argc = argc;
     script_argv = argv;
 
-    char *script_path = realpath(argv[1], NULL);
+    char *script_path = realpath(script_file, NULL);
     if (script_path) {
         char *dir = strdup(script_path);
         char *last_slash = strrchr(dir, '/');
@@ -89,7 +115,7 @@ int main(int argc, char **argv) {
         }
     }
 
-    current_source_file = argv[1];
+    current_source_file = script_file;
 
     super_global_scope = scope_new(NULL, NULL);
     extern char **environ;
@@ -123,7 +149,14 @@ int main(int argc, char **argv) {
 
     register_all_builtins();
 
-    FILE *fp = fopen(argv[1], "r");
+    // ─── Cargar configuración de shell (solo si no se especificó --shell) ──
+    if (!infernal_shell) {
+        load_infernal_config();
+    } else {
+        DEBUG_INFO("Shell ya configurado por --shell, no se cargan configuraciones");
+    }
+
+    FILE *fp = fopen(script_file, "r");
     if (!fp) {
         perror("Error al abrir script");
         free(script_dir);
@@ -137,14 +170,10 @@ int main(int argc, char **argv) {
 
         NodeList program = parse_block(NULL);
 
-        // Compilar a bytecode
         Chunk *main_chunk = compile_program(&program);
-
-        // Ejecutar en la VM
         Value result = vm_run(main_chunk);
-        (void)result; // descartar
+        (void)result;
 
-        // LIBERAR MEMORIA
         chunk_free(main_chunk);
 
         cleanup_embedded_temp_dir();

@@ -16,12 +16,14 @@
 #include <sys/types.h>
 #include <pwd.h>
 #include <dlfcn.h>
+#include <sys/wait.h>
 
 #include "command.h"
 #include "runtime/scope.h"
 #include "runtime/globals.h"
 #include "stdlib/embedded.h"
 #include "vm/vm.h"          // <-- AÑADIDO: para acceder a vm_globals y vm_find_global_index
+#include "developer/debug.h" // para DEBUG_INFO/DEBUG_WARN
 
 /* ─── Límite de seguridad para descompresión ─── */
 #define MAX_DECOMPRESSED_SIZE (500 * 1024 * 1024)  /* 500 MiB */
@@ -448,4 +450,31 @@ void cleanup_embedded_temp_dir(void) {
     }
     closedir(d);
     rmdir(work_dir);
+}
+
+/* ─── Ejecutar comando shell con el shell configurado ──────── */
+int run_shell_command(const char *cmd) {
+    if (!infernal_shell) {
+        // Fallback de seguridad (no debería ocurrir)
+        DEBUG_WARN("infernal_shell no configurado, usando system() fallback");
+        return system(cmd);
+    }
+
+    DEBUG_OP("Ejecutando shell: %s -c \"%s\"", infernal_shell, cmd);
+
+    pid_t pid = fork();
+    if (pid == 0) {
+        // Hijo: ejecutar el shell configurado con -c
+        execlp(infernal_shell, infernal_shell, "-c", cmd, (char *)NULL);
+        // Si falla, intentar /bin/sh como último recurso
+        execlp("/bin/sh", "/bin/sh", "-c", cmd, (char *)NULL);
+        exit(127);
+    } else if (pid > 0) {
+        int status;
+        waitpid(pid, &status, 0);
+        if (WIFEXITED(status)) return WEXITSTATUS(status);
+        return -1;
+    } else {
+        return -1;
+    }
 }

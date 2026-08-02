@@ -532,8 +532,8 @@ Value vm_run(Chunk *chunk) {
                 Value cmd_val = chunk->constants[ip->operand];
                 const char *cmd = cmd_val.data.sval;
                 char *expanded = expand_command_vm(chunk, locals, cmd);
-                int ret = system(expanded);
-                if (ret != 0) error(0, "Comando shell falló");
+                int ret = run_shell_command(expanded);   // <-- CAMBIADO
+                if (ret != 0) error(0, "Comando shell falló (código %d)", ret);
                 free(expanded);
                 ip++;
                 DISPATCH();

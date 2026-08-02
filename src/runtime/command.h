@@ -2,6 +2,7 @@
  * Infernal: el lenguaje de programación. Copyright (C) 2026, GPL v3+ License, Lynds Corp., Aros Legendarios, David Baña Szymaniak.
  * Código fuente de Infernal: runtime/command.h
 */
+
 #ifndef RUNTIME_COMMAND_H
 #define RUNTIME_COMMAND_H
 
@@ -19,5 +20,8 @@ FILE *popen_embedded_with_path(const char *full_cmd, const char *mode, char **te
 
 void set_embedded_tmp_dir(const char *dir);
 void cleanup_embedded_temp_dir(void);
+
+/* ─── Ejecutar comando shell con el shell configurado ─────── */
+int run_shell_command(const char *cmd);
 
 #endif

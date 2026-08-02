@@ -59,4 +59,9 @@ extern int repeat_line_target;
 extern char *script_dir;
 extern char *current_source_file;
 
+/* ─── Shell configurado para ejecutar comandos del sistema ── */
+extern char *infernal_shell;
+void load_infernal_config(void);
+void show_shell_info(void);
+
 #endif
