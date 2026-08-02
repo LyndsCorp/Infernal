@@ -279,7 +279,7 @@ clean:
 
 distclean: clean
 	@echo " [DISTCLEAN]"
-	rm -f $(FIRE_GEN_SRCS) $(BIN_GEN_SRCS) $(EMBED_TABLE_SRC) $(META_SRCS) $(META_HUB_SRC)
+	rm -f src/metadata/*
 
 help:
 	@echo "Infernal Makefile"
@@ -291,7 +291,7 @@ help:
 	@echo "  release    : compila optimizado para distribución (-O2, sin debug)"
 	@echo "  config     : crea o edita los metadatos (VERSION, HELP, WELCOME, EDITION)"
 	@echo "  clean      : elimina objetos y el ejecutable (no toca config/)"
-	@echo "  distclean  : elimina todos los archivos generados, incluidos .fire.c y metadatos"
+	@echo "  distclean  : elimina todo src/metadata para que hagas make config limpio"
 	@echo "  help       : muestra esta ayuda"
 	@echo ""
 	@echo "Estadísticas:"
