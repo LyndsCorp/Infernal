@@ -1,2 +1,0 @@
-#FILE: TODO/DEBUG.txt
-Añadir un src/developer/ con debug.h y debug.c y que puedas hacer make debug al compilarlo y que muestre un montón de logs de DEBUG en el output.
