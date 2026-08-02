@@ -1,7 +1,7 @@
 /*
  * Infernal: el lenguaje de programación.
  * Copyright (C) 2026, Lynds Corp., David Baña Szymaniak, GPL v3+ License.
- * Código fuente de Infernal: vm/bytecode.h
+ * Código fuente de Infernal: vm/compiler.c
 */
 
 #include <stdlib.h>
@@ -16,6 +16,12 @@
 
 #define MAX_LOCALS 256
 
+/* ─── Estructura para portales durante la compilación (nombre distinto al de runtime) ── */
+typedef struct CompilePortalEntry {
+    char *name;
+    int offset;        // índice de instrucción donde comienza el portal (-1 si aún no compilado)
+} CompilePortalEntry;
+
 typedef struct {
     Chunk *chunk;
     char *local_names[MAX_LOCALS];
@@ -23,6 +29,8 @@ typedef struct {
     int local_count;
     bool in_function;
     bool top_level;
+    CompilePortalEntry *portals;   // tabla de portales recolectados
+    int portal_count;
 } Compiler;
 
 static int add_constant(Compiler *c, Value v) {
@@ -69,6 +77,108 @@ static void patch_jump(Chunk *ch, int offset, int target) {
     ch->code[offset].operand = target - offset;
 }
 
+/* ─── Recolección de portales en el AST ──────────────────────── */
+static void collect_portals_rec(ASTNode *node, Compiler *c) {
+    if (!node) return;
+    if (node->kind == NODE_PORTAL) {
+        // Añadir a la tabla de portales
+        c->portals = realloc(c->portals, (c->portal_count + 1) * sizeof(CompilePortalEntry));
+        c->portals[c->portal_count].name = strdup(node->data.portal.name);
+        c->portals[c->portal_count].offset = -1; // se llenará al compilar
+        c->portal_count++;
+        // No recorremos hijos de portal porque es hoja
+        return;
+    }
+    // Recorrer hijos según tipo
+    switch (node->kind) {
+        case NODE_PROGRAM:
+            for (int i = 0; i < node->data.prog.stmts.count; i++)
+                collect_portals_rec(node->data.prog.stmts.stmts[i], c);
+        break;
+        case NODE_EXPR_STMT:
+            collect_portals_rec(node->data.expr_stmt.expr, c);
+            break;
+        case NODE_CMD_STMT:
+        case NODE_SHELL_CMD:
+        case NODE_RETURN:
+        case NODE_BREAK:
+        case NODE_CONTINUE:
+        case NODE_REPEAT:
+            // No tienen hijos que puedan contener portales (excepto repeat no tiene subnodos)
+            break;
+        case NODE_ASSIGN:
+            collect_portals_rec(node->data.assign.value, c);
+            if (node->data.assign.lhs_index)
+                collect_portals_rec(node->data.assign.lhs_index, c);
+        break;
+        case NODE_IF:
+            collect_portals_rec(node->data.if_stmt.cond, c);
+            for (int i = 0; i < node->data.if_stmt.then_block.count; i++)
+                collect_portals_rec(node->data.if_stmt.then_block.stmts[i], c);
+        for (int i = 0; i < node->data.if_stmt.else_block.count; i++)
+            collect_portals_rec(node->data.if_stmt.else_block.stmts[i], c);
+        break;
+        case NODE_WHILE:
+            collect_portals_rec(node->data.while_stmt.cond, c);
+            for (int i = 0; i < node->data.while_stmt.body.count; i++)
+                collect_portals_rec(node->data.while_stmt.body.stmts[i], c);
+        break;
+        case NODE_FOR:
+            collect_portals_rec(node->data.for_stmt.init, c);
+            collect_portals_rec(node->data.for_stmt.cond, c);
+            collect_portals_rec(node->data.for_stmt.incr, c);
+            for (int i = 0; i < node->data.for_stmt.body.count; i++)
+                collect_portals_rec(node->data.for_stmt.body.stmts[i], c);
+        break;
+        case NODE_FOR_IN:
+            collect_portals_rec(node->data.for_in.list_expr, c);
+            for (int i = 0; i < node->data.for_in.body.count; i++)
+                collect_portals_rec(node->data.for_in.body.stmts[i], c);
+        break;
+        case NODE_FUNC_DEF:
+            // Las funciones pueden contener portales internos, pero no los recolectamos a nivel global
+            // Podríamos omitirlos o recolectarlos, pero para simplificar los ignoramos
+            break;
+        case NODE_IMPORT:
+            for (int i = 0; i < node->data.import.module_block.count; i++)
+                collect_portals_rec(node->data.import.module_block.stmts[i], c);
+        break;
+        case NODE_TRY:
+            for (int i = 0; i < node->data.try_stmt.try_block.count; i++)
+                collect_portals_rec(node->data.try_stmt.try_block.stmts[i], c);
+        for (int i = 0; i < node->data.try_stmt.catch_block.count; i++)
+            collect_portals_rec(node->data.try_stmt.catch_block.stmts[i], c);
+        break;
+        case NODE_FLAGS:
+            // No recorremos bodies de flags porque son AST separados
+            break;
+        case NODE_LIST:
+            for (int i = 0; i < node->data.list_lit.count; i++)
+                collect_portals_rec(node->data.list_lit.items[i], c);
+        break;
+        case NODE_CALL:
+            for (int i = 0; i < node->data.call.argc; i++)
+                collect_portals_rec(node->data.call.args[i], c);
+        break;
+        case NODE_INDEX:
+            collect_portals_rec(node->data.idx.list, c);
+            collect_portals_rec(node->data.idx.index, c);
+            break;
+        case NODE_VAR:
+        case NODE_LITERAL:
+        case NODE_BINOP:
+            // NODE_BINOP tiene left y right
+            if (node->kind == NODE_BINOP) {
+                collect_portals_rec(node->data.binop.left, c);
+                collect_portals_rec(node->data.binop.right, c);
+            }
+            break;
+        default:
+            break;
+    }
+}
+
+/* ─── Compilación de expresiones ─────────────────────────────── */
 static void compile_expr(Compiler *c, ASTNode *expr);
 static void compile_block(Compiler *c, NodeList *block);
 
@@ -188,6 +298,7 @@ static void compile_expr(Compiler *c, ASTNode *expr) {
     }
 }
 
+/* ─── Compilación de sentencias ──────────────────────────────── */
 static void compile_stmt(Compiler *c, ASTNode *stmt) {
     switch (stmt->kind) {
         case NODE_EXPR_STMT:
@@ -200,7 +311,11 @@ static void compile_stmt(Compiler *c, ASTNode *stmt) {
 
             if (stmt->data.assign.is_global) {
                 int gidx = vm_find_global_index(name);
-                if (gidx < 0) gidx = vm_register_global(name, GLOBAL_SUPER);
+                if (gidx < 0) {
+                    gidx = vm_register_global(name, GLOBAL_SUPER, vtype);
+                } else if (vtype != 0) {
+                    vm_global_types[gidx] = vtype;   // <-- ACTUALIZAR TIPO
+                }
                 if (stmt->data.assign.is_cmd) {
                     int const_node = add_constant(c, val_ptr(stmt));
                     emit(c->chunk, OP_INTERPRET_NODE, const_node);
@@ -224,7 +339,11 @@ static void compile_stmt(Compiler *c, ASTNode *stmt) {
                 }
             } else {
                 int gidx = vm_find_global_index(name);
-                if (gidx < 0) gidx = vm_register_global(name, GLOBAL_SCRIPT);
+                if (gidx < 0) {
+                    gidx = vm_register_global(name, GLOBAL_SCRIPT, vtype);
+                } else if (vtype != 0) {
+                    vm_global_types[gidx] = vtype;   // <-- ACTUALIZAR TIPO
+                }
                 if (stmt->data.assign.is_cmd) {
                     int const_node = add_constant(c, val_ptr(stmt));
                     emit(c->chunk, OP_INTERPRET_NODE, const_node);
@@ -279,6 +398,42 @@ static void compile_stmt(Compiler *c, ASTNode *stmt) {
             }
             break;
         }
+        /* ─── NUEVO: soporte para portales y repeat ─── */
+        case NODE_PORTAL: {
+            // Buscar el portal en la tabla y actualizar su offset
+            for (int i = 0; i < c->portal_count; i++) {
+                if (strcmp(c->portals[i].name, stmt->data.portal.name) == 0) {
+                    c->portals[i].offset = c->chunk->code_count;
+                    break;
+                }
+            }
+            // No emitimos código, el portal es solo una marca
+            break;
+        }
+        case NODE_REPEAT: {
+            if (stmt->data.repeat.portal_name) {
+                int target_offset = -1;
+                for (int i = 0; i < c->portal_count; i++) {
+                    if (strcmp(c->portals[i].name, stmt->data.repeat.portal_name) == 0) {
+                        target_offset = c->portals[i].offset;
+                        break;
+                    }
+                }
+                if (target_offset == -1) {
+                    error(stmt->line, "Portal '%s' no definido antes de usar en repeat", stmt->data.repeat.portal_name);
+                }
+                // Emitir salto incondicional al portal (bucle infinito)
+                int current = c->chunk->code_count;
+                int jump_offset = target_offset - current;
+                emit(c->chunk, OP_JUMP, jump_offset);
+            } else {
+                // repeat line: lo dejamos al intérprete (caso por defecto)
+                int const_idx = add_constant(c, val_ptr(stmt));
+                emit(c->chunk, OP_INTERPRET_NODE, const_idx);
+                c->chunk->code[c->chunk->code_count - 1].operand2 = 0;
+            }
+            break;
+        }
         default: {
             int const_idx = add_constant(c, val_ptr(stmt));
             emit(c->chunk, OP_INTERPRET_NODE, const_idx);
@@ -294,15 +449,26 @@ static void compile_block(Compiler *c, NodeList *block) {
     }
 }
 
+/* ─── Compilación del programa principal ──────────────────────── */
 Chunk *compile_program(NodeList *program) {
     Compiler c;
     c.chunk = calloc(1, sizeof(Chunk));
     c.local_count = 0;
     c.in_function = false;
     c.top_level = true;
+    c.portals = NULL;
+    c.portal_count = 0;
+
+    // 1. Recolectar portales
+    for (int i = 0; i < program->count; i++) {
+        collect_portals_rec(program->stmts[i], &c);
+    }
+
+    // 2. Compilar bloque
     compile_block(&c, program);
     emit(c.chunk, OP_RETURN, 0);
 
+    // Guardar información de locales
     c.chunk->local_count = c.local_count;
     if (c.local_count > 0) {
         c.chunk->local_names = malloc(c.local_count * sizeof(char*));
@@ -312,6 +478,10 @@ Chunk *compile_program(NodeList *program) {
             c.chunk->local_types[i] = c.local_types[i];
         }
     }
+
+    // Liberar tabla de portales
+    for (int i = 0; i < c.portal_count; i++) free(c.portals[i].name);
+    free(c.portals);
 
     return c.chunk;
 }
@@ -323,6 +493,8 @@ Chunk *compile_function(ASTNode *func_node) {
     c.local_count = 0;
     c.in_function = true;
     c.top_level = false;
+    c.portals = NULL;
+    c.portal_count = 0;
 
     for (int i = 0; i < func_node->data.func.param_count; i++) {
         int slot = add_local(&c, func_node->data.func.params[i]);

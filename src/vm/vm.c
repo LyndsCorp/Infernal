@@ -1,7 +1,7 @@
 /*
  * Infernal: el lenguaje de programación.
  * Copyright (C) 2026, Lynds Corp., David Baña Szymaniak, GPL v3+ License.
- * Código fuente de Infernal: vm/bytecode.h
+ * Código fuente de Infernal: vm/vm.c
 */
 
 #include "vm.h"
@@ -40,6 +40,7 @@ GlobalEntry vm_global_entries[MAX_GLOBALS];
 int vm_global_count = 0;
 char *vm_global_names[MAX_GLOBALS];
 Value vm_globals[MAX_GLOBALS];
+int vm_global_types[MAX_GLOBALS] = {0};   // <-- NUEVO: tipos de globales
 
 VmBuiltin vm_builtins[256];
 int vm_builtin_count = 0;
@@ -55,11 +56,12 @@ static UserFunction user_functions[256];
 static int user_function_count = 0;
 
 /* ─── Registro de globales ────────────────────────────────────── */
-int vm_register_global(const char *name, int scope_type) {
+int vm_register_global(const char *name, int scope_type, int vtype) {
     if (vm_global_count >= MAX_GLOBALS) return -1;
     vm_global_entries[vm_global_count].name = strdup(name);
     vm_global_entries[vm_global_count].scope_type = scope_type;
     vm_globals[vm_global_count] = val_make_null();
+    vm_global_types[vm_global_count] = vtype;                // <-- NUEVO
     vm_global_names[vm_global_count] = vm_global_entries[vm_global_count].name;
     return vm_global_count++;
 }
@@ -115,6 +117,70 @@ static char *expand_command_vm(Chunk *chunk, Value *locals, const char *cmd) {
     return expand_command_with_locals(cmd, chunk->local_names, locals, chunk->local_count);
 }
 
+/* ─── Función de conversión de tipos para la VM ────────────── */
+static Value vm_convert_value(Value v, int target_tok_type) {
+    // Si no se pide conversión, devolver igual
+    if (target_tok_type == 0) return v;
+
+    // De string a otros tipos
+    if (v.type == VAL_STRING) {
+        const char *s = v.data.sval;
+        if (target_tok_type == TOK_INT) {
+            char *end;
+            long n = strtol(s, &end, 10);
+            if (*end == '\0' && end != s) {
+                free(v.data.sval);
+                v.type = VAL_INT;
+                v.data.ival = (int)n;
+                return v;
+            }
+        } else if (target_tok_type == TOK_FLOAT) {
+            char *normalized = strdup(s);
+            for (char *p = normalized; *p; p++) if (*p == ',') *p = '.';
+            char *end;
+            double f = strtod(normalized, &end);
+            if (*end == '\0' && end != normalized) {
+                free(v.data.sval);
+                v.type = VAL_FLOAT;
+                v.data.fval = f;
+                free(normalized);
+                return v;
+            }
+            free(normalized);
+        } else if (target_tok_type == TOK_BOOL) {
+            if (strcasecmp(s, "true") == 0 || strcmp(s, "1") == 0) {
+                free(v.data.sval);
+                v.type = VAL_BOOL;
+                v.data.bval = true;
+                return v;
+            }
+            if (strcasecmp(s, "false") == 0 || strcmp(s, "0") == 0) {
+                free(v.data.sval);
+                v.type = VAL_BOOL;
+                v.data.bval = false;
+                return v;
+            }
+        }
+        // Si no se puede convertir, devolvemos el valor original (o podríamos lanzar error)
+        // pero mantenemos el string.
+        return v;
+    }
+
+    // De int a float, y viceversa
+    if (v.type == VAL_INT && target_tok_type == TOK_FLOAT) {
+        v.type = VAL_FLOAT;
+        v.data.fval = (double)v.data.ival;
+        return v;
+    }
+    if (v.type == VAL_FLOAT && target_tok_type == TOK_INT) {
+        v.type = VAL_INT;
+        v.data.ival = (int)v.data.fval;
+        return v;
+    }
+    // Si los tipos ya coinciden o no se puede, devolver sin cambios
+    return v;
+}
+
 #if defined(__GNUC__) || defined(__clang__)
 #define USE_COMPUTED_GOTO 1
 #endif
@@ -145,7 +211,7 @@ Value vm_run(Chunk *chunk) {
         &&OP_INDEX, &&OP_INDEX_ASSIGN,
         &&OP_EMBEDDED_CMD, &&OP_SHELL_CMD, &&OP_FLAGS,
         &&OP_CMD_ASSIGN, &&OP_INTERPRET_NODE,
-        &&OP_LIST_INSERT   // <-- NUEVO
+        &&OP_LIST_INSERT
     };
     #define DISPATCH() goto *dispatch_table[ip->op]
     goto *dispatch_table[ip->op];
@@ -167,6 +233,10 @@ Value vm_run(Chunk *chunk) {
                 if (v.type == VAL_NULL) {
                     error(0, "Variable local no definida");
                 }
+                // Copia profunda si es string
+                if (v.type == VAL_STRING) {
+                    v = val_string(v.data.sval);
+                }
                 push(v);
                 ip++;
                 DISPATCH();
@@ -174,6 +244,10 @@ Value vm_run(Chunk *chunk) {
             OP_STORE_VAR: {
                 Value val = pop();
                 int slot = ip->operand;
+                // Convertir si hay tipo fijo
+                if (slot < chunk->local_count && chunk->local_types[slot] != 0) {
+                    val = vm_convert_value(val, chunk->local_types[slot]);
+                }
                 locals[slot] = val;
                 if (slot < chunk->local_count && chunk->local_names[slot]) {
                     const char *name = chunk->local_names[slot];
@@ -195,6 +269,10 @@ Value vm_run(Chunk *chunk) {
                     if (v.type == VAL_NULL) {
                         error(0, "Variable global no definida: %s", vm_global_names[ip->operand]);
                     }
+                    // Copia profunda si es string
+                    if (v.type == VAL_STRING) {
+                        v = val_string(v.data.sval);
+                    }
                     push(v);
                 } else {
                     error(0, "Acceso a global inválido");
@@ -208,6 +286,10 @@ Value vm_run(Chunk *chunk) {
                 int idx = ip->operand;
                 int scope_type = ip->operand2;
                 if (idx < vm_global_count) {
+                    // Convertir si hay tipo fijo
+                    if (vm_global_types[idx] != 0) {
+                        val = vm_convert_value(val, vm_global_types[idx]);
+                    }
                     vm_globals[idx] = val;
                     const char *gname = vm_global_entries[idx].name;
                     if (gname) {
@@ -578,7 +660,7 @@ Value vm_run(Chunk *chunk) {
                     int gidx = vm_find_global_index(var->name);
                     if (gidx < 0) {
                         // Registramos automáticamente como GLOBAL_SCRIPT
-                        gidx = vm_register_global(var->name, GLOBAL_SCRIPT);
+                        gidx = vm_register_global(var->name, GLOBAL_SCRIPT, var->vtype);
                     }
                     if (gidx >= 0) {
                         vm_globals[gidx] = var->value;
@@ -589,7 +671,7 @@ Value vm_run(Chunk *chunk) {
                 for (VarEntry *var = super_global_scope->vars; var; var = var->next) {
                     int gidx = vm_find_global_index(var->name);
                     if (gidx < 0) {
-                        gidx = vm_register_global(var->name, GLOBAL_SUPER);
+                        gidx = vm_register_global(var->name, GLOBAL_SUPER, var->vtype);
                     }
                     if (gidx >= 0) {
                         vm_globals[gidx] = var->value;
