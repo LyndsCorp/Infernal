@@ -205,7 +205,6 @@ $(EMBED_TABLE_SRC): $(FIRE_FILES) $(BIN_FILES)
 $(EMBED_TABLE_OBJ): $(EMBED_TABLE_SRC)
 	@echo " [CC] $<"
 	$(CC) $(CFLAGS) $(INCDIRS) -c $< -o $@
-
 # --------------------------------------------------------------------
 # Reglas para metadatos
 # --------------------------------------------------------------------
@@ -286,17 +285,21 @@ help:
 	@echo "Infernal Makefile"
 	@echo "-----------------"
 	@echo "Objetivos:"
+	@echo "             : (vacío; solo ejecuta 'make') hace lo mismo que 'make all'"
 	@echo "  all        : compila el intérprete (por defecto)"
-	@echo "  debug      : compila con logs de depuración (-DDEBUG)"
+	@echo "  debug      : compila con soporte de depuración (-DDEBUG)"
 	@echo "  release    : compila optimizado para distribución (-O2, sin debug)"
-	@echo "  config     : crea/edita los metadatos (VERSION, HELP, WELCOME, EDITION)"
-	@echo "  clean      : borra objetos y ejecutable (no toca config/)"
-	@echo "  distclean  : borra todo lo generado, incluyendo .fire.c y metadatos (no toca config/)"
+	@echo "  config     : crea o edita los metadatos (VERSION, HELP, WELCOME, EDITION)"
+	@echo "  clean      : elimina objetos y el ejecutable (no toca config/)"
+	@echo "  distclean  : elimina todos los archivos generados, incluidos .fire.c y metadatos"
 	@echo "  help       : muestra esta ayuda"
 	@echo ""
-	@echo "Fuentes: $(words $(SOURCES)) archivos .c"
-	@echo "Módulos .fire empaquetados: $(words $(FIRE_FILES))"
-	@echo "Módulos binarios empaquetados: $(words $(BIN_FILES))"
+	@echo "Estadísticas:"
+	@printf "  Archivos fuente (.c): %d\n" $(words $(SOURCES))
+	@printf "  Módulos .fire embebidos: %d\n" $(words $(FIRE_FILES))
+	@printf "  Binarios embebidos: %d\n" $(words $(BIN_FILES))
+	@printf "  Versión: "
+	@cat src/metadata/VERSION || echo "No disponible"
 
 test: $(TARGET)
 	@./test.sh ./$(TARGET)
