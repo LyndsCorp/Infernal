@@ -311,7 +311,11 @@ static void compile_stmt(Compiler *c, ASTNode *stmt) {
 
             if (stmt->data.assign.is_global) {
                 int gidx = vm_find_global_index(name);
-                if (gidx < 0) gidx = vm_register_global(name, GLOBAL_SUPER, vtype);
+                if (gidx < 0) {
+                    gidx = vm_register_global(name, GLOBAL_SUPER, vtype);
+                } else if (vtype != 0) {
+                    vm_global_types[gidx] = vtype;   // <-- ACTUALIZAR TIPO
+                }
                 if (stmt->data.assign.is_cmd) {
                     int const_node = add_constant(c, val_ptr(stmt));
                     emit(c->chunk, OP_INTERPRET_NODE, const_node);
@@ -335,7 +339,11 @@ static void compile_stmt(Compiler *c, ASTNode *stmt) {
                 }
             } else {
                 int gidx = vm_find_global_index(name);
-                if (gidx < 0) gidx = vm_register_global(name, GLOBAL_SCRIPT, vtype);
+                if (gidx < 0) {
+                    gidx = vm_register_global(name, GLOBAL_SCRIPT, vtype);
+                } else if (vtype != 0) {
+                    vm_global_types[gidx] = vtype;   // <-- ACTUALIZAR TIPO
+                }
                 if (stmt->data.assign.is_cmd) {
                     int const_node = add_constant(c, val_ptr(stmt));
                     emit(c->chunk, OP_INTERPRET_NODE, const_node);

@@ -233,6 +233,10 @@ Value vm_run(Chunk *chunk) {
                 if (v.type == VAL_NULL) {
                     error(0, "Variable local no definida");
                 }
+                // Copia profunda si es string
+                if (v.type == VAL_STRING) {
+                    v = val_string(v.data.sval);
+                }
                 push(v);
                 ip++;
                 DISPATCH();
@@ -264,6 +268,10 @@ Value vm_run(Chunk *chunk) {
                     Value v = vm_globals[ip->operand];
                     if (v.type == VAL_NULL) {
                         error(0, "Variable global no definida: %s", vm_global_names[ip->operand]);
+                    }
+                    // Copia profunda si es string
+                    if (v.type == VAL_STRING) {
+                        v = val_string(v.data.sval);
                     }
                     push(v);
                 } else {
