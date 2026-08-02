@@ -1,3 +1,0 @@
-str = "100"
-int num = $str
-printAllVars()
