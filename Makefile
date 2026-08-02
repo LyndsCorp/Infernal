@@ -1,6 +1,9 @@
 # Makefile para Infernal (intérprete modular)
 # Uso:
 #   make          - compila el intérprete y sus módulos .fire embebidos
+#   make debug    - compila con logs de depuración (-DDEBUG)
+#   make release  - compila optimizado para distribución (-O2, sin debug)
+#   make config   - crea/edita los metadatos (VERSION, HELP, WELCOME, EDITION)
 #   make clean    - elimina objetos y ejecutable (NO borra nada en config/)
 #   make distclean- limpia también los archivos generados de .fire y metadatos (NO borra config/)
 #   make help     - muestra esta ayuda
@@ -8,6 +11,7 @@
 # Configuración
 # --------------------------------------------------------------------
 CC       := gcc
+# Por defecto: con debug info, sin logs
 CFLAGS   := -Wall -Wextra -g -std=c11 -D_GNU_SOURCE
 LDFLAGS  := -ldl
 INCDIRS  := -Isrc
@@ -29,7 +33,7 @@ GZIP_EMBEDDED := 1
 # --------------------------------------------------------------------
 # Leer configuración solo si estamos compilando (no en clean/help/...)
 # --------------------------------------------------------------------
-ifeq ($(filter clean distclean help,$(MAKECMDGOALS)),)
+ifeq ($(filter clean distclean help config,$(MAKECMDGOALS)),)
   GZIP_CONFIG := config/gzip-embedded.bool
   ifeq ($(wildcard $(GZIP_CONFIG)),)
     $(warning Archivo $(GZIP_CONFIG) no encontrado. Se usará compresión gzip por defecto (true).)
@@ -95,9 +99,15 @@ DEPS := $(ALL_OBJS:.o=.d)
 # --------------------------------------------------------------------
 # Reglas principales
 # --------------------------------------------------------------------
-.PHONY: all clean distclean help test sanitize
+.PHONY: all clean distclean help test sanitize debug release config
 
 all: $(TARGET)
+
+debug:
+	$(MAKE) CFLAGS='$(CFLAGS) -DDEBUG'
+
+release:
+	$(MAKE) CFLAGS='$(CFLAGS) -O2 -DNDEBUG' LDFLAGS='$(LDFLAGS) -s'
 
 $(TARGET): $(ALL_OBJS)
 	@echo " [LD] $@"
@@ -242,6 +252,26 @@ $(META_HUB_OBJ): $(META_HUB_SRC)
 -include $(DEPS)
 
 # --------------------------------------------------------------------
+# Objetivo config: crea metadatos si faltan y los abre con el editor
+# --------------------------------------------------------------------
+config:
+	@mkdir -p $(META_DIR)
+	@for f in $(META_FILES); do \
+		if [ ! -f $(META_DIR)/$$f ]; then \
+			echo "Creando $(META_DIR)/$$f con contenido por defecto..."; \
+			case $$f in \
+				VERSION) echo "1.x" > $(META_DIR)/$$f ;; \
+				EDITION) echo "Infernal 1.x (Rama)\n──────────────────────────────────────────────\n\nVersión:           1.x\nEdición:           Para tu app\nArquitectura:      La de tu PC (puedes verlo con uname -m)\nSistema operativo: POSIX (Linux, macOS)\n\nDistribuido por:   Tu Nombre O Apodo\nProyecto:          Tu proyecto\nLicencia:          GPL v3+\n\nCódigo fuente:        https://github.com/tu-user/tu-repo-fork/tree/rama-release\nRepositorio:          https://github.com/tu-user/tu-repo-fork\nRepositorio oficial:  https://github.com/LyndsCorp/Infernal\nDocumentación:        https://github.com/LyndsCorp/Infernal-Documentation\n\nCopyright (C) AÑO Tu empresa/organizacion/nombre" > $(META_DIR)/$$f ;; \
+				HELP) echo "Infernal - lenguaje de scripting inspirado en Bash + Lua + Python.\n\nUso:\n  infernal <script.inf> [flags...]\n\nOpciones:\n  --help       Muestra esta ayuda.\n  --version    Muestra la versión del intérprete.\n  --edition    Muestra la edición del intérprete.\n\nSin argumentos muestra el mensaje de bienvenida.\n\nDocumentación: https://github.com/LyndsCorp/Infernal-Documentation" > $(META_DIR)/$$f ;; \
+				WELCOME) echo "¡Bienvenido a Infernal!\n\nEscribe infernal --help para recibir ayuda.\n\nInfernal es un lenguaje de programación inspirado en Bash + Lua + Python.\n\nCopyright (C), GPL v3+, Lynds Corp." > $(META_DIR)/$$f ;; \
+			esac; \
+		fi; \
+	done
+	@echo "Abriendo metadatos para editar..."
+	@if [ -z "$$EDITOR" ]; then EDITOR=nano; fi; \
+	$$EDITOR $(META_DIR)/VERSION $(META_DIR)/EDITION $(META_DIR)/HELP $(META_DIR)/WELCOME
+
+# --------------------------------------------------------------------
 # Limpieza (respeta config/)
 # --------------------------------------------------------------------
 clean:
@@ -257,6 +287,9 @@ help:
 	@echo "-----------------"
 	@echo "Objetivos:"
 	@echo "  all        : compila el intérprete (por defecto)"
+	@echo "  debug      : compila con logs de depuración (-DDEBUG)"
+	@echo "  release    : compila optimizado para distribución (-O2, sin debug)"
+	@echo "  config     : crea/edita los metadatos (VERSION, HELP, WELCOME, EDITION)"
 	@echo "  clean      : borra objetos y ejecutable (no toca config/)"
 	@echo "  distclean  : borra todo lo generado, incluyendo .fire.c y metadatos (no toca config/)"
 	@echo "  help       : muestra esta ayuda"
