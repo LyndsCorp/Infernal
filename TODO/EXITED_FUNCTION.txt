@@ -1,0 +1,27 @@
+#FILE: EXITED_FUNCTION.txt
+Cuando ejecuto por ejemplo
+``` Infernal
+home = echo ?HOME #Se añade el el TODO de expansión de variables mejorada
+existe = ls $HOME/.config/miapp
+```
+ese existe puede dar exit 1 y darme error en Infernal, o darme exit 0 y darme un texto que no necesito (todos los archivos que tiene).
+Entonces para eso que se pueda poner:
+``` Infernal
+home = echo ?HOME
+existe = exited(ls $HOME/.config/miapp)
+```
+y que devuelva un int que sea el exit code del comando: 0 (todo salió bien), 1 (hubo un error) o 2 (lo ejecutaste mal).
+
+Y también que puedas poner:
+``` Infernal
+home = echo ?HOME
+bool existe = ls $HOME/.config/miapp
+```
+y que devuelva true si dió exit 0 y que devuelva false si dió otra cosa que no sea exit 0.
+
+Y si pones
+``` Infernal
+bool var = echo "hola caracola :)"
+```
+devuelve true (si tienes echo en el PATH del shell o un shell válido, sino da false).
+Al igual que con exited(comando).
