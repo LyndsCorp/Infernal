@@ -40,7 +40,7 @@ static bool safe_module_path(const char *path) {
 }
 
 /* ─── Construir un comando a partir de los tokens consumidos ── */
-static char *build_command_from_tokens(int start_pos, int end_pos) {
+char *build_command_from_tokens(int start_pos, int end_pos) {
     if (start_pos >= end_pos) return strdup("");
     char *cmd = malloc(1);
     cmd[0] = '\0';

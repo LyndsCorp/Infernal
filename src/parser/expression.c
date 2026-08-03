@@ -11,7 +11,9 @@
 #include "lexer/lexer.h"
 #include "runtime/globals.h"
 #include "runtime/error.h"
+#include "parser.h"
 
+/* ─── parse_primary ────────────────────────────────────────────── */
 ASTNode *parse_primary() {
     Token t = ts_peek();
     if (t.type == TOK_NUMBER) {
@@ -53,8 +55,36 @@ ASTNode *parse_primary() {
         bool is_call = (ts.pos + 1 < ts.count && ts.tokens[ts.pos + 1].type == TOK_LPAREN);
         if (is_call) {
             ts_advance(); // consumir identificador
+            char *func_name = strdup(t.lexeme);
+
+            // ─── Caso especial: exited(comando) ──────────────
+            if (strcmp(func_name, "exited") == 0) {
+                ts_advance(); // consumir '('
+                int start_pos = ts.pos;
+                int depth = 1;
+                while (depth > 0 && ts.pos < ts.count) {
+                    Token tok = ts_advance();
+                    if (tok.type == TOK_LPAREN) depth++;
+                    else if (tok.type == TOK_RPAREN) depth--;
+                }
+                int end_pos = ts.pos - 1; // posición del ')'
+                // Construir el comando desde start_pos hasta end_pos (excluyendo el ')')
+                char *cmd = build_command_from_tokens(start_pos, end_pos);
+                // Crear nodo llamada a función con un argumento string
+                ASTNode *n = node_create(NODE_CALL, t.line);
+                n->data.call.name = func_name;
+                n->data.call.argc = 1;
+                n->data.call.args = malloc(sizeof(ASTNode*));
+                ASTNode *lit = node_create(NODE_LITERAL, t.line);
+                lit->data.lit.type = TOK_STRING;
+                lit->data.lit.sval = cmd;
+                n->data.call.args[0] = lit;
+                return n;
+            }
+
+            // ─── Llamada normal a función ──────────────────────
             ASTNode *n = node_create(NODE_CALL, t.line);
-            n->data.call.name = strdup(t.lexeme);
+            n->data.call.name = func_name;
             n->data.call.argc = 0;
             n->data.call.args = NULL;
             ts_advance(); // consumir '('
@@ -65,7 +95,7 @@ ASTNode *parse_primary() {
                     n->data.call.args[n->data.call.argc++] = parse_expression(0);
                 } while (ts_match(TOK_COMMA));
                 if (!ts_match(TOK_RPAREN))
-                    error(t.line, "Se esperaba ')' en la llamada a función '%s'", t.lexeme);
+                    error(t.line, "Se esperaba ')' en la llamada a función '%s'", func_name);
             }
             return n;
         } else {
@@ -122,10 +152,7 @@ ASTNode *parse_primary() {
     return NULL;
 }
 
-/* Acceso a miembros: modulo.funcion(args)
- *  Como el lexer incluye el punto en los identificadores, este nodo ya llega
- *  con un nombre compuesto. Si contiene un punto y luego hay '(', lo dividimos
- *  y creamos una llamada a función con el nombre completo. */
+/* ─── parse_member_access ──────────────────────────────────────── */
 static ASTNode *parse_member_access() {
     ASTNode *left = parse_primary();
     // Si es una variable y su nombre contiene un punto, puede ser una llamada a función de módulo
@@ -156,7 +183,7 @@ static ASTNode *parse_member_access() {
     return left;
 }
 
-/* Unary minus */
+/* ─── Unary minus ──────────────────────────────────────────────── */
 static ASTNode *parse_unary() {
     Token t = ts_peek();
     if (ts_match(TOK_MINUS)) {
@@ -172,6 +199,7 @@ static ASTNode *parse_unary() {
     return parse_member_access();
 }
 
+/* ─── Term (multiplicación, división, módulo) ────────────────── */
 static ASTNode *parse_term() {
     ASTNode *left = parse_unary();
     while (ts_peek().type == TOK_STAR || ts_peek().type == TOK_SLASH || ts_peek().type == TOK_PERCENT) {
@@ -186,6 +214,7 @@ static ASTNode *parse_term() {
     return left;
 }
 
+/* ─── Expression (suma, resta) ────────────────────────────────── */
 static ASTNode *parse_expr() {
     ASTNode *left = parse_term();
     while (ts_peek().type == TOK_PLUS || ts_peek().type == TOK_MINUS) {
@@ -200,7 +229,7 @@ static ASTNode *parse_expr() {
     return left;
 }
 
-/* Comparaciones numéricas y de igualdad. */
+/* ─── Comparaciones ───────────────────────────────────────────── */
 static ASTNode *parse_comparison() {
     ASTNode *left = parse_expr();
     TokenType op = ts_peek().type;
@@ -217,6 +246,7 @@ static ASTNode *parse_comparison() {
         return left;
 }
 
+/* ─── AND lógico ───────────────────────────────────────────────── */
 static ASTNode *parse_logic_and() {
     ASTNode *left = parse_comparison();
     while (ts_peek().type == TOK_AND) {
@@ -231,6 +261,7 @@ static ASTNode *parse_logic_and() {
     return left;
 }
 
+/* ─── OR lógico ────────────────────────────────────────────────── */
 static ASTNode *parse_logic_or() {
     ASTNode *left = parse_logic_and();
     while (ts_peek().type == TOK_OR) {
@@ -245,6 +276,7 @@ static ASTNode *parse_logic_or() {
     return left;
 }
 
+/* ─── Expresión principal (punto de entrada) ──────────────────── */
 ASTNode *parse_expression(int dummy) {
     (void)dummy;
     return parse_logic_or();
