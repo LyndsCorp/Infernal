@@ -252,7 +252,8 @@ void tokenize_file(FILE *fp) {
                 continue;
             }
 
-            if (*p == '$' && (isalpha(*(p+1)) || *(p+1) == '_')) {
+            // --- MODIFICACIÓN: permitir tanto '$' como '?' como prefijo de identificador ---
+            if ((*p == '$' || *p == '?') && (isalpha(*(p+1)) || *(p+1) == '_')) {
                 char *start = p;
                 p++;
                 while (isalnum(*p) || *p == '_') p++;

@@ -194,8 +194,9 @@ static void compile_expr(Compiler *c, ASTNode *expr) {
             break;
                 case NODE_VAR: {
                     const char *name = expr->data.var.name;
+                    // --- MODIFICACIÓN: eliminar tanto '$' como '?' del nombre ---
                     const char *clean_name = name;
-                    if (name[0] == '$') clean_name = name + 1;
+                    if (name[0] == '$' || name[0] == '?') clean_name = name + 1;
                     int gidx = vm_find_global_index(clean_name);
                     if (gidx >= 0) {
                         emit(c->chunk, OP_LOAD_GLOBAL, gidx);

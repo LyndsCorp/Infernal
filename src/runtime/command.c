@@ -22,7 +22,7 @@
 #include "runtime/scope.h"
 #include "runtime/globals.h"
 #include "stdlib/embedded.h"
-#include "vm/vm.h"          // <-- AÑADIDO: para acceder a vm_globals y vm_find_global_index
+#include "vm/vm.h"          // para acceder a vm_globals y vm_find_global_index
 #include "developer/debug.h" // para DEBUG_INFO/DEBUG_WARN
 
 /* ─── Límite de seguridad para descompresión ─── */
@@ -50,6 +50,19 @@ char *get_var_string(const char *name) {
     return strdup(buf);
 }
 
+/* ─── Función auxiliar para añadir '$' + nombre al buffer ─── */
+static void append_dollar_name(char **result, size_t *len, size_t *cap, const char *name) {
+    size_t nlen = strlen(name);
+    if (*len + 1 + nlen >= *cap) {
+        *cap = (*len + 1 + nlen) * 2;
+        *result = realloc(*result, *cap);
+    }
+    (*result)[(*len)++] = '$';
+    memcpy(*result + *len, name, nlen);
+    *len += nlen;
+}
+
+/* ─── Expansión de comandos (versión con scopes) ─────────────── */
 char *expand_command(const char *cmd) {
     if (!cmd) return NULL;
     size_t cap = strlen(cmd) * 2 + 64;
@@ -58,7 +71,7 @@ char *expand_command(const char *cmd) {
     const char *p = cmd;
 
     while (*p) {
-        if (*p == '$' && (isalpha(*(p+1)) || *(p+1) == '_')) {
+        if ((*p == '$' || *p == '?') && (isalpha(*(p+1)) || *(p+1) == '_')) {
             const char *start = p + 1;
             while (isalnum(*start) || *start == '_') start++;
             size_t nlen = start - (p + 1);
@@ -66,21 +79,38 @@ char *expand_command(const char *cmd) {
             char name[128];
             memcpy(name, p + 1, nlen);
             name[nlen] = '\0';
-            char *val = get_var_string(name);
-            if (val) {
-                size_t vlen = strlen(val);
-                if (len + vlen >= cap) {
-                    cap = (len + vlen) * 2;
+
+            if (*p == '?') {
+                // ?VAR → $VAR literal
+                append_dollar_name(&result, &len, &cap, name);
+                p = start;
+                continue;
+            } else {
+                // $VAR → expandir con valor de Infernal
+                char *val = get_var_string(name);
+                if (val) {
+                    size_t vlen = strlen(val);
+                    if (len + vlen >= cap) {
+                        cap = (len + vlen) * 2;
+                        result = realloc(result, cap);
+                    }
+                    memcpy(result + len, val, vlen);
+                    len += vlen;
+                    free(val);
+                    p = start;
+                    continue;
+                }
+                // Si no existe, copiar $VAR tal cual
+                if (len + 1 + nlen >= cap) {
+                    cap = (len + 1 + nlen) * 2;
                     result = realloc(result, cap);
                 }
-                memcpy(result + len, val, vlen);
-                len += vlen;
-                free(val);
+                result[len++] = '$';
+                memcpy(result + len, name, nlen);
+                len += nlen;
                 p = start;
                 continue;
             }
-            p = start;
-            continue;
         }
         if (len + 1 >= cap) {
             cap *= 2;
@@ -92,7 +122,7 @@ char *expand_command(const char *cmd) {
     return realloc(result, len + 1);
 }
 
-// EXPANSION RAPIDA USANDO ARRAYS DE LOCALES
+/* ─── Expansión de comandos usando arrays de locales (para la VM) ─── */
 char *expand_command_with_locals(const char *cmd, char **names, Value *values, int count) {
     if (!cmd) return NULL;
     size_t cap = strlen(cmd) * 2 + 64;
@@ -101,7 +131,7 @@ char *expand_command_with_locals(const char *cmd, char **names, Value *values, i
     const char *p = cmd;
 
     while (*p) {
-        if (*p == '$' && (isalpha(*(p+1)) || *(p+1) == '_')) {
+        if ((*p == '$' || *p == '?') && (isalpha(*(p+1)) || *(p+1) == '_')) {
             const char *start = p + 1;
             while (isalnum(*start) || *start == '_') start++;
             size_t nlen = start - (p + 1);
@@ -109,66 +139,83 @@ char *expand_command_with_locals(const char *cmd, char **names, Value *values, i
             char name[128];
             memcpy(name, p + 1, nlen);
             name[nlen] = '\0';
-            char *val = NULL;
-            // 1) Buscar en las variables locales de la VM
-            for (int i = 0; i < count; i++) {
-                if (names[i] && strcmp(names[i], name) == 0) {
-                    Value v = values[i];
-                    char buf[256];
-                    switch (v.type) {
-                        case VAL_INT: snprintf(buf, sizeof(buf), "%d", v.data.ival); val = strdup(buf); break;
-                        case VAL_FLOAT: snprintf(buf, sizeof(buf), "%g", v.data.fval); val = strdup(buf); break;
-                        case VAL_BOOL: val = strdup(v.data.bval ? "true" : "false"); break;
-                        case VAL_STRING: val = strdup(v.data.sval); break;
-                        default: val = NULL;
-                    }
-                    break;
-                }
-            }
-            // 2) Si no se encontró, buscar en los scopes de Infernal
-            if (!val) {
-                VarEntry *e = scope_find(current_scope, name);
-                if (e) {
-                    Value v = e->value;
-                    char buf[256];
-                    switch (v.type) {
-                        case VAL_INT: snprintf(buf, sizeof(buf), "%d", v.data.ival); val = strdup(buf); break;
-                        case VAL_FLOAT: snprintf(buf, sizeof(buf), "%g", v.data.fval); val = strdup(buf); break;
-                        case VAL_BOOL: val = strdup(v.data.bval ? "true" : "false"); break;
-                        case VAL_STRING: val = strdup(v.data.sval); break;
-                        default: val = NULL;
+
+            if (*p == '?') {
+                // ?VAR → $VAR literal
+                append_dollar_name(&result, &len, &cap, name);
+                p = start;
+                continue;
+            } else {
+                // $VAR → buscar en locales, scopes y globales de VM
+                char *val = NULL;
+                // 1) locales de la VM
+                for (int i = 0; i < count; i++) {
+                    if (names[i] && strcmp(names[i], name) == 0) {
+                        Value v = values[i];
+                        char buf[256];
+                        switch (v.type) {
+                            case VAL_INT: snprintf(buf, sizeof(buf), "%d", v.data.ival); val = strdup(buf); break;
+                            case VAL_FLOAT: snprintf(buf, sizeof(buf), "%g", v.data.fval); val = strdup(buf); break;
+                            case VAL_BOOL: val = strdup(v.data.bval ? "true" : "false"); break;
+                            case VAL_STRING: val = strdup(v.data.sval); break;
+                            default: val = NULL;
+                        }
+                        break;
                     }
                 }
-            }
-            // 3) Si aún no se encontró, buscar directamente en las globales de la VM
-            if (!val) {
-                int gidx = vm_find_global_index(name);
-                if (gidx >= 0) {
-                    Value v = vm_globals[gidx];
-                    char buf[256];
-                    switch (v.type) {
-                        case VAL_INT: snprintf(buf, sizeof(buf), "%d", v.data.ival); val = strdup(buf); break;
-                        case VAL_FLOAT: snprintf(buf, sizeof(buf), "%g", v.data.fval); val = strdup(buf); break;
-                        case VAL_BOOL: val = strdup(v.data.bval ? "true" : "false"); break;
-                        case VAL_STRING: val = strdup(v.data.sval); break;
-                        default: val = NULL;
+                // 2) scopes de Infernal
+                if (!val) {
+                    VarEntry *e = scope_find(current_scope, name);
+                    if (e) {
+                        Value v = e->value;
+                        char buf[256];
+                        switch (v.type) {
+                            case VAL_INT: snprintf(buf, sizeof(buf), "%d", v.data.ival); val = strdup(buf); break;
+                            case VAL_FLOAT: snprintf(buf, sizeof(buf), "%g", v.data.fval); val = strdup(buf); break;
+                            case VAL_BOOL: val = strdup(v.data.bval ? "true" : "false"); break;
+                            case VAL_STRING: val = strdup(v.data.sval); break;
+                            default: val = NULL;
+                        }
                     }
                 }
-            }
-            if (val) {
-                size_t vlen = strlen(val);
-                if (len + vlen >= cap) {
-                    cap = (len + vlen) * 2;
+                // 3) globales de la VM
+                if (!val) {
+                    int gidx = vm_find_global_index(name);
+                    if (gidx >= 0) {
+                        Value v = vm_globals[gidx];
+                        char buf[256];
+                        switch (v.type) {
+                            case VAL_INT: snprintf(buf, sizeof(buf), "%d", v.data.ival); val = strdup(buf); break;
+                            case VAL_FLOAT: snprintf(buf, sizeof(buf), "%g", v.data.fval); val = strdup(buf); break;
+                            case VAL_BOOL: val = strdup(v.data.bval ? "true" : "false"); break;
+                            case VAL_STRING: val = strdup(v.data.sval); break;
+                            default: val = NULL;
+                        }
+                    }
+                }
+                if (val) {
+                    size_t vlen = strlen(val);
+                    if (len + vlen >= cap) {
+                        cap = (len + vlen) * 2;
+                        result = realloc(result, cap);
+                    }
+                    memcpy(result + len, val, vlen);
+                    len += vlen;
+                    free(val);
+                    p = start;
+                    continue;
+                }
+                // Si no se encontró, copiar $VAR literal
+                if (len + 1 + nlen >= cap) {
+                    cap = (len + 1 + nlen) * 2;
                     result = realloc(result, cap);
                 }
-                memcpy(result + len, val, vlen);
-                len += vlen;
-                free(val);
+                result[len++] = '$';
+                memcpy(result + len, name, nlen);
+                len += nlen;
                 p = start;
                 continue;
             }
-            p = start;
-            continue;
         }
         if (len + 1 >= cap) {
             cap *= 2;
@@ -180,19 +227,17 @@ char *expand_command_with_locals(const char *cmd, char **names, Value *values, i
     return realloc(result, len + 1);
 }
 
-// Descompresión usando libz cargada dinámicamente
+/* ─── Descompresión usando libz cargada dinámicamente ──────────── */
 static unsigned char *gunzip_data(const unsigned char *compressed, size_t compressed_len, size_t *out_len) {
     static void *zlib_handle = NULL;
     static int zlib_available = -1;  // -1 = no verificado, 0 = no, 1 = sí
     static const char *zlib_version_str = NULL;
 
-    // Cargar libz si aún no se ha hecho
     if (zlib_available == -1) {
         zlib_handle = dlopen("libz.so.1", RTLD_LAZY);
         if (!zlib_handle) {
             zlib_available = 0;
         } else {
-            // Comprobar que las funciones necesarias existen
             if (!dlsym(zlib_handle, "inflateInit2_") ||
                 !dlsym(zlib_handle, "inflate") ||
                 !dlsym(zlib_handle, "inflateEnd")) {
@@ -200,7 +245,6 @@ static unsigned char *gunzip_data(const unsigned char *compressed, size_t compre
             zlib_handle = NULL;
             zlib_available = 0;
                 } else {
-                    // Obtener versión real de zlib
                     typedef const char *(*zlibVersion_t)(void);
                     zlibVersion_t p_zlibVersion = (zlibVersion_t)dlsym(zlib_handle, "zlibVersion");
                     zlib_version_str = p_zlibVersion ? p_zlibVersion() : "1.2.0";
@@ -214,7 +258,6 @@ static unsigned char *gunzip_data(const unsigned char *compressed, size_t compre
         return NULL;
     }
 
-    // Tipos y funciones de zlib cargados dinámicamente
     typedef void *(*alloc_func)(void *opaque, unsigned items, unsigned size);
     typedef void  (*free_func)(void *opaque, void *address);
 
@@ -272,7 +315,6 @@ static unsigned char *gunzip_data(const unsigned char *compressed, size_t compre
             return NULL;
         }
 
-        // Verificar límite de descompresión (DoS) usando bytes reales descomprimidos
         if (strm.total_out >= MAX_DECOMPRESSED_SIZE) {
             fprintf(stderr, "Error: el binario descomprimido excede el límite de %zu bytes\n",
                     (size_t)MAX_DECOMPRESSED_SIZE);
@@ -455,7 +497,6 @@ void cleanup_embedded_temp_dir(void) {
 /* ─── Ejecutar comando shell con el shell configurado ──────── */
 int run_shell_command(const char *cmd) {
     if (!infernal_shell) {
-        // Fallback de seguridad (no debería ocurrir)
         DEBUG_WARN("infernal_shell no configurado, usando system() fallback");
         return system(cmd);
     }
@@ -464,9 +505,7 @@ int run_shell_command(const char *cmd) {
 
     pid_t pid = fork();
     if (pid == 0) {
-        // Hijo: ejecutar el shell configurado con -c
         execlp(infernal_shell, infernal_shell, "-c", cmd, (char *)NULL);
-        // Si falla, intentar /bin/sh como último recurso
         execlp("/bin/sh", "/bin/sh", "-c", cmd, (char *)NULL);
         exit(127);
     } else if (pid > 0) {
