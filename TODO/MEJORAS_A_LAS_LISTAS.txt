@@ -63,7 +63,7 @@ Pero se debería de poder hacer que puedas poner:
 algo = lista[2:3]
 ```
 Y ese `algo` tiene como tipado automático una lista con los elementos eleccionados.
-Pero si pones tipado explícito con string, la variable `algo` tiene el valor de "elemento 2 elemento 3" (sin la coma), devolviendo los índices 2 y 3, además de los que tendrían en medio si tuvieran.
+Pero si pones tipado explícito con string, la variable `algo` tiene el valor de "elemento 2 elemento 3" (sin la coma), devolviendo los índices 2 y 3, además de los que tendrían en medio si tuvieran. Es como el join() del TODO de funciones para strings; lo ejecuta con join(lista, " "). (Con un espacio).
 Pero si no existe el índice 3, que dé error. También si no existe el 2.
 
 Si la lista es ["hola", "mundo"] y la pasas a string, será "hola mundo".
