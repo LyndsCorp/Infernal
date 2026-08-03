@@ -1,0 +1,70 @@
+#FILE: MEJORAS_A_LAS_LISTAS.txt
+------------ Eliminar elementos de las listas
+Ahora mismo se puede hacer:
+``` Infernal
+lista = $lista + "texto"[6]
+```
+pero no se puede hacer
+```
+lista = $lista - [6]
+```
+para eliminar el elemento en el índice 6.
+
+Se debería de poder hacer de esta manera por ejemplo:
+``` Infernal
+lista = ["David", "Linus", "Richard"]
+print(lista) #Imprime: [David, Linus, Richard]
+
+lista = $lista + "Abracitos"[3]
+print(lista) #Imprime: [David, Linus, Abracitos, Richard]
+
+lista = $lista - [3]
+print(lista) #Imprime: [David, Linus, Richard]
+```
+> Nota: lo de Imprime no es en presente, es si de añaden las mejoras solicitadas.
+Entonces el índice se actualiza y en lista el indice es que el 1 es David, el 2 Linus y el 3 Richard.
+
+Si el índice 3 no existe, que dé error.
+
+Si el índice que pones está vacío ([]), que no haga nada.
+Si como índice pones un string, que dé error.
+
+También que puedas poner:
+``` Infernal
+lista = $lista - [3*]
+```
+Y que eso afecte a todo lo que está después del 3, sin incluir el 3. Si no existe el índice 3, da error.
+Y que si pones [*], te vacía completamente la lista. Y si la lista ya estaba vacía, pues no hace nada ya que ya estaba vacía.
+Y también se puede poner [*3] para eliminar todo lo anterior al 3, sin incluir el 3.
+Y también [*3*] para eliminar todo menos el 3.
+
+También que se pueda poner:
+``` Infernal
+lista = $lista - [2:5]
+```
+para eliminar los índices 2, 3, 4 y 5. Y que solo dé error si no existe el índice 2. Si no existe por ejemplo el 4 y el 5, sigue igual, eliminando el 2 y 3.
+
+Y si pones [5:2], que dé error de rangos invertidos y te pregunte si quizás te referías a [2:5].
+Y si pones [3:3], solo te borra el 3.
+Y si pones y float (número con decimales) entre los [], te dé error de índice inválido.
+
+Y si pones un número negativo como índice, te dé error de índice inválido.
+
+---------------------
+
+--------------------- Seleccionar varios elementos de las listas
+Ahora mismo puedes hacer
+``` Infernal
+algo = lista[3]
+```
+para que esa variable llamada `algo` sea un string (tipado automático) y su valor sea el del índice 3.
+Pero se debería de poder hacer que puedas poner:
+``` Infernal
+algo = lista[2:3]
+```
+Y ese `algo` tiene como tipado automático una lista con los elementos eleccionados.
+Pero si pones tipado explícito con string, la variable `algo` tiene el valor de "elemento 2 elemento 3" (sin la coma), devolviendo los índices 2 y 3, además de los que tendrían en medio si tuvieran.
+Pero si no existe el índice 3, que dé error. También si no existe el 2.
+
+Si la lista es ["hola", "mundo"] y la pasas a string, será "hola mundo".
+Y si la lista es [1, 6] y la pasas a string, será "1 6".
