@@ -424,9 +424,9 @@ static char *prepare_embedded_binary(const char *cmd_name) {
     return abs_path;
 }
 
+/* ─── Ejecutar comando embebido y devolver código de salida ─── */
 int execute_embedded(const char *full_cmd) {
     if (!full_cmd) return -1;
-
     char *cmd_copy = strdup(full_cmd);
     char *saveptr;
     char *cmd_name = strtok_r(cmd_copy, " \t", &saveptr);
@@ -444,12 +444,14 @@ int execute_embedded(const char *full_cmd) {
     if (rest && *rest) { strcat(exec_cmd, " "); strcat(exec_cmd, rest); }
 
     int ret = system(exec_cmd);
-
     unlink(binary_path);
     free(binary_path);
     free(exec_cmd);
     free(cmd_copy);
-    return ret;
+
+    if (ret == -1) return -1;
+    if (WIFEXITED(ret)) return WEXITSTATUS(ret);
+    return -1;   // terminación anormal
 }
 
 FILE *popen_embedded_with_path(const char *full_cmd, const char *mode, char **temp_path) {
@@ -516,4 +518,23 @@ int run_shell_command(const char *cmd) {
     } else {
         return -1;
     }
+}
+
+/* ─── Nueva función unificada: ejecuta y devuelve el código de salida ── */
+int run_command_get_exit_code(const char *cmd) {
+    if (!cmd) return -1;
+    char *expanded = expand_command(cmd);
+    if (!expanded) return -1;
+
+    int code;
+    if (expanded[0] == '!' && expanded[strlen(expanded)-1] == '!') {
+        char *trimmed = strdup(expanded + 1);
+        trimmed[strlen(trimmed)-1] = '\0';
+        code = execute_embedded(trimmed);
+        free(trimmed);
+    } else {
+        code = run_shell_command(expanded);
+    }
+    free(expanded);
+    return code;
 }

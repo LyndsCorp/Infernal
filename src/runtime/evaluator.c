@@ -1,7 +1,7 @@
 /*
  * Infernal: el lenguaje de programación. Copyright (C) 2026, GPL v3+ License.
  * Código fuente de Infernal: runtime/evaluator.c
- */
+*/
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -38,19 +38,6 @@ static const char *type_name(int tok_type) {
         case TOK_LIST:   return "list";
         default:         return "desconocido";
     }
-}
-
-static bool is_float_string(const char *s) {
-    if (!s || !*s) return false;
-    char *normalized = strdup(s);
-    for (char *p = normalized; *p; p++) {
-        if (*p == ',') *p = '.';
-    }
-    char *end;
-    strtod(normalized, &end);
-    bool ok = (*end == '\0' && end != normalized);
-    free(normalized);
-    return ok;
 }
 
 static bool try_convert_value(Value *val, int target_tok_type) {
@@ -393,47 +380,90 @@ void exec_block_from(NodeList *block, int start_index) {
                 Value val;
                 if (stmt->data.assign.is_cmd) {
                     char *cmd = stmt->data.assign.cmd_str;
-                    char *expanded_cmd = expand_command(cmd);
-                    FILE *fp = NULL;
-                    char *temp_path = NULL;
-                    int is_embedded = 0;
+                    int exit_code = 0;
 
-                    if (expanded_cmd[0] == '!' && expanded_cmd[strlen(expanded_cmd)-1] == '!') {
-                        is_embedded = 1;
-                        char *trimmed = strdup(expanded_cmd + 1);
-                        trimmed[strlen(trimmed)-1] = '\0';
-                        fp = popen_embedded_with_path(trimmed, "r", &temp_path);
-                        free(trimmed);
-                    } else {
-                        fp = popen(expanded_cmd, "r");
-                    }
-
-                    if (!fp) {
-                        if (is_embedded)
-                            error(stmt->line, "Comando embebido no encontrado: %s", expanded_cmd);
-                        else
+                    // Si es bool, ejecutamos sin mostrar salida
+                    if (stmt->data.assign.vtype == TOK_BOOL) {
+                        char *expanded_cmd = expand_command(cmd);
+                        FILE *fp = popen(expanded_cmd, "r");
+                        if (!fp) {
                             error(stmt->line, "Error al ejecutar comando: %s", expanded_cmd);
-                    }
-                    char buf[4096];
-                    char *out = strdup("");
-                    while (fgets(buf, sizeof(buf), fp)) {
-                        out = realloc(out, strlen(out) + strlen(buf) + 1);
-                        strcat(out, buf);
-                    }
-                    int status = pclose(fp);
-                    if (status != 0) error(stmt->line, "Comando falló: %s", expanded_cmd);
+                        }
+                        // Leer y descartar la salida para evitar bloqueos del proceso hijo
+                        char buf[1024];
+                        while (fgets(buf, sizeof(buf), fp) != NULL) {
+                            // descartar
+                        }
+                        int status = pclose(fp);
+                        if (WIFEXITED(status)) {
+                            exit_code = WEXITSTATUS(status);
+                        } else {
+                            exit_code = -1;
+                        }
+                        free(expanded_cmd);
+                        val = val_bool(exit_code == 0);
+                    } else {
+                        // Para otros tipos (int, string, list) capturamos la salida
+                        char *expanded_cmd = expand_command(cmd);
+                        FILE *fp = NULL;
+                        char *temp_path = NULL;
+                        int is_embedded = 0;
 
-                    if (temp_path) {
-                        unlink(temp_path);
-                        free(temp_path);
-                    }
+                        if (expanded_cmd[0] == '!' && expanded_cmd[strlen(expanded_cmd)-1] == '!') {
+                            is_embedded = 1;
+                            char *trimmed = strdup(expanded_cmd + 1);
+                            trimmed[strlen(trimmed)-1] = '\0';
+                            fp = popen_embedded_with_path(trimmed, "r", &temp_path);
+                            free(trimmed);
+                        } else {
+                            fp = popen(expanded_cmd, "r");
+                        }
 
-                    size_t len = strlen(out);
-                    if (len > 0 && out[len-1] == '\n') out[len-1] = '\0';
-                    val = val_string(out);
-                    free(out);
-                    free(expanded_cmd);
+                        if (!fp) {
+                            if (is_embedded)
+                                error(stmt->line, "Comando embebido no encontrado: %s", expanded_cmd);
+                            else
+                                error(stmt->line, "Error al ejecutar comando: %s", expanded_cmd);
+                        }
+                        char buf[4096];
+                        char *out = strdup("");
+                        while (fgets(buf, sizeof(buf), fp)) {
+                            out = realloc(out, strlen(out) + strlen(buf) + 1);
+                            strcat(out, buf);
+                        }
+                        int status = pclose(fp);
+                        if (status != 0) {
+                            error(stmt->line, "Comando falló: %s", expanded_cmd);
+                        }
+
+                        if (temp_path) {
+                            unlink(temp_path);
+                            free(temp_path);
+                        }
+
+                        size_t len = strlen(out);
+                        if (len > 0 && out[len-1] == '\n') out[len-1] = '\0';
+
+                        if (stmt->data.assign.vtype == TOK_LIST) {
+                            Value list = val_list_empty();
+                            char *dup = strdup(out);
+                            char *saveptr;
+                            char *line = strtok_r(dup, "\n", &saveptr);
+                            while (line) {
+                                val_list_append(&list, val_string(line));
+                                line = strtok_r(NULL, "\n", &saveptr);
+                            }
+                            free(dup);
+                            free(out);
+                            val = list;
+                        } else {
+                            val = val_string(out);
+                            free(out);
+                        }
+                        free(expanded_cmd);
+                    }
                 } else {
+                    // Asignación normal de expresión
                     if (stmt->data.assign.lhs_index) {
                         VarEntry *var = scope_find(current_scope, stmt->data.assign.name);
                         if (!var || var->value.type != VAL_LIST)
@@ -448,63 +478,22 @@ void exec_block_from(NodeList *block, int start_index) {
                         var->value.data.list.items[idx - 1] = val;
                         break;
                     }
-
-                    Value rhs = eval_expr(stmt->data.assign.value);
-
-                    if (stmt->data.assign.value &&
-                        stmt->data.assign.value->kind == NODE_INDEX &&
-                        stmt->data.assign.value->data.idx.list->kind == NODE_VAR)
-                    {
-                        char *list_name = stmt->data.assign.value->data.idx.list->data.var.name;
-                        if (list_name[0] != '$') {
-                            Value idx_val = eval_expr(stmt->data.assign.value->data.idx.index);
-                            if (idx_val.type == VAL_INT) {
-                                val = val_reference(list_name, idx_val.data.ival);
-                            } else {
-                                val = rhs;
-                            }
-                        } else {
-                            val = rhs;
-                        }
-                    } else {
-                        val = rhs;
-                    }
+                    val = eval_expr(stmt->data.assign.value);
                 }
 
+                // Aplicar conversión de tipos (si el valor no es del tipo esperado)
                 int vtype = stmt->data.assign.vtype;
                 if (vtype != 0) {
                     int actual_type = valtype_to_tokentype(val.type);
                     if (vtype != actual_type) {
                         if (!try_convert_value(&val, vtype)) {
-                            if (val.type == VAL_STRING && is_float_string(val.data.sval)) {
-                                error(stmt->line, "Error de tipado fijo: se esperaba %s pero se obtuvo float",
-                                      type_name(vtype));
-                            } else {
-                                error(stmt->line, "Error de tipado fijo: se esperaba %s pero se obtuvo %s",
-                                      type_name(vtype), type_name(actual_type));
-                            }
+                            error(stmt->line, "Error de tipado fijo: se esperaba %s pero se obtuvo %s",
+                                  type_name(vtype), type_name(actual_type));
                         }
                     }
                 }
 
-                if (vtype == 0) {
-                    if (!stmt->data.assign.is_cmd && stmt->data.assign.value &&
-                        stmt->data.assign.value->kind == NODE_VAR) {
-                        const char *src_name = stmt->data.assign.value->data.var.name;
-                    if (src_name[0] == '$') src_name++;
-                    VarEntry *src_var = scope_find(current_scope, src_name);
-                        if (src_var && src_var->vtype != 0) {
-                            vtype = src_var->vtype;
-                        } else {
-                            vtype = valtype_to_tokentype(val.type);
-                        }
-                        } else {
-                            vtype = valtype_to_tokentype(val.type);
-                        }
-                        if (vtype == 0) vtype = TOK_STRING;
-                }
-
-                // ─── ÁMBITO ──────────────────────────────────────
+                // Definir/Asignar en el ámbito correspondiente
                 if (stmt->data.assign.is_global) {
                     scope_define(super_global_scope, stmt->data.assign.name, vtype, val);
                     char env_name[512];
@@ -522,7 +511,6 @@ void exec_block_from(NodeList *block, int start_index) {
                 } else if (stmt->data.assign.is_local) {
                     scope_define(current_scope, stmt->data.assign.name, vtype, val);
                 } else {
-                    // Sin calificador → global del script (global_scope)
                     VarEntry *var = scope_find(global_scope, stmt->data.assign.name);
                     if (var) {
                         scope_assign(global_scope, stmt->data.assign.name, val, stmt->line);
