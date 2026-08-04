@@ -99,28 +99,23 @@ ASTNode *parse_slice_content(int line) {
     node->data.slice.mode = mode;
     node->data.slice.start = start;
     node->data.slice.end = end;
-    node->data.slice.list = NULL;  // se asignará después
+    node->data.slice.list = NULL;
     DEBUG_INFO("parse_slice_content: creado NODE_SLICE modo %d, start=%d, end=%d", mode, start, end);
     return node;
 }
 
 /* ─── parse_index_or_slice: parsea el contenido dentro de [ ] y devuelve NODE_INDEX o NODE_SLICE ── */
 ASTNode *parse_index_or_slice(int line) {
-    // Se asume que ya se ha consumido el '[' y el token actual es el primero dentro.
     Token t = ts_peek();
     ASTNode *node = NULL;
 
-    // Determinar si es slice o índice simple según el primer token
     if (t.type == TOK_STAR || (t.type == TOK_NUMBER && (ts.tokens[ts.pos+1].type == TOK_COLON || ts.tokens[ts.pos+1].type == TOK_STAR))) {
-        // Es slice
         node = parse_slice_content(line);
     } else {
-        // Índice simple: parsear una expresión y esperar ']'
         ASTNode *idx = parse_expression(0);
         if (!ts_match(TOK_RBRACKET)) error(line, "Se esperaba ']'");
         node = node_create(NODE_INDEX, line);
         node->data.idx.index = idx;
-        // El campo list se llenará después
     }
     return node;
 }
@@ -147,16 +142,17 @@ ASTNode *parse_primary() {
         ASTNode *n = node_create(NODE_LITERAL, t.line);
         n->data.lit.type = TOK_STRING;
         n->data.lit.sval = strdup(t.lexeme);
-        while (ts_match(TOK_LBRACKET)) {
+        while (ts_peek().type == TOK_LBRACKET) {
+            Token lb = ts_advance();
             Token next = ts_peek();
             if (next.type == TOK_STAR || (next.type == TOK_NUMBER && (ts.tokens[ts.pos+1].type == TOK_COLON || ts.tokens[ts.pos+1].type == TOK_STAR))) {
-                ASTNode *slice = parse_slice_content(t.line);
+                ASTNode *slice = parse_slice_content(lb.line);
                 slice->data.slice.list = n;
                 n = slice;
             } else {
                 ASTNode *idx = parse_expression(0);
-                if (!ts_match(TOK_RBRACKET)) error(t.line, "Se esperaba ']'");
-                ASTNode *ni = node_create(NODE_INDEX, t.line);
+                if (!ts_match(TOK_RBRACKET)) error(lb.line, "Se esperaba ']'");
+                ASTNode *ni = node_create(NODE_INDEX, lb.line);
                 ni->data.idx.list = n;
                 ni->data.idx.index = idx;
                 n = ni;
@@ -218,16 +214,17 @@ ASTNode *parse_primary() {
             ts_advance();
             ASTNode *n = node_create(NODE_VAR, t.line);
             n->data.var.name = strdup(t.lexeme);
-            while (ts_match(TOK_LBRACKET)) {
+            while (ts_peek().type == TOK_LBRACKET) {
+                Token lb = ts_advance();
                 Token next = ts_peek();
                 if (next.type == TOK_STAR || (next.type == TOK_NUMBER && (ts.tokens[ts.pos+1].type == TOK_COLON || ts.tokens[ts.pos+1].type == TOK_STAR))) {
-                    ASTNode *slice = parse_slice_content(t.line);
+                    ASTNode *slice = parse_slice_content(lb.line);
                     slice->data.slice.list = n;
                     n = slice;
                 } else {
                     ASTNode *idx = parse_expression(0);
-                    if (!ts_match(TOK_RBRACKET)) error(t.line, "Se esperaba ']'");
-                    ASTNode *ni = node_create(NODE_INDEX, t.line);
+                    if (!ts_match(TOK_RBRACKET)) error(lb.line, "Se esperaba ']'");
+                    ASTNode *ni = node_create(NODE_INDEX, lb.line);
                     ni->data.idx.list = n;
                     ni->data.idx.index = idx;
                     n = ni;

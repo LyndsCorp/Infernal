@@ -149,6 +149,8 @@ int main(int argc, char **argv) {
 
     register_all_builtins();
 
+    printf("[DEBUG] print registrado en VM: %d\n", vm_find_builtin_index("print"));
+
     // ─── Cargar configuración de shell (solo si no se especificó --shell) ──
     if (!infernal_shell) {
         load_infernal_config();

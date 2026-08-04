@@ -30,12 +30,13 @@ static const struct {
     {NULL, NULL}
 };
 
+/* ─── Función auxiliar para imprimir un valor ──────────────── */
 static void print_value(Value v) {
     switch (v.type) {
         case VAL_INT:    printf("%d", v.data.ival); break;
         case VAL_FLOAT:  printf("%g", v.data.fval); break;
         case VAL_BOOL:   printf("%s", v.data.bval ? "true" : "false"); break;
-        case VAL_STRING: printf("%s", v.data.sval ? v.data.sval : "(null)"); break;
+        case VAL_STRING: printf("%s", v.data.sval); break;
         case VAL_LIST:
             printf("[");
             for (int j = 0; j < v.data.list.count; j++) {

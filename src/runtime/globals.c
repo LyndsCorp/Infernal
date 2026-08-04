@@ -35,6 +35,8 @@ int repeat_line_target = 0;
 char *script_dir = NULL;
 char *current_source_file = NULL;
 
+int current_eval_line = 0;
+
 /* ─── Shell configurado ───────────────────────────────────── */
 char *infernal_shell = NULL;
 

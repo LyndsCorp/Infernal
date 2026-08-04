@@ -565,10 +565,12 @@ NodeList parse_block(const char *terminator) {
             validate_var_name(vname, t.line);
 
             ASTNode *lhs_index = NULL;
-            if (ts_match(TOK_LBRACKET)) {
-                lhs_index = parse_index_or_slice(t.line);
+            // ---- CORRECCIÓN: usar línea del '[' ----
+            if (ts_peek().type == TOK_LBRACKET) {
+                Token lb = ts_advance();
+                lhs_index = parse_index_or_slice(lb.line);
                 if (lhs_index->kind == NODE_SLICE) {
-                    error(t.line, "No se puede usar slice en el lado izquierdo de una asignación");
+                    error(lb.line, "No se puede usar slice en el lado izquierdo de una asignación");
                 }
                 lhs_index->data.idx.list = node_create(NODE_VAR, t.line);
                 lhs_index->data.idx.list->data.var.name = strdup(vname);
@@ -584,7 +586,6 @@ NodeList parse_block(const char *terminator) {
             if (next_token.type == TOK_IDENT && (next_token.lexeme[0] == '$' || next_token.lexeme[0] == '?')) {
                 value = parse_expression(0);
             } else if (next_token.type == TOK_IDENT) {
-                // Verificar si el siguiente token es '[' o '(' -> expresión
                 int next_pos = ts.pos + 1;
                 if (next_pos < ts.count && (ts.tokens[next_pos].type == TOK_LBRACKET || ts.tokens[next_pos].type == TOK_LPAREN)) {
                     value = parse_expression(0);
@@ -618,10 +619,12 @@ NodeList parse_block(const char *terminator) {
             validate_var_name(vname, t.line);
 
             ASTNode *lhs_index = NULL;
-            if (ts_match(TOK_LBRACKET)) {
-                lhs_index = parse_index_or_slice(t.line);
+            // ---- CORRECCIÓN: usar línea del '[' ----
+            if (ts_peek().type == TOK_LBRACKET) {
+                Token lb = ts_advance();
+                lhs_index = parse_index_or_slice(lb.line);
                 if (lhs_index->kind == NODE_SLICE) {
-                    error(t.line, "No se puede usar slice en el lado izquierdo de una asignación");
+                    error(lb.line, "No se puede usar slice en el lado izquierdo de una asignación");
                 }
                 lhs_index->data.idx.list = node_create(NODE_VAR, t.line);
                 lhs_index->data.idx.list->data.var.name = strdup(vname);
@@ -666,11 +669,9 @@ NodeList parse_block(const char *terminator) {
                 Token saved_t = t;
                 ts_advance(); // consume identificador
 
-                // Ver siguiente token sin consumir
                 Token next_tok = ts_peek();
 
                 if (next_tok.type == TOK_EQ) {
-                    // ASIGNACIÓN SIMPLE
                     ts_advance(); // consumir '='
                     char *vname = strdup(saved_t.lexeme);
                     validate_var_name(vname, saved_t.line);
@@ -709,11 +710,11 @@ NodeList parse_block(const char *terminator) {
                     stmt->data.assign.lhs_index = NULL;
 
                 } else if (next_tok.type == TOK_LBRACKET) {
-                    // ASIGNACIÓN CON ÍNDICE
-                    ts_advance(); // consumir '['
-                    ASTNode *lhs_index = parse_index_or_slice(saved_t.line);
+                    // ---- CORRECCIÓN: usar línea del '[' ----
+                    Token lb = ts_advance(); // consumir '['
+                    ASTNode *lhs_index = parse_index_or_slice(lb.line);
                     if (lhs_index->kind == NODE_SLICE) {
-                        error(saved_t.line, "No se puede asignar a un slice");
+                        error(lb.line, "No se puede asignar a un slice");
                     }
                     char *vname = strdup(saved_t.lexeme);
                     validate_var_name(vname, saved_t.line);
@@ -756,7 +757,6 @@ NodeList parse_block(const char *terminator) {
                     stmt->data.assign.lhs_index = lhs_index;
 
                 } else {
-                    // NO ES ASIGNACIÓN → puede ser comando o expresión
                     int known = (scope_find_script(current_scope, saved_t.lexeme) != NULL ||
                     func_lookup(saved_t.lexeme) != NULL);
                     int next_is_paren_or_bracket = 0;
@@ -788,7 +788,6 @@ NodeList parse_block(const char *terminator) {
                         exception_raised = 0;
                     }
 
-                    /* ─── COMANDO SHELL NORMAL (sin ! ni comillas) ─── */
                     char cmd[4096] = {0};
                     Token first = ts_advance();
                     strcpy(cmd, first.lexeme);

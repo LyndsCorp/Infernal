@@ -19,6 +19,8 @@
 #include <unistd.h>
 #include <ctype.h>
 
+extern int current_eval_line;
+
 #define STACK_MAX 4096
 Value stack[STACK_MAX];
 static Value *sp = stack;
@@ -487,18 +489,19 @@ Value vm_run(Chunk *chunk) {
                 Value idx = pop();
                 Value base = pop();
                 if (base.type == VAL_LIST) {
-                    if (idx.type != VAL_INT) error(0, "Índice de lista debe ser entero");
+                    if (idx.type != VAL_INT) error(current_eval_line, "Índice de lista debe ser entero");
                     int i = idx.data.ival;
-                    if (i < 1 || i > base.data.list.count) error(0, "Índice fuera de rango");
+                    if (i < 1 || i > base.data.list.count) error(current_eval_line, "Índice fuera de rango");
                     push(base.data.list.items[i-1]);
                 } else if (base.type == VAL_STRING) {
-                    if (idx.type != VAL_INT) error(0, "Índice de string debe ser entero");
+                    if (idx.type != VAL_INT) error(current_eval_line, "Índice de string debe ser entero");
                     int i = idx.data.ival;
                     size_t len = strlen(base.data.sval);
-                    if (i < 1 || (size_t)i > len) error(0, "Índice de string fuera de rango");
+                    if (i < 1 || (size_t)i > len) error(current_eval_line, "Índice de string fuera de rango");
                     char c[2] = {base.data.sval[i-1], 0};
                     push(val_string(c));
-                } else error(0, "Indexación no soportada");
+                } else
+                    error(current_eval_line, "Indexación no soportada");
                 ip++;
                 DISPATCH();
             }

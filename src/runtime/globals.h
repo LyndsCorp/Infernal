@@ -64,4 +64,6 @@ extern char *infernal_shell;
 void load_infernal_config(void);
 void show_shell_info(void);
 
+extern int current_eval_line;
+
 #endif

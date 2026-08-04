@@ -285,9 +285,9 @@ static void compile_expr(Compiler *c, ASTNode *expr) {
                                         }
                                         break;
                                     case NODE_INDEX: {
-                                        compile_expr(c, expr->data.idx.list);
-                                        compile_expr(c, expr->data.idx.index);
-                                        emit(c->chunk, OP_INDEX, 0);
+                                        int const_idx = add_constant(c, val_ptr(expr));
+                                        emit(c->chunk, OP_INTERPRET_NODE, const_idx);
+                                        c->chunk->code[c->chunk->code_count - 1].operand2 = 1;
                                         break;
                                     }
                                     case NODE_SLICE: {

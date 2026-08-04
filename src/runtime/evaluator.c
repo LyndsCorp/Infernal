@@ -1,5 +1,7 @@
 /*
- * Infernal: el lenguaje de programación. Copyright (C) 2026, GPL v3+ License.
+ * Aros Infernal: el lenguaje de programación.
+ * Copyright (C) 2026 Lynds Corp., David Baña Szymaniak
+ * GPL v3+ License.
  * Código fuente de Infernal: runtime/evaluator.c
 */
 
@@ -154,6 +156,56 @@ void exec_flag_spec(FlagSpec *spec) {
     ts = saved_ts;
 }
 
+/* ─── Función auxiliar para obtener la línea de un nodo (recursiva) ─── */
+static int get_node_line(ASTNode *node) {
+    if (!node) return 0;
+    if (node->line != 0) return node->line;
+
+    switch (node->kind) {
+        case NODE_INDEX:
+            if (node->data.idx.list) {
+                int l = get_node_line(node->data.idx.list);
+                if (l) return l;
+            }
+            if (node->data.idx.index) {
+                int l = get_node_line(node->data.idx.index);
+                if (l) return l;
+            }
+            break;
+        case NODE_SLICE:
+            if (node->data.slice.list) {
+                int l = get_node_line(node->data.slice.list);
+                if (l) return l;
+            }
+            break;
+        case NODE_BINOP:
+            if (node->data.binop.left) {
+                int l = get_node_line(node->data.binop.left);
+                if (l) return l;
+            }
+            if (node->data.binop.right) {
+                int l = get_node_line(node->data.binop.right);
+                if (l) return l;
+            }
+            break;
+        case NODE_CALL:
+            for (int i = 0; i < node->data.call.argc; i++) {
+                int l = get_node_line(node->data.call.args[i]);
+                if (l) return l;
+            }
+            break;
+        case NODE_LIST:
+            for (int i = 0; i < node->data.list_lit.count; i++) {
+                int l = get_node_line(node->data.list_lit.items[i]);
+                if (l) return l;
+            }
+            break;
+        default:
+            break;
+    }
+    return 0;
+}
+
 /* ────────────────────────────────────────────────────────────── */
 /* Slice y eliminación de listas (versión robusta)             */
 /* ────────────────────────────────────────────────────────────── */
@@ -164,7 +216,7 @@ static Value eval_slice(ASTNode *node) {
     if (node->kind != NODE_SLICE) error(node->line, "eval_slice: nodo no es NODE_SLICE");
 
     if (node->data.slice.list == NULL) {
-        error(node->line, "eval_slice: el campo 'list' del nodo slice es NULL");
+        error(current_eval_line, "eval_slice: el campo 'list' del nodo slice es NULL");
     }
 
     DEBUG_INFO("eval_slice: mode=%d, start=%d, end=%d, list node kind=%d",
@@ -175,7 +227,7 @@ static Value eval_slice(ASTNode *node) {
     DEBUG_INFO("eval_slice: lista evaluada, tipo=%d, count=%d", list.type, list.data.list.count);
 
     if (list.type != VAL_LIST)
-        error(node->line, "El slice solo se puede aplicar a listas (tipo %d)", list.type);
+        error(current_eval_line, "El slice solo se puede aplicar a listas (tipo %d)", list.type);
 
     int len = list.data.list.count;
     if (len == 0) {
@@ -184,7 +236,7 @@ static Value eval_slice(ASTNode *node) {
     }
 
     if (list.data.list.items == NULL) {
-        error(node->line, "eval_slice: lista corrupta: items es NULL pero count=%d", len);
+        error(current_eval_line, "eval_slice: lista corrupta: items es NULL pero count=%d", len);
     }
 
     int mode = node->data.slice.mode;
@@ -192,17 +244,19 @@ static Value eval_slice(ASTNode *node) {
     int end   = node->data.slice.end;
 
     Value result = val_list_empty();
+    int line = get_node_line(node);
+    if (line == 0) line = current_eval_line;
 
     switch (mode) {
         case 0: {
             if (start < 1 || start > len)
-                error(node->line, "Índice fuera de rango: %d (lista tiene %d elementos)", start, len);
+                error(line, "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
             val_list_append(&result, copy_value_secure(list.data.list.items[start - 1]));
             break;
         }
         case 1: {
             if (start < 1 || start > len)
-                error(node->line, "Índice inicial fuera de rango: %d", start);
+                error(line, "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
             int real_end = (end > len) ? len : end;
             if (start > real_end) {
                 break;
@@ -214,7 +268,7 @@ static Value eval_slice(ASTNode *node) {
         }
         case 2: {
             if (start < 1 || start > len)
-                error(node->line, "Índice fuera de rango: %d", start);
+                error(line, "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
             for (int i = start; i < len; i++) {
                 val_list_append(&result, copy_value_secure(list.data.list.items[i]));
             }
@@ -222,10 +276,10 @@ static Value eval_slice(ASTNode *node) {
         }
         case 3: {
             if (start != -1) {
-                error(node->line, "Modo *start no implementado correctamente");
+                error(line, "Modo *start no implementado correctamente");
             }
             if (end < 1 || end > len)
-                error(node->line, "Índice fuera de rango: %d", end);
+                error(line, "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
             for (int i = 0; i < end - 1; i++) {
                 val_list_append(&result, copy_value_secure(list.data.list.items[i]));
             }
@@ -233,7 +287,7 @@ static Value eval_slice(ASTNode *node) {
         }
         case 4: {
             if (start < 1 || start > len)
-                error(node->line, "Índice fuera de rango: %d", start);
+                error(line, "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
             for (int i = 0; i < len; i++) {
                 if (i != start - 1)
                     val_list_append(&result, copy_value_secure(list.data.list.items[i]));
@@ -244,7 +298,7 @@ static Value eval_slice(ASTNode *node) {
             break;
         }
         default:
-            error(node->line, "Modo de slice inválido: %d", mode);
+            error(line, "Modo de slice inválido: %d", mode);
     }
 
     DEBUG_INFO("eval_slice: resultado lista con %d elementos", result.data.list.count);
@@ -256,7 +310,7 @@ static Value remove_slice(Value list, ASTNode *slice_node) {
     if (slice_node->kind != NODE_SLICE) error(slice_node->line, "remove_slice: nodo no es NODE_SLICE");
 
     if (list.type != VAL_LIST)
-        error(slice_node->line, "La eliminación solo se puede aplicar a listas");
+        error(current_eval_line, "La eliminación solo se puede aplicar a listas");
 
     int len = list.data.list.count;
     if (len == 0) {
@@ -264,19 +318,21 @@ static Value remove_slice(Value list, ASTNode *slice_node) {
     }
 
     if (list.data.list.items == NULL) {
-        error(slice_node->line, "remove_slice: lista corrupta: items es NULL pero count=%d", len);
+        error(current_eval_line, "remove_slice: lista corrupta: items es NULL pero count=%d", len);
     }
 
     int mode = slice_node->data.slice.mode;
     int start = slice_node->data.slice.start;
     int end   = slice_node->data.slice.end;
+    int line = get_node_line(slice_node);
+    if (line == 0) line = current_eval_line;
 
     Value new_list = val_list_empty();
 
     switch (mode) {
         case 0: {
             if (start < 1 || start > len)
-                error(slice_node->line, "Índice fuera de rango: %d", start);
+                error(line, "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
             for (int i = 0; i < len; i++) {
                 if (i == start - 1) continue;
                 val_list_append(&new_list, copy_value_secure(list.data.list.items[i]));
@@ -285,7 +341,7 @@ static Value remove_slice(Value list, ASTNode *slice_node) {
         }
         case 1: {
             if (start < 1 || start > len)
-                error(slice_node->line, "Índice inicial fuera de rango: %d", start);
+                error(line, "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
             int real_end = (end > len) ? len : end;
             if (start > real_end) {
                 for (int i = 0; i < len; i++)
@@ -300,7 +356,7 @@ static Value remove_slice(Value list, ASTNode *slice_node) {
         }
         case 2: {
             if (start < 1 || start > len)
-                error(slice_node->line, "Índice fuera de rango: %d", start);
+                error(line, "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
             for (int i = 0; i < start - 1; i++) {
                 val_list_append(&new_list, copy_value_secure(list.data.list.items[i]));
             }
@@ -308,10 +364,10 @@ static Value remove_slice(Value list, ASTNode *slice_node) {
         }
         case 3: {
             if (start != -1) {
-                error(slice_node->line, "Modo *start no implementado correctamente para eliminación");
+                error(line, "Modo *start no implementado correctamente para eliminación");
             }
             if (end < 1 || end > len)
-                error(slice_node->line, "Índice fuera de rango: %d", end);
+                error(line, "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
             for (int i = end - 1; i < len; i++) {
                 val_list_append(&new_list, copy_value_secure(list.data.list.items[i]));
             }
@@ -319,7 +375,7 @@ static Value remove_slice(Value list, ASTNode *slice_node) {
         }
         case 4: {
             if (start < 1 || start > len)
-                error(slice_node->line, "Índice fuera de rango: %d", start);
+                error(line, "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
             val_list_append(&new_list, copy_value_secure(list.data.list.items[start - 1]));
             break;
         }
@@ -327,7 +383,7 @@ static Value remove_slice(Value list, ASTNode *slice_node) {
             break;
         }
         default:
-            error(slice_node->line, "Modo de slice inválido para eliminación: %d", mode);
+            error(line, "Modo de slice inválido para eliminación: %d", mode);
     }
 
     return new_list;
@@ -342,7 +398,7 @@ static int extract_integer_index(ASTNode *node, int line) {
     if (node->kind == NODE_INDEX) {
         Value idx_val = eval_expr(node->data.idx.index);
         if (idx_val.type != VAL_INT)
-            error(line, "El índice debe ser un entero");
+            error(line, "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
         return idx_val.data.ival;
     }
 
@@ -371,7 +427,7 @@ static Value resolve_reference(Value v, int line) {
     }
     int idx = v.data.ref.index;
     if (idx < 1 || idx > list_var->value.data.list.count) {
-        error(line, "Índice de referencia fuera de rango");
+        error(line, "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
     }
     return list_var->value.data.list.items[idx - 1];
 }
@@ -405,7 +461,7 @@ Value eval_expr(ASTNode *expr) {
         }
         case NODE_SLICE: {
             if (expr->data.slice.list == NULL) {
-                error(expr->line, "NODE_SLICE: campo 'list' es NULL");
+                error(current_eval_line, "NODE_SLICE: campo 'list' es NULL");
             }
             return eval_slice(expr);
         }
@@ -418,23 +474,64 @@ Value eval_expr(ASTNode *expr) {
             Value base = eval_expr(expr->data.idx.list);
             Value idx = eval_expr(expr->data.idx.index);
             Value result = val_make_null();
+
+            int line = get_node_line(expr);
+            if (line == 0) line = current_eval_line;
+            if (line == 0) line = get_node_line(expr->data.idx.index);
+            if (line == 0) line = get_node_line(expr->data.idx.list);
+
             if (base.type == VAL_LIST) {
-                int i = (idx.type == VAL_INT) ? idx.data.ival : 1;
+                if (idx.type != VAL_INT) {
+                    if (idx.type == VAL_FLOAT) {
+                        double f = idx.data.fval;
+                        int i = (int)f;
+                        if ((double)i == f) {
+                            if (i < 1 || i > base.data.list.count)
+                                error(line, "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
+                            if (base.data.list.items == NULL)
+                                error(line, "Lista corrupta: items es NULL");
+                            result = copy_value_secure(base.data.list.items[i-1]);
+                            break;
+                        } else {
+                            error(line, "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
+                        }
+                    } else {
+                        error(line, "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
+                    }
+                }
+                int i = idx.data.ival;
                 if (i < 1 || i > base.data.list.count)
-                    error(expr->line, "Índice fuera de rango");
+                    error(line, "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
                 if (base.data.list.items == NULL)
-                    error(expr->line, "Lista corrupta: items es NULL");
+                    error(line, "Lista corrupta: items es NULL");
                 result = copy_value_secure(base.data.list.items[i-1]);
             } else if (base.type == VAL_STRING) {
-                if (idx.type != VAL_INT) error(expr->line, "El índice de string debe ser un entero");
+                if (idx.type != VAL_INT) {
+                    if (idx.type == VAL_FLOAT) {
+                        double f = idx.data.fval;
+                        int i = (int)f;
+                        if ((double)i == f) {
+                            size_t length = strlen(base.data.sval);
+                            if (i < 1 || (size_t)i > length)
+                                error(line, "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
+                            char character[2] = {base.data.sval[i-1], '\0'};
+                            result = val_string(character);
+                            break;
+                        } else {
+                            error(line, "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
+                        }
+                    } else {
+                        error(line, "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
+                    }
+                }
                 int position = idx.data.ival;
                 size_t length = strlen(base.data.sval);
                 if (position < 1 || (size_t)position > length)
-                    error(expr->line, "Índice de string fuera de rango");
+                    error(line, "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
                 char character[2] = {base.data.sval[position - 1], '\0'};
                 result = val_string(character);
             } else {
-                error(expr->line, "No se puede indexar este tipo de valor");
+                error(line, "No se puede indexar este tipo de valor");
             }
             return result;
         }
@@ -515,10 +612,10 @@ Value eval_expr(ASTNode *expr) {
             Value base = eval_expr(idx_node->data.idx.list);
             Value index_val = eval_expr(idx_node->data.idx.index);
             if (index_val.type != VAL_INT) {
-                error(expr->line, "El índice de inserción debe ser un entero");
+                error(expr->line, "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
             }
             int pos = index_val.data.ival;
-            if (pos < 1) error(expr->line, "El índice de inserción debe ser positivo");
+            if (pos < 1) error(expr->line, "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
             DEBUG_INFO("Insertando elemento en posición %d", pos);
                 Value new_list = val_list_empty();
                 for (int i = 0; i < left.data.list.count; i++) {
@@ -675,6 +772,8 @@ void exec_block_from(NodeList *block, int start_index) {
         ASTNode *stmt = block->stmts[i];
         DEBUG_INFO("Ejecutando sentencia tipo %d en línea %d", stmt->kind, stmt->line);
 
+        current_eval_line = stmt->line;
+
         switch (stmt->kind) {
             case NODE_EXPR_STMT: {
                 eval_expr(stmt->data.expr_stmt.expr);
@@ -779,9 +878,9 @@ void exec_block_from(NodeList *block, int start_index) {
                         if (!var || var->value.type != VAL_LIST)
                             error(stmt->line, "Se esperaba una lista en '%s'", stmt->data.assign.name);
                         Value idx_val = eval_expr(stmt->data.assign.lhs_index);
-                        if (idx_val.type != VAL_INT) error(stmt->line, "El índice debe ser un entero");
+                        if (idx_val.type != VAL_INT) error(stmt->line, "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
                         int idx = idx_val.data.ival;
-                        if (idx < 1 || idx > var->value.data.list.count) error(stmt->line, "Índice fuera de rango");
+                        if (idx < 1 || idx > var->value.data.list.count) error(stmt->line, "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
                         Value new_val = eval_expr(stmt->data.assign.value);
                         var->value.data.list.items[idx - 1] = copy_value_secure(new_val);
                         break;
