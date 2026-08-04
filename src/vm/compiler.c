@@ -186,17 +186,33 @@ static void compile_expr(Compiler *c, ASTNode *expr) {
                 case NODE_VAR: {
                     const char *name = expr->data.var.name;
                     const char *clean_name = name;
-                    if (name[0] == '$' || name[0] == '?') clean_name = name + 1;
+
+                    // Si empieza con '$', forzar evaluación con el interpretador (conversión a string)
+                    if (name[0] == '$') {
+                        int const_idx = add_constant(c, val_ptr(expr));
+                        emit(c->chunk, OP_INTERPRET_NODE, const_idx);
+                        c->chunk->code[c->chunk->code_count - 1].operand2 = 1; // modo expresión
+                        break;
+                    }
+
+                    // Para '?' o sin prefijo, comportamiento normal
+                    if (name[0] == '?') clean_name = name + 1;
+
+                    // Buscar global
                     int gidx = vm_find_global_index(clean_name);
                     if (gidx >= 0) {
                         emit(c->chunk, OP_LOAD_GLOBAL, gidx);
                         break;
                     }
+
+                    // Buscar local
                     int slot = resolve_local(c, clean_name);
                     if (slot >= 0) {
                         emit(c->chunk, OP_LOAD_VAR, slot);
                         break;
                     }
+
+                    // Fallback: interpretar el nodo en tiempo de ejecución
                     int const_idx = add_constant(c, val_ptr(expr));
                     emit(c->chunk, OP_INTERPRET_NODE, const_idx);
                     c->chunk->code[c->chunk->code_count - 1].operand2 = 1;
