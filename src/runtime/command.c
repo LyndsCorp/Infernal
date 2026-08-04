@@ -1,5 +1,5 @@
 /*
- * Infernal: el lenguaje de programación. Copyright (C) 2026, GPL v3+ License, Lynds Corp., Aros Legendarios, David Baña Szymaniak.
+ * Infernal: el lenguaje de programación. Copyright (C) 2026, GPL v3+ License.
  * Código fuente de Infernal: runtime/command.c
 */
 
@@ -17,7 +17,6 @@
 #include <pwd.h>
 #include <dlfcn.h>
 #include <sys/wait.h>
-
 #include "command.h"
 #include "runtime/scope.h"
 #include "runtime/globals.h"
@@ -38,20 +37,25 @@ void set_embedded_tmp_dir(const char *dir) {
 /* ─── Convertir un Value a string para uso en comandos ──────────── */
 static char *value_to_command_string(Value v) {
     if (v.type == VAL_LIST) {
-        // Si la lista está vacía, devolver cadena vacía
-        if (v.data.list.count == 0) return strdup("");
+        if (v.data.list.count == 0) {
+            DEBUG_INFO("value_to_command_string: lista vacía -> cadena vacía");
+            return strdup("");
+        }
 
+        DEBUG_INFO("value_to_command_string: convirtiendo lista con %d elementos", v.data.list.count);
         char *result = strdup("");
         for (int i = 0; i < v.data.list.count; i++) {
             Value elem = v.data.list.items[i];
-            char *elem_str = value_to_command_string(elem);  // recursivo para elementos anidados
+            char *elem_str = value_to_command_string(elem);
 
-            // Si el elemento contiene espacios o caracteres especiales, envolver entre comillas dobles
             if (strchr(elem_str, ' ') || strchr(elem_str, '\t') || strchr(elem_str, '\'')) {
                 char *tmp = malloc(strlen(elem_str) + 3);
                 sprintf(tmp, "\"%s\"", elem_str);
                 free(elem_str);
                 elem_str = tmp;
+                DEBUG_INFO("  elemento %d contiene espacios -> entrecomillado: %s", i, elem_str);
+            } else {
+                DEBUG_INFO("  elemento %d: %s", i, elem_str);
             }
 
             if (i > 0) {
@@ -63,6 +67,7 @@ static char *value_to_command_string(Value v) {
             strcat(result, elem_str);
             free(elem_str);
         }
+        DEBUG_INFO("value_to_command_string: resultado final: '%s'", result);
         return result;
     } else {
         char buf[256];
@@ -115,12 +120,10 @@ char *expand_command(const char *cmd) {
             name[nlen] = '\0';
 
             if (*p == '?') {
-                // ?VAR → $VAR literal
                 append_dollar_name(&result, &len, &cap, name);
                 p = start;
                 continue;
             } else {
-                // $VAR → expandir con valor de Infernal
                 char *val = get_var_string(name);
                 if (val) {
                     size_t vlen = strlen(val);
@@ -134,7 +137,6 @@ char *expand_command(const char *cmd) {
                     p = start;
                     continue;
                 }
-                // Si no existe, copiar $VAR tal cual
                 if (len + 1 + nlen >= cap) {
                     cap = (len + 1 + nlen) * 2;
                     result = realloc(result, cap);
@@ -153,6 +155,7 @@ char *expand_command(const char *cmd) {
         result[len++] = *p++;
     }
     result[len] = '\0';
+    DEBUG_INFO("expand_command: '%s' -> '%s'", cmd, result);
     return realloc(result, len + 1);
 }
 
@@ -175,26 +178,28 @@ char *expand_command_with_locals(const char *cmd, char **names, Value *values, i
             name[nlen] = '\0';
 
             if (*p == '?') {
-                // ?VAR → $VAR literal
                 append_dollar_name(&result, &len, &cap, name);
                 p = start;
                 continue;
             } else {
                 char *val = NULL;
+                const char *source = "ninguno";
 
                 // 1) Locales de la VM
                 for (int i = 0; i < count; i++) {
                     if (names[i] && strcmp(names[i], name) == 0) {
                         val = value_to_command_string(values[i]);
+                        source = "local VM";
                         break;
                     }
                 }
 
-                // 2) Scopes de Infernal (current_scope)
+                // 2) Scopes de Infernal
                 if (!val) {
                     VarEntry *e = scope_find(current_scope, name);
                     if (e) {
                         val = value_to_command_string(e->value);
+                        source = "scope";
                     }
                 }
 
@@ -203,10 +208,12 @@ char *expand_command_with_locals(const char *cmd, char **names, Value *values, i
                     int gidx = vm_find_global_index(name);
                     if (gidx >= 0) {
                         val = value_to_command_string(vm_globals[gidx]);
+                        source = "global VM";
                     }
                 }
 
                 if (val) {
+                    DEBUG_INFO("expand_command_with_locals: $%s -> '%s' (desde %s)", name, val, source);
                     size_t vlen = strlen(val);
                     if (len + vlen >= cap) {
                         cap = (len + vlen) * 2;
@@ -219,7 +226,7 @@ char *expand_command_with_locals(const char *cmd, char **names, Value *values, i
                     continue;
                 }
 
-                // Si no se encontró, copiar $VAR literal
+                DEBUG_INFO("expand_command_with_locals: $%s no encontrado, se mantiene literal", name);
                 if (len + 1 + nlen >= cap) {
                     cap = (len + 1 + nlen) * 2;
                     result = realloc(result, cap);
@@ -238,13 +245,14 @@ char *expand_command_with_locals(const char *cmd, char **names, Value *values, i
         result[len++] = *p++;
     }
     result[len] = '\0';
+    DEBUG_INFO("expand_command_with_locals: comando expandido -> '%s'", result);
     return realloc(result, len + 1);
 }
 
 /* ─── Descompresión usando libz cargada dinámicamente ──────────── */
 static unsigned char *gunzip_data(const unsigned char *compressed, size_t compressed_len, size_t *out_len) {
     static void *zlib_handle = NULL;
-    static int zlib_available = -1;  // -1 = no verificado, 0 = no, 1 = sí
+    static int zlib_available = -1;
     static const char *zlib_version_str = NULL;
 
     if (zlib_available == -1) {
@@ -256,19 +264,19 @@ static unsigned char *gunzip_data(const unsigned char *compressed, size_t compre
                 !dlsym(zlib_handle, "inflate") ||
                 !dlsym(zlib_handle, "inflateEnd")) {
                 dlclose(zlib_handle);
-            zlib_handle = NULL;
-            zlib_available = 0;
-                } else {
-                    typedef const char *(*zlibVersion_t)(void);
-                    zlibVersion_t p_zlibVersion = (zlibVersion_t)dlsym(zlib_handle, "zlibVersion");
-                    zlib_version_str = p_zlibVersion ? p_zlibVersion() : "1.2.0";
-                    zlib_available = 1;
-                }
+                zlib_handle = NULL;
+                zlib_available = 0;
+            } else {
+                typedef const char *(*zlibVersion_t)(void);
+                zlibVersion_t p_zlibVersion = (zlibVersion_t)dlsym(zlib_handle, "zlibVersion");
+                zlib_version_str = p_zlibVersion ? p_zlibVersion() : "1.2.0";
+                zlib_available = 1;
+            }
         }
     }
 
     if (zlib_available == 0) {
-        fprintf(stderr, "Error en descompresión de embebidos comprimidos: falta zlib (no está disponible en el sistema).\n");
+        fprintf(stderr, "Error en descompresión de embebidos comprimidos: falta zlib.\n");
         return NULL;
     }
 
@@ -385,10 +393,10 @@ static char *prepare_embedded_binary(const char *cmd_name) {
         if (dir_len > 0 && (size_t)dir_len < sizeof(work_dir) &&
             (mkdir(work_dir, 0700) == 0 || errno == EEXIST)) {
             int path_len = snprintf(tmp_path, sizeof(tmp_path), "%s/infernal_XXXXXX", work_dir);
-        if (path_len > 0 && (size_t)path_len < sizeof(tmp_path)) {
-            fd = mkstemp(tmp_path);
-        }
+            if (path_len > 0 && (size_t)path_len < sizeof(tmp_path)) {
+                fd = mkstemp(tmp_path);
             }
+        }
     }
 
     if (fd == -1) {
@@ -426,7 +434,6 @@ static char *prepare_embedded_binary(const char *cmd_name) {
     fdatasync(fd);
     fchmod(fd, 0700);
     close(fd);
-
     free(decompressed);
 
     char *abs_path = realpath(tmp_path, NULL);
@@ -457,6 +464,7 @@ int execute_embedded(const char *full_cmd) {
     strcpy(exec_cmd, binary_path);
     if (rest && *rest) { strcat(exec_cmd, " "); strcat(exec_cmd, rest); }
 
+    DEBUG_INFO("execute_embedded: ejecutando '%s'", exec_cmd);
     int ret = system(exec_cmd);
     unlink(binary_path);
     free(binary_path);
@@ -465,7 +473,7 @@ int execute_embedded(const char *full_cmd) {
 
     if (ret == -1) return -1;
     if (WIFEXITED(ret)) return WEXITSTATUS(ret);
-    return -1;   // terminación anormal
+    return -1;
 }
 
 FILE *popen_embedded_with_path(const char *full_cmd, const char *mode, char **temp_path) {
