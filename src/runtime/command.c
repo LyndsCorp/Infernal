@@ -22,8 +22,8 @@
 #include "runtime/scope.h"
 #include "runtime/globals.h"
 #include "stdlib/embedded.h"
-#include "vm/vm.h"          // para acceder a vm_globals y vm_find_global_index
-#include "developer/debug.h" // para DEBUG_INFO/DEBUG_WARN
+#include "vm/vm.h"
+#include "developer/debug.h"
 
 /* ─── Límite de seguridad para descompresión ─── */
 #define MAX_DECOMPRESSED_SIZE (500 * 1024 * 1024)  /* 500 MiB */
@@ -35,19 +35,53 @@ void set_embedded_tmp_dir(const char *dir) {
     embedded_tmp_dir = dir ? strdup(dir) : NULL;
 }
 
+/* ─── Convertir un Value a string para uso en comandos ──────────── */
+static char *value_to_command_string(Value v) {
+    if (v.type == VAL_LIST) {
+        // Si la lista está vacía, devolver cadena vacía
+        if (v.data.list.count == 0) return strdup("");
+
+        char *result = strdup("");
+        for (int i = 0; i < v.data.list.count; i++) {
+            Value elem = v.data.list.items[i];
+            char *elem_str = value_to_command_string(elem);  // recursivo para elementos anidados
+
+            // Si el elemento contiene espacios o caracteres especiales, envolver entre comillas dobles
+            if (strchr(elem_str, ' ') || strchr(elem_str, '\t') || strchr(elem_str, '\'')) {
+                char *tmp = malloc(strlen(elem_str) + 3);
+                sprintf(tmp, "\"%s\"", elem_str);
+                free(elem_str);
+                elem_str = tmp;
+            }
+
+            if (i > 0) {
+                result = realloc(result, strlen(result) + 1 + strlen(elem_str) + 1);
+                strcat(result, " ");
+            } else {
+                result = realloc(result, strlen(result) + strlen(elem_str) + 1);
+            }
+            strcat(result, elem_str);
+            free(elem_str);
+        }
+        return result;
+    } else {
+        char buf[256];
+        switch (v.type) {
+            case VAL_INT:    snprintf(buf, sizeof(buf), "%d", v.data.ival); break;
+            case VAL_FLOAT:  snprintf(buf, sizeof(buf), "%g", v.data.fval); break;
+            case VAL_BOOL:   return strdup(v.data.bval ? "true" : "false");
+            case VAL_STRING: return strdup(v.data.sval);
+            default:         return strdup("");
+        }
+        return strdup(buf);
+    }
+}
+
+/* ─── Obtener representación string de una variable para comandos ── */
 char *get_var_string(const char *name) {
     VarEntry *e = scope_find(current_scope, name);
     if (!e) return NULL;
-    Value *v = &e->value;
-    char buf[256];
-    switch (v->type) {
-        case VAL_INT: snprintf(buf, sizeof(buf), "%d", v->data.ival); break;
-        case VAL_FLOAT: snprintf(buf, sizeof(buf), "%g", v->data.fval); break;
-        case VAL_BOOL: return strdup(v->data.bval ? "true" : "false");
-        case VAL_STRING: return strdup(v->data.sval);
-        default: return NULL;
-    }
-    return strdup(buf);
+    return value_to_command_string(e->value);
 }
 
 /* ─── Función auxiliar para añadir '$' + nombre al buffer ─── */
@@ -146,53 +180,32 @@ char *expand_command_with_locals(const char *cmd, char **names, Value *values, i
                 p = start;
                 continue;
             } else {
-                // $VAR → buscar en locales, scopes y globales de VM
                 char *val = NULL;
-                // 1) locales de la VM
+
+                // 1) Locales de la VM
                 for (int i = 0; i < count; i++) {
                     if (names[i] && strcmp(names[i], name) == 0) {
-                        Value v = values[i];
-                        char buf[256];
-                        switch (v.type) {
-                            case VAL_INT: snprintf(buf, sizeof(buf), "%d", v.data.ival); val = strdup(buf); break;
-                            case VAL_FLOAT: snprintf(buf, sizeof(buf), "%g", v.data.fval); val = strdup(buf); break;
-                            case VAL_BOOL: val = strdup(v.data.bval ? "true" : "false"); break;
-                            case VAL_STRING: val = strdup(v.data.sval); break;
-                            default: val = NULL;
-                        }
+                        val = value_to_command_string(values[i]);
                         break;
                     }
                 }
-                // 2) scopes de Infernal
+
+                // 2) Scopes de Infernal (current_scope)
                 if (!val) {
                     VarEntry *e = scope_find(current_scope, name);
                     if (e) {
-                        Value v = e->value;
-                        char buf[256];
-                        switch (v.type) {
-                            case VAL_INT: snprintf(buf, sizeof(buf), "%d", v.data.ival); val = strdup(buf); break;
-                            case VAL_FLOAT: snprintf(buf, sizeof(buf), "%g", v.data.fval); val = strdup(buf); break;
-                            case VAL_BOOL: val = strdup(v.data.bval ? "true" : "false"); break;
-                            case VAL_STRING: val = strdup(v.data.sval); break;
-                            default: val = NULL;
-                        }
+                        val = value_to_command_string(e->value);
                     }
                 }
-                // 3) globales de la VM
+
+                // 3) Globales de la VM
                 if (!val) {
                     int gidx = vm_find_global_index(name);
                     if (gidx >= 0) {
-                        Value v = vm_globals[gidx];
-                        char buf[256];
-                        switch (v.type) {
-                            case VAL_INT: snprintf(buf, sizeof(buf), "%d", v.data.ival); val = strdup(buf); break;
-                            case VAL_FLOAT: snprintf(buf, sizeof(buf), "%g", v.data.fval); val = strdup(buf); break;
-                            case VAL_BOOL: val = strdup(v.data.bval ? "true" : "false"); break;
-                            case VAL_STRING: val = strdup(v.data.sval); break;
-                            default: val = NULL;
-                        }
+                        val = value_to_command_string(vm_globals[gidx]);
                     }
                 }
+
                 if (val) {
                     size_t vlen = strlen(val);
                     if (len + vlen >= cap) {
@@ -205,6 +218,7 @@ char *expand_command_with_locals(const char *cmd, char **names, Value *values, i
                     p = start;
                     continue;
                 }
+
                 // Si no se encontró, copiar $VAR literal
                 if (len + 1 + nlen >= cap) {
                     cap = (len + 1 + nlen) * 2;
