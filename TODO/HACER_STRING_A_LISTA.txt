@@ -1,9 +1,0 @@
-#FILE: HACER_STRING_A_LISTA.txt
-Que puedas hacer:
-``` Infernal
-lista = ["hola", "adios"]
-string algo = $lista
-
-print(algo) #Imprime: hola adios
-```
-Aquí, `algo` almacena "hola adios" con un espacio entre elementos.
