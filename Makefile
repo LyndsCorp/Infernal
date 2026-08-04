@@ -301,8 +301,11 @@ help:
 	@printf "  Versión: "
 	@cat src/metadata/VERSION || echo "No disponible"
 
-test:
-	@./infernal ./demos/*
+test: $(TARGET)
+	@for file in demos/*.inf; do \
+		echo " [TEST] $$file"; \
+		./$(TARGET) $$file || exit 1; \
+	done
 
 sanitize:
 	$(MAKE) clean
