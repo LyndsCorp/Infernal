@@ -1,3 +1,4 @@
+#!../infernal
 print("=== Creación de lista ===")
 
 lista = ["David", "Linus", "Richard"]
@@ -92,14 +93,17 @@ string convertido = numeros[1:3]
 
 print(convertido)
 
-
+###
 print("=== Índices inválidos ===")
 
 lista = ["a", "b"]
 
-#algo = lista[-1]
+algo = lista[-1]
 
-#algo = lista[1.5]
-
+algo = lista[1.5]
+###
+#esos # significan que todo el bloque está comentado
 
 print("=== FIN TEST LISTAS ===")
+print("prinAllVars():")
+printAllVars()
