@@ -1,0 +1,36 @@
+#FILE: EMPTY_FLAGS.txt
+Actualmente solo puedes asignar valor a variables de flags con `--flag=type var`.
+Pero se debería de poder hacer sin poner el `--flag` para argumentos.
+Por eso propongo:
+``` Infernal
+flags (1,
+    empty=int valor{
+    }
+)
+```
+o incluso:
+``` Infernal
+flags (1,
+    empty=int valor
+)
+```
+Pero que necesiten lugar explícito: si pones que el lugar es 0 (cualquier lugar) en vez del 1 o un 2, error.
+Entonces que se ponga así con la palabra `empty=` y que no necesites poner el {}.
+También que no pueda haber más de un empty en un mismo flags.
+Y que no puedas crear un flags cuya posición ya haya sido puesta. Es decir:
+``` Infernal
+flags (1,
+    empty=int valor{
+    }
+)
+flags (1, #ERROR
+    --algo{
+        echo
+    }
+)
+```
+Para así evitar que existan 2 empty en una misma posición.
+Que el error diga que uses el flags definido en X línea en vez de crear uno nuevo.
+
+
+Y muy importante: ahora si defines un flag para el primer argumento pero no ejecutas el script con un argumento, da segmention fault (core dumped).
