@@ -114,6 +114,7 @@ NodeList parse_block(const char *terminator) {
 
         ASTNode *stmt = NULL;
 
+        /* ─── Comandos embebidos con ! ────────────────────────────── */
         if (t.type == TOK_BANG) {
             ts_advance();
             char cmd[4096] = {0};
@@ -201,6 +202,7 @@ NodeList parse_block(const char *terminator) {
             continue;
         }
 
+        /* ─── Comandos shell entre comillas ─────────────────────────── */
         if (t.type == TOK_STRING_LITERAL) {
             char cmd[4096] = {0};
             Token first = ts_advance();
@@ -288,6 +290,7 @@ NodeList parse_block(const char *terminator) {
             continue;
         }
 
+        /* ─── Portales (@) ────────────────────────────────────────── */
         if (t.type == TOK_AT) {
             ts_advance();
             if (ts_peek().type != TOK_IDENT) error(t.line, "Se esperaba nombre de portal después de '@'");
@@ -300,6 +303,7 @@ NodeList parse_block(const char *terminator) {
             continue;
         }
 
+        /* ─── Flags ────────────────────────────────────────────────── */
         if (t.type == TOK_FLAG) {
             ts_advance();
             stmt = parse_flags();
@@ -308,6 +312,7 @@ NodeList parse_block(const char *terminator) {
             continue;
         }
 
+        /* ─── Estructuras de control ────────────────────────────────── */
         if (t.type == TOK_IF) {
             stmt = parse_if_statement();
         } else if (t.type == TOK_WHILE) {
@@ -565,7 +570,6 @@ NodeList parse_block(const char *terminator) {
             validate_var_name(vname, t.line);
 
             ASTNode *lhs_index = NULL;
-            // ---- CORRECCIÓN: usar línea del '[' ----
             if (ts_peek().type == TOK_LBRACKET) {
                 Token lb = ts_advance();
                 lhs_index = parse_index_or_slice(lb.line);
@@ -619,7 +623,6 @@ NodeList parse_block(const char *terminator) {
             validate_var_name(vname, t.line);
 
             ASTNode *lhs_index = NULL;
-            // ---- CORRECCIÓN: usar línea del '[' ----
             if (ts_peek().type == TOK_LBRACKET) {
                 Token lb = ts_advance();
                 lhs_index = parse_index_or_slice(lb.line);
@@ -665,6 +668,7 @@ NodeList parse_block(const char *terminator) {
             stmt->data.assign.is_global = false;
             stmt->data.assign.lhs_index = lhs_index;
 
+            /* ─── IDENTIFICADOR ────────────────────────────────────────── */
             } else if (t.type == TOK_IDENT) {
                 Token saved_t = t;
                 ts_advance(); // consume identificador
@@ -672,6 +676,7 @@ NodeList parse_block(const char *terminator) {
                 Token next_tok = ts_peek();
 
                 if (next_tok.type == TOK_EQ) {
+                    // ASIGNACIÓN SIMPLE
                     ts_advance(); // consumir '='
                     char *vname = strdup(saved_t.lexeme);
                     validate_var_name(vname, saved_t.line);
@@ -710,7 +715,7 @@ NodeList parse_block(const char *terminator) {
                     stmt->data.assign.lhs_index = NULL;
 
                 } else if (next_tok.type == TOK_LBRACKET) {
-                    // ---- CORRECCIÓN: usar línea del '[' ----
+                    // ASIGNACIÓN CON ÍNDICE
                     Token lb = ts_advance(); // consumir '['
                     ASTNode *lhs_index = parse_index_or_slice(lb.line);
                     if (lhs_index->kind == NODE_SLICE) {
@@ -757,121 +762,39 @@ NodeList parse_block(const char *terminator) {
                     stmt->data.assign.lhs_index = lhs_index;
 
                 } else {
-                    int known = (scope_find_script(current_scope, saved_t.lexeme) != NULL ||
-                    func_lookup(saved_t.lexeme) != NULL);
-                    int next_is_paren_or_bracket = 0;
-                    if (ts.pos + 1 < ts.count) {
-                        TokenType next = ts.tokens[ts.pos + 1].type;
-                        if (next == TOK_LPAREN || next == TOK_LBRACKET)
-                            next_is_paren_or_bracket = 1;
-                    }
-
-                    if (known || next_is_paren_or_bracket) {
-                        int saved = ts.pos;
-                        jmp_buf saved_env; memcpy(&saved_env, &exception_env, sizeof(jmp_buf));
-                        int saved_raised = exception_raised;
-                        exception_raised = 0;
-                        if (!setjmp(exception_env)) {
-                            ASTNode *expr = parse_expression(0);
-                            if (ts_peek().type == TOK_NEWLINE || ts_peek().type == TOK_EOF ||
-                                ts_peek().type == TOK_FI || ts_peek().type == TOK_RBRACE) {
-                                stmt = node_create(NODE_EXPR_STMT, t.line);
-                            stmt->data.expr_stmt.expr = expr;
-                            memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
-                            exception_raised = saved_raised;
-                            nodelist_add(&block, stmt);
-                            ts_skip_newlines();
-                            continue;
-                                }
-                        }
-                        ts.pos = saved;
-                        exception_raised = 0;
-                    }
-
-                    char cmd[4096] = {0};
-                    Token first = ts_advance();
-                    strcpy(cmd, first.lexeme);
-                    Token prev_token = first;
-                    while (ts_peek().type != TOK_NEWLINE && ts_peek().type != TOK_EOF) {
-                        Token ct = ts_advance();
-                        bool hay_espacio = false;
-                        if (prev_token.type != TOK_EOF) {
-                            if (ct.start_col > prev_token.end_col) {
-                                hay_espacio = true;
+                    // NO ES ASIGNACIÓN → puede ser expresión o comando shell
+                    // Si el siguiente token es '(' o '[' siempre es expresión
+                    if (ts_peek().type == TOK_LPAREN || ts_peek().type == TOK_LBRACKET) {
+                        // Retrocedemos para que parse_primary vea el identificador
+                        ts.pos--;
+                        ASTNode *expr = parse_expression(0);
+                        // Se debe haber consumido hasta newline o fin de bloque
+                        if (ts_peek().type == TOK_NEWLINE || ts_peek().type == TOK_EOF ||
+                            ts_peek().type == TOK_FI || ts_peek().type == TOK_RBRACE) {
+                            stmt = node_create(NODE_EXPR_STMT, t.line);
+                        stmt->data.expr_stmt.expr = expr;
+                        nodelist_add(&block, stmt);
+                        ts_skip_newlines();
+                        continue;
+                            } else {
+                                // Si no se consumió todo, dar error
+                                error(t.line, "Expresión incompleta");
                             }
-                        }
-                        if (hay_espacio) strcat(cmd, " ");
-                        if (ct.type == TOK_STRING_LITERAL) {
-                            strcat(cmd, "\"");
-                            strcat(cmd, ct.lexeme);
-                            strcat(cmd, "\"");
-                        } else {
-                            strcat(cmd, ct.lexeme);
-                        }
-                        prev_token = ct;
-                    }
-                    stmt = node_create(NODE_SHELL_CMD, t.line);
-                    stmt->data.shell_cmd.cmd = strdup(cmd);
-                    while (ts_match(TOK_OR)) {
-                        ASTNode *next_stmt = NULL;
-                        Token next = ts_peek();
-                        if (next.type == TOK_BANG) {
+                    } else {
+                        // Comando shell
+                        // Recolocar el puntero para incluir el identificador
+                        ts.pos--; // retroceder para incluir saved_t
+                        int start_pos = ts.pos;
+                        while (ts_peek().type != TOK_NEWLINE && ts_peek().type != TOK_EOF) {
                             ts_advance();
-                            char cmd2[4096] = {0};
-                            Token prev2 = {TOK_EOF, "", 0, 0, 0};
-                            while (ts_peek().type != TOK_BANG && ts_peek().type != TOK_NEWLINE && ts_peek().type != TOK_EOF) {
-                                Token ct2 = ts_advance();
-                                bool hay_espacio2 = false;
-                                if (prev2.type != TOK_EOF) {
-                                    if (ct2.start_col > prev2.end_col) hay_espacio2 = true;
-                                }
-                                if (hay_espacio2 && cmd2[0] != '\0') strcat(cmd2, " ");
-                                if (ct2.type == TOK_STRING_LITERAL) {
-                                    strcat(cmd2, "\"");
-                                    strcat(cmd2, ct2.lexeme);
-                                    strcat(cmd2, "\"");
-                                } else {
-                                    strcat(cmd2, ct2.lexeme);
-                                }
-                                prev2 = ct2;
-                            }
-                            if (ts_peek().type == TOK_BANG) ts_advance();
-                            next_stmt = node_create(NODE_CMD_STMT, next.line);
-                            next_stmt->data.cmd_stmt.cmd = strdup(cmd2);
-                        } else {
-                            char cmd2[4096] = {0};
-                            Token first2 = ts_advance();
-                            strcpy(cmd2, first2.lexeme);
-                            Token prev2 = first2;
-                            while (ts_peek().type != TOK_NEWLINE && ts_peek().type != TOK_EOF && ts_peek().type != TOK_OR) {
-                                Token ct2 = ts_advance();
-                                bool hay_espacio2 = false;
-                                if (prev2.type != TOK_EOF) {
-                                    if (ct2.start_col > prev2.end_col) hay_espacio2 = true;
-                                }
-                                if (hay_espacio2) strcat(cmd2, " ");
-                                if (ct2.type == TOK_STRING_LITERAL) {
-                                    strcat(cmd2, "\"");
-                                    strcat(cmd2, ct2.lexeme);
-                                    strcat(cmd2, "\"");
-                                } else {
-                                    strcat(cmd2, ct2.lexeme);
-                                }
-                                prev2 = ct2;
-                            }
-                            next_stmt = node_create(NODE_SHELL_CMD, next.line);
-                            next_stmt->data.shell_cmd.cmd = strdup(cmd2);
                         }
-                        ASTNode *try_node = node_create(NODE_TRY, t.line);
-                        try_node->data.try_stmt.try_block = (NodeList){NULL, 0, 0};
-                        nodelist_add(&try_node->data.try_stmt.try_block, stmt);
-                        try_node->data.try_stmt.catch_block = (NodeList){NULL, 0, 0};
-                        nodelist_add(&try_node->data.try_stmt.catch_block, next_stmt);
-                        stmt = try_node;
+                        char *cmd_str = build_command_from_tokens(start_pos, ts.pos);
+                        stmt = node_create(NODE_SHELL_CMD, t.line);
+                        stmt->data.shell_cmd.cmd = cmd_str;
+                        nodelist_add(&block, stmt);
+                        ts_skip_newlines();
+                        continue;
                     }
-                    nodelist_add(&block, stmt);
-                    ts_skip_newlines();
-                    continue;
                 }
             } else {
                 error(t.line, "Sentencia no reconocida '%s'", t.lexeme);
