@@ -11,6 +11,7 @@ if user == "root" then
     signo = "#"
 fi
 
+### comentado para make test
 while true then
     comando = input(color("green") + user + color("orange") + "@" + color("blue") + host + color("reset") + signo + ": ")
 
@@ -20,3 +21,6 @@ while true then
         bash -c $comando #ejecuta el comando con Bash
     fi
 fi
+###
+print(color("green") + user + color("orange") + "@" + color("blue") + host + color("reset") + signo + ": ")
+
