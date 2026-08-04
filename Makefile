@@ -301,11 +301,11 @@ help:
 	@printf "  Versión: "
 	@cat src/metadata/VERSION || echo "No disponible"
 
-test: $(TARGET)
-	@./test.sh ./$(TARGET)
+test:
+	@./infernal ./demos/*
 
 sanitize:
 	$(MAKE) clean
 	$(MAKE) CFLAGS='$(CFLAGS) -fsanitize=address,undefined -fno-omit-frame-pointer' \
 	        LDFLAGS='$(LDFLAGS) -fsanitize=address,undefined' all
-	@./test.sh ./$(TARGET)
+	$(MAKE) test
