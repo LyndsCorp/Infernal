@@ -1,0 +1,26 @@
+#FILE: 0NO_VAN_LISTAS.txt
+``` Shell
+$:./test-listas.inf
+=== Creación de lista ===
+[David, Linus, Richard]
+=== Añadir elemento ===
+Error en './test-listas.inf', línea 0: Tipado fijo: la variable 'lista' es de tipo list, no se puede asignar un valor de tipo string
+```
+
+Da error de sintaxis cuando no debería. Tambien no dice en qué línea ocurre.
+No tiene sentido el error de sintaxis:
+``` Infernal
+print("=== Creación de lista ===")
+
+lista = ["David", "Linus", "Richard"]
+print(lista)
+# eso anterior funciona, lo siguiente no
+
+print("=== Añadir elemento ===")
+
+lista = $lista + "Abracitos"[3] #falla aqui
+print(lista)
+```
+
+En teoría el error está en `lista = $lista + "Abracitos"[3]`, pero allí no debería haber ningún error. Además que el mensaje de error de tipado fijo no tiene nada que ver aquí.
+La línea lo que hace es añadir el elemento "Abracitos" al índice 3 en la list `lista`, no intenta cambiar el tipo de `lista`.
