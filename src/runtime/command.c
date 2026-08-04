@@ -1,5 +1,5 @@
 /*
- * Infernal: el lenguaje de programación. Copyright (C) 2026, GPL v3+ License.
+ * Infernal: el lenguaje de programación. Copyright (C) 2026, GPL v3+ License, Lynds Corp., Aros Legendarios, David Baña Szymaniak.
  * Código fuente de Infernal: runtime/command.c
 */
 
@@ -17,6 +17,7 @@
 #include <pwd.h>
 #include <dlfcn.h>
 #include <sys/wait.h>
+
 #include "command.h"
 #include "runtime/scope.h"
 #include "runtime/globals.h"
@@ -34,59 +35,19 @@ void set_embedded_tmp_dir(const char *dir) {
     embedded_tmp_dir = dir ? strdup(dir) : NULL;
 }
 
-/* ─── Convertir un Value a string para uso en comandos ──────────── */
-static char *value_to_command_string(Value v) {
-    if (v.type == VAL_LIST) {
-        if (v.data.list.count == 0) {
-            DEBUG_INFO("value_to_command_string: lista vacía -> cadena vacía");
-            return strdup("");
-        }
-
-        DEBUG_INFO("value_to_command_string: convirtiendo lista con %d elementos", v.data.list.count);
-        char *result = strdup("");
-        for (int i = 0; i < v.data.list.count; i++) {
-            Value elem = v.data.list.items[i];
-            char *elem_str = value_to_command_string(elem);
-
-            if (strchr(elem_str, ' ') || strchr(elem_str, '\t') || strchr(elem_str, '\'')) {
-                char *tmp = malloc(strlen(elem_str) + 3);
-                sprintf(tmp, "\"%s\"", elem_str);
-                free(elem_str);
-                elem_str = tmp;
-                DEBUG_INFO("  elemento %d contiene espacios -> entrecomillado: %s", i, elem_str);
-            } else {
-                DEBUG_INFO("  elemento %d: %s", i, elem_str);
-            }
-
-            if (i > 0) {
-                result = realloc(result, strlen(result) + 1 + strlen(elem_str) + 1);
-                strcat(result, " ");
-            } else {
-                result = realloc(result, strlen(result) + strlen(elem_str) + 1);
-            }
-            strcat(result, elem_str);
-            free(elem_str);
-        }
-        DEBUG_INFO("value_to_command_string: resultado final: '%s'", result);
-        return result;
-    } else {
-        char buf[256];
-        switch (v.type) {
-            case VAL_INT:    snprintf(buf, sizeof(buf), "%d", v.data.ival); break;
-            case VAL_FLOAT:  snprintf(buf, sizeof(buf), "%g", v.data.fval); break;
-            case VAL_BOOL:   return strdup(v.data.bval ? "true" : "false");
-            case VAL_STRING: return strdup(v.data.sval);
-            default:         return strdup("");
-        }
-        return strdup(buf);
-    }
-}
-
-/* ─── Obtener representación string de una variable para comandos ── */
 char *get_var_string(const char *name) {
     VarEntry *e = scope_find(current_scope, name);
     if (!e) return NULL;
-    return value_to_command_string(e->value);
+    Value *v = &e->value;
+    char buf[256];
+    switch (v->type) {
+        case VAL_INT: snprintf(buf, sizeof(buf), "%d", v->data.ival); break;
+        case VAL_FLOAT: snprintf(buf, sizeof(buf), "%g", v->data.fval); break;
+        case VAL_BOOL: return strdup(v->data.bval ? "true" : "false");
+        case VAL_STRING: return strdup(v->data.sval);
+        default: return NULL;
+    }
+    return strdup(buf);
 }
 
 /* ─── Función auxiliar para añadir '$' + nombre al buffer ─── */
@@ -155,7 +116,6 @@ char *expand_command(const char *cmd) {
         result[len++] = *p++;
     }
     result[len] = '\0';
-    DEBUG_INFO("expand_command: '%s' -> '%s'", cmd, result);
     return realloc(result, len + 1);
 }
 
@@ -183,37 +143,52 @@ char *expand_command_with_locals(const char *cmd, char **names, Value *values, i
                 continue;
             } else {
                 char *val = NULL;
-                const char *source = "ninguno";
-
-                // 1) Locales de la VM
+                // 1) locales de la VM
                 for (int i = 0; i < count; i++) {
                     if (names[i] && strcmp(names[i], name) == 0) {
-                        val = value_to_command_string(values[i]);
-                        source = "local VM";
+                        Value v = values[i];
+                        char buf[256];
+                        switch (v.type) {
+                            case VAL_INT: snprintf(buf, sizeof(buf), "%d", v.data.ival); val = strdup(buf); break;
+                            case VAL_FLOAT: snprintf(buf, sizeof(buf), "%g", v.data.fval); val = strdup(buf); break;
+                            case VAL_BOOL: val = strdup(v.data.bval ? "true" : "false"); break;
+                            case VAL_STRING: val = strdup(v.data.sval); break;
+                            default: val = NULL;
+                        }
                         break;
                     }
                 }
-
-                // 2) Scopes de Infernal
+                // 2) scopes de Infernal
                 if (!val) {
                     VarEntry *e = scope_find(current_scope, name);
                     if (e) {
-                        val = value_to_command_string(e->value);
-                        source = "scope";
+                        Value v = e->value;
+                        char buf[256];
+                        switch (v.type) {
+                            case VAL_INT: snprintf(buf, sizeof(buf), "%d", v.data.ival); val = strdup(buf); break;
+                            case VAL_FLOAT: snprintf(buf, sizeof(buf), "%g", v.data.fval); val = strdup(buf); break;
+                            case VAL_BOOL: val = strdup(v.data.bval ? "true" : "false"); break;
+                            case VAL_STRING: val = strdup(v.data.sval); break;
+                            default: val = NULL;
+                        }
                     }
                 }
-
-                // 3) Globales de la VM
+                // 3) globales de la VM
                 if (!val) {
                     int gidx = vm_find_global_index(name);
                     if (gidx >= 0) {
-                        val = value_to_command_string(vm_globals[gidx]);
-                        source = "global VM";
+                        Value v = vm_globals[gidx];
+                        char buf[256];
+                        switch (v.type) {
+                            case VAL_INT: snprintf(buf, sizeof(buf), "%d", v.data.ival); val = strdup(buf); break;
+                            case VAL_FLOAT: snprintf(buf, sizeof(buf), "%g", v.data.fval); val = strdup(buf); break;
+                            case VAL_BOOL: val = strdup(v.data.bval ? "true" : "false"); break;
+                            case VAL_STRING: val = strdup(v.data.sval); break;
+                            default: val = NULL;
+                        }
                     }
                 }
-
                 if (val) {
-                    DEBUG_INFO("expand_command_with_locals: $%s -> '%s' (desde %s)", name, val, source);
                     size_t vlen = strlen(val);
                     if (len + vlen >= cap) {
                         cap = (len + vlen) * 2;
@@ -225,8 +200,6 @@ char *expand_command_with_locals(const char *cmd, char **names, Value *values, i
                     p = start;
                     continue;
                 }
-
-                DEBUG_INFO("expand_command_with_locals: $%s no encontrado, se mantiene literal", name);
                 if (len + 1 + nlen >= cap) {
                     cap = (len + 1 + nlen) * 2;
                     result = realloc(result, cap);
@@ -245,7 +218,6 @@ char *expand_command_with_locals(const char *cmd, char **names, Value *values, i
         result[len++] = *p++;
     }
     result[len] = '\0';
-    DEBUG_INFO("expand_command_with_locals: comando expandido -> '%s'", result);
     return realloc(result, len + 1);
 }
 
@@ -264,19 +236,19 @@ static unsigned char *gunzip_data(const unsigned char *compressed, size_t compre
                 !dlsym(zlib_handle, "inflate") ||
                 !dlsym(zlib_handle, "inflateEnd")) {
                 dlclose(zlib_handle);
-                zlib_handle = NULL;
-                zlib_available = 0;
-            } else {
-                typedef const char *(*zlibVersion_t)(void);
-                zlibVersion_t p_zlibVersion = (zlibVersion_t)dlsym(zlib_handle, "zlibVersion");
-                zlib_version_str = p_zlibVersion ? p_zlibVersion() : "1.2.0";
-                zlib_available = 1;
-            }
+            zlib_handle = NULL;
+            zlib_available = 0;
+                } else {
+                    typedef const char *(*zlibVersion_t)(void);
+                    zlibVersion_t p_zlibVersion = (zlibVersion_t)dlsym(zlib_handle, "zlibVersion");
+                    zlib_version_str = p_zlibVersion ? p_zlibVersion() : "1.2.0";
+                    zlib_available = 1;
+                }
         }
     }
 
     if (zlib_available == 0) {
-        fprintf(stderr, "Error en descompresión de embebidos comprimidos: falta zlib.\n");
+        fprintf(stderr, "Error en descompresión de embebidos comprimidos: falta zlib (no está disponible en el sistema).\n");
         return NULL;
     }
 
@@ -393,10 +365,10 @@ static char *prepare_embedded_binary(const char *cmd_name) {
         if (dir_len > 0 && (size_t)dir_len < sizeof(work_dir) &&
             (mkdir(work_dir, 0700) == 0 || errno == EEXIST)) {
             int path_len = snprintf(tmp_path, sizeof(tmp_path), "%s/infernal_XXXXXX", work_dir);
-            if (path_len > 0 && (size_t)path_len < sizeof(tmp_path)) {
-                fd = mkstemp(tmp_path);
-            }
+        if (path_len > 0 && (size_t)path_len < sizeof(tmp_path)) {
+            fd = mkstemp(tmp_path);
         }
+            }
     }
 
     if (fd == -1) {
@@ -434,6 +406,7 @@ static char *prepare_embedded_binary(const char *cmd_name) {
     fdatasync(fd);
     fchmod(fd, 0700);
     close(fd);
+
     free(decompressed);
 
     char *abs_path = realpath(tmp_path, NULL);
@@ -464,7 +437,6 @@ int execute_embedded(const char *full_cmd) {
     strcpy(exec_cmd, binary_path);
     if (rest && *rest) { strcat(exec_cmd, " "); strcat(exec_cmd, rest); }
 
-    DEBUG_INFO("execute_embedded: ejecutando '%s'", exec_cmd);
     int ret = system(exec_cmd);
     unlink(binary_path);
     free(binary_path);

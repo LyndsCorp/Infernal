@@ -16,7 +16,7 @@
 
 #define MAX_LOCALS 256
 
-/* ─── Estructura para portales durante la compilación (nombre distinto al de runtime) ── */
+/* ─── Estructura para portales durante la compilación ── */
 typedef struct CompilePortalEntry {
     char *name;
     int offset;        // índice de instrucción donde comienza el portal (-1 si aún no compilado)
@@ -81,15 +81,12 @@ static void patch_jump(Chunk *ch, int offset, int target) {
 static void collect_portals_rec(ASTNode *node, Compiler *c) {
     if (!node) return;
     if (node->kind == NODE_PORTAL) {
-        // Añadir a la tabla de portales
         c->portals = realloc(c->portals, (c->portal_count + 1) * sizeof(CompilePortalEntry));
         c->portals[c->portal_count].name = strdup(node->data.portal.name);
-        c->portals[c->portal_count].offset = -1; // se llenará al compilar
+        c->portals[c->portal_count].offset = -1;
         c->portal_count++;
-        // No recorremos hijos de portal porque es hoja
         return;
     }
-    // Recorrer hijos según tipo
     switch (node->kind) {
         case NODE_PROGRAM:
             for (int i = 0; i < node->data.prog.stmts.count; i++)
@@ -104,7 +101,6 @@ static void collect_portals_rec(ASTNode *node, Compiler *c) {
         case NODE_BREAK:
         case NODE_CONTINUE:
         case NODE_REPEAT:
-            // No tienen hijos que puedan contener portales (excepto repeat no tiene subnodos)
             break;
         case NODE_ASSIGN:
             collect_portals_rec(node->data.assign.value, c);
@@ -136,8 +132,6 @@ static void collect_portals_rec(ASTNode *node, Compiler *c) {
                 collect_portals_rec(node->data.for_in.body.stmts[i], c);
         break;
         case NODE_FUNC_DEF:
-            // Las funciones pueden contener portales internos, pero no los recolectamos a nivel global
-            // Podríamos omitirlos o recolectarlos, pero para simplificar los ignoramos
             break;
         case NODE_IMPORT:
             for (int i = 0; i < node->data.import.module_block.count; i++)
@@ -150,7 +144,6 @@ static void collect_portals_rec(ASTNode *node, Compiler *c) {
             collect_portals_rec(node->data.try_stmt.catch_block.stmts[i], c);
         break;
         case NODE_FLAGS:
-            // No recorremos bodies de flags porque son AST separados
             break;
         case NODE_LIST:
             for (int i = 0; i < node->data.list_lit.count; i++)
@@ -166,12 +159,10 @@ static void collect_portals_rec(ASTNode *node, Compiler *c) {
             break;
         case NODE_VAR:
         case NODE_LITERAL:
+            break;
         case NODE_BINOP:
-            // NODE_BINOP tiene left y right
-            if (node->kind == NODE_BINOP) {
-                collect_portals_rec(node->data.binop.left, c);
-                collect_portals_rec(node->data.binop.right, c);
-            }
+            collect_portals_rec(node->data.binop.left, c);
+            collect_portals_rec(node->data.binop.right, c);
             break;
         default:
             break;
@@ -194,7 +185,6 @@ static void compile_expr(Compiler *c, ASTNode *expr) {
             break;
                 case NODE_VAR: {
                     const char *name = expr->data.var.name;
-                    // --- MODIFICACIÓN: eliminar tanto '$' como '?' del nombre ---
                     const char *clean_name = name;
                     if (name[0] == '$' || name[0] == '?') clean_name = name + 1;
                     int gidx = vm_find_global_index(clean_name);
@@ -223,79 +213,91 @@ static void compile_expr(Compiler *c, ASTNode *expr) {
                     break;
                         }
 
-                        if (expr->data.binop.op == TOK_AND) {
-                            compile_expr(c, expr->data.binop.left);
-                            compile_expr(c, expr->data.binop.right);
-                            emit(c->chunk, OP_AND, 0);
-                        } else if (expr->data.binop.op == TOK_OR) {
-                            compile_expr(c, expr->data.binop.left);
-                            compile_expr(c, expr->data.binop.right);
-                            emit(c->chunk, OP_OR, 0);
-                        } else {
-                            compile_expr(c, expr->data.binop.left);
-                            compile_expr(c, expr->data.binop.right);
-                            switch (expr->data.binop.op) {
-                                case TOK_PLUS:  emit(c->chunk, OP_ADD, 0); break;
-                                case TOK_MINUS: emit(c->chunk, OP_SUB, 0); break;
-                                case TOK_STAR:  emit(c->chunk, OP_MUL, 0); break;
-                                case TOK_SLASH: emit(c->chunk, OP_DIV, 0); break;
-                                case TOK_PERCENT: emit(c->chunk, OP_MOD, 0); break;
-                                case TOK_EEQ:   emit(c->chunk, OP_EQ, 0); break;
-                                case TOK_NEQ:   emit(c->chunk, OP_NEQ, 0); break;
-                                case TOK_LT_OP: emit(c->chunk, OP_LT, 0); break;
-                                case TOK_GT_OP: emit(c->chunk, OP_GT, 0); break;
-                                case TOK_LE:    emit(c->chunk, OP_LE, 0); break;
-                                case TOK_GE:    emit(c->chunk, OP_GE, 0); break;
-                                default: {
-                                    int const_idx = add_constant(c, val_ptr(expr));
-                                    emit(c->chunk, OP_INTERPRET_NODE, const_idx);
-                                    c->chunk->code[c->chunk->code_count - 1].operand2 = 1;
+                        // --- NUEVO: Detectar eliminación en lista: lista - [especificación] ---
+                        if (expr->data.binop.op == TOK_MINUS &&
+                            (expr->data.binop.right->kind == NODE_SLICE ||
+                            expr->data.binop.right->kind == NODE_INDEX ||
+                            (expr->data.binop.right->kind == NODE_LIST &&
+                            expr->data.binop.right->data.list_lit.count == 1))) {
+                            int const_idx = add_constant(c, val_ptr(expr));
+                        emit(c->chunk, OP_INTERPRET_NODE, const_idx);
+                        c->chunk->code[c->chunk->code_count - 1].operand2 = 1;
+                        break;
+                            }
+
+                            if (expr->data.binop.op == TOK_AND) {
+                                compile_expr(c, expr->data.binop.left);
+                                compile_expr(c, expr->data.binop.right);
+                                emit(c->chunk, OP_AND, 0);
+                            } else if (expr->data.binop.op == TOK_OR) {
+                                compile_expr(c, expr->data.binop.left);
+                                compile_expr(c, expr->data.binop.right);
+                                emit(c->chunk, OP_OR, 0);
+                            } else {
+                                compile_expr(c, expr->data.binop.left);
+                                compile_expr(c, expr->data.binop.right);
+                                switch (expr->data.binop.op) {
+                                    case TOK_PLUS:  emit(c->chunk, OP_ADD, 0); break;
+                                    case TOK_MINUS: emit(c->chunk, OP_SUB, 0); break;
+                                    case TOK_STAR:  emit(c->chunk, OP_MUL, 0); break;
+                                    case TOK_SLASH: emit(c->chunk, OP_DIV, 0); break;
+                                    case TOK_PERCENT: emit(c->chunk, OP_MOD, 0); break;
+                                    case TOK_EEQ:   emit(c->chunk, OP_EQ, 0); break;
+                                    case TOK_NEQ:   emit(c->chunk, OP_NEQ, 0); break;
+                                    case TOK_LT_OP: emit(c->chunk, OP_LT, 0); break;
+                                    case TOK_GT_OP: emit(c->chunk, OP_GT, 0); break;
+                                    case TOK_LE:    emit(c->chunk, OP_LE, 0); break;
+                                    case TOK_GE:    emit(c->chunk, OP_GE, 0); break;
+                                    default: {
+                                        int const_idx = add_constant(c, val_ptr(expr));
+                                        emit(c->chunk, OP_INTERPRET_NODE, const_idx);
+                                        c->chunk->code[c->chunk->code_count - 1].operand2 = 1;
+                                    }
                                 }
                             }
-                        }
-                        break;
+                            break;
                 }
-                                case NODE_CALL: {
-                                    for (int i = 0; i < expr->data.call.argc; i++)
-                                        compile_expr(c, expr->data.call.args[i]);
-                                    int builtin_idx = vm_find_builtin_index(expr->data.call.name);
-                                    if (builtin_idx >= 0) {
-                                        int call_pos = c->chunk->code_count;
-                                        emit(c->chunk, OP_CALL_BUILTIN, builtin_idx);
-                                        c->chunk->code[call_pos].operand2 = expr->data.call.argc;
-                                    } else {
-                                        FuncObject *fobj = func_lookup(expr->data.call.name);
-                                        if (fobj && fobj->kind == FUNC_USER && fobj->code != NULL) {
-                                            int const_idx = add_constant(c, val_ptr(expr));
-                                            emit(c->chunk, OP_INTERPRET_NODE, const_idx);
-                                            c->chunk->code[c->chunk->code_count - 1].operand2 = 1;
+                                    case NODE_CALL: {
+                                        for (int i = 0; i < expr->data.call.argc; i++)
+                                            compile_expr(c, expr->data.call.args[i]);
+                                        int builtin_idx = vm_find_builtin_index(expr->data.call.name);
+                                        if (builtin_idx >= 0) {
+                                            int call_pos = c->chunk->code_count;
+                                            emit(c->chunk, OP_CALL_BUILTIN, builtin_idx);
+                                            c->chunk->code[call_pos].operand2 = expr->data.call.argc;
                                         } else {
-                                            int const_idx = add_constant(c, val_ptr(expr));
-                                            emit(c->chunk, OP_INTERPRET_NODE, const_idx);
-                                            c->chunk->code[c->chunk->code_count - 1].operand2 = 1;
+                                            FuncObject *fobj = func_lookup(expr->data.call.name);
+                                            if (fobj && fobj->kind == FUNC_USER && fobj->code != NULL) {
+                                                int const_idx = add_constant(c, val_ptr(expr));
+                                                emit(c->chunk, OP_INTERPRET_NODE, const_idx);
+                                                c->chunk->code[c->chunk->code_count - 1].operand2 = 1;
+                                            } else {
+                                                int const_idx = add_constant(c, val_ptr(expr));
+                                                emit(c->chunk, OP_INTERPRET_NODE, const_idx);
+                                                c->chunk->code[c->chunk->code_count - 1].operand2 = 1;
+                                            }
                                         }
+                                        break;
                                     }
-                                    break;
-                                }
-                                case NODE_LIST:
-                                    emit(c->chunk, OP_NEW_LIST, 0);
-                                    for (int i = 0; i < expr->data.list_lit.count; i++) {
-                                        compile_expr(c, expr->data.list_lit.items[i]);
-                                        emit(c->chunk, OP_LIST_APPEND, 0);
+                                    case NODE_LIST:
+                                        emit(c->chunk, OP_NEW_LIST, 0);
+                                        for (int i = 0; i < expr->data.list_lit.count; i++) {
+                                            compile_expr(c, expr->data.list_lit.items[i]);
+                                            emit(c->chunk, OP_LIST_APPEND, 0);
+                                        }
+                                        break;
+                                    case NODE_INDEX: {
+                                        compile_expr(c, expr->data.idx.list);
+                                        compile_expr(c, expr->data.idx.index);
+                                        emit(c->chunk, OP_INDEX, 0);
+                                        break;
                                     }
-                                    break;
-                                case NODE_INDEX: {
-                                    compile_expr(c, expr->data.idx.list);
-                                    compile_expr(c, expr->data.idx.index);
-                                    emit(c->chunk, OP_INDEX, 0);
-                                    break;
-                                }
-                                default: {
-                                    int const_idx = add_constant(c, val_ptr(expr));
-                                    emit(c->chunk, OP_INTERPRET_NODE, const_idx);
-                                    c->chunk->code[c->chunk->code_count - 1].operand2 = 1;
-                                    break;
-                                }
+                                    default: {
+                                        int const_idx = add_constant(c, val_ptr(expr));
+                                        emit(c->chunk, OP_INTERPRET_NODE, const_idx);
+                                        c->chunk->code[c->chunk->code_count - 1].operand2 = 1;
+                                        break;
+                                    }
     }
 }
 
@@ -315,7 +317,7 @@ static void compile_stmt(Compiler *c, ASTNode *stmt) {
                 if (gidx < 0) {
                     gidx = vm_register_global(name, GLOBAL_SUPER, vtype);
                 } else if (vtype != 0) {
-                    vm_global_types[gidx] = vtype;   // <-- ACTUALIZAR TIPO
+                    vm_global_types[gidx] = vtype;
                 }
                 if (stmt->data.assign.is_cmd) {
                     int const_node = add_constant(c, val_ptr(stmt));
@@ -343,7 +345,7 @@ static void compile_stmt(Compiler *c, ASTNode *stmt) {
                 if (gidx < 0) {
                     gidx = vm_register_global(name, GLOBAL_SCRIPT, vtype);
                 } else if (vtype != 0) {
-                    vm_global_types[gidx] = vtype;   // <-- ACTUALIZAR TIPO
+                    vm_global_types[gidx] = vtype;
                 }
                 if (stmt->data.assign.is_cmd) {
                     int const_node = add_constant(c, val_ptr(stmt));
@@ -399,16 +401,13 @@ static void compile_stmt(Compiler *c, ASTNode *stmt) {
             }
             break;
         }
-        /* ─── NUEVO: soporte para portales y repeat ─── */
         case NODE_PORTAL: {
-            // Buscar el portal en la tabla y actualizar su offset
             for (int i = 0; i < c->portal_count; i++) {
                 if (strcmp(c->portals[i].name, stmt->data.portal.name) == 0) {
                     c->portals[i].offset = c->chunk->code_count;
                     break;
                 }
             }
-            // No emitimos código, el portal es solo una marca
             break;
         }
         case NODE_REPEAT: {
@@ -423,12 +422,10 @@ static void compile_stmt(Compiler *c, ASTNode *stmt) {
                 if (target_offset == -1) {
                     error(stmt->line, "Portal '%s' no definido antes de usar en repeat", stmt->data.repeat.portal_name);
                 }
-                // Emitir salto incondicional al portal (bucle infinito)
                 int current = c->chunk->code_count;
                 int jump_offset = target_offset - current;
                 emit(c->chunk, OP_JUMP, jump_offset);
             } else {
-                // repeat line: lo dejamos al intérprete (caso por defecto)
                 int const_idx = add_constant(c, val_ptr(stmt));
                 emit(c->chunk, OP_INTERPRET_NODE, const_idx);
                 c->chunk->code[c->chunk->code_count - 1].operand2 = 0;
@@ -460,16 +457,13 @@ Chunk *compile_program(NodeList *program) {
     c.portals = NULL;
     c.portal_count = 0;
 
-    // 1. Recolectar portales
     for (int i = 0; i < program->count; i++) {
         collect_portals_rec(program->stmts[i], &c);
     }
 
-    // 2. Compilar bloque
     compile_block(&c, program);
     emit(c.chunk, OP_RETURN, 0);
 
-    // Guardar información de locales
     c.chunk->local_count = c.local_count;
     if (c.local_count > 0) {
         c.chunk->local_names = malloc(c.local_count * sizeof(char*));
@@ -480,7 +474,6 @@ Chunk *compile_program(NodeList *program) {
         }
     }
 
-    // Liberar tabla de portales
     for (int i = 0; i < c.portal_count; i++) free(c.portals[i].name);
     free(c.portals);
 

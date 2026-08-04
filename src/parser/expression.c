@@ -12,19 +12,20 @@
 #include "runtime/globals.h"
 #include "runtime/error.h"
 #include "parser.h"
+#include "developer/debug.h"
 
 /* ─── Función auxiliar para parsear el contenido de un slice ── */
-static ASTNode *parse_slice_content(int line) {
+ASTNode *parse_slice_content(int line) {
     Token t = ts_peek();
     int mode = -1;
     int start = 0, end = 0;
 
-    // Caso vacío: [*]
+    DEBUG_INFO("parse_slice_content: token actual '%s' (tipo %d)", t.lexeme, t.type);
+
     if (t.type == TOK_STAR) {
-        ts_advance(); // consumir '*'
+        ts_advance();
         if (ts_peek().type == TOK_RBRACKET) {
-            mode = 5; // vaciar
-            start = 0; end = 0;
+            mode = 5; start = 0; end = 0;
         } else if (ts_peek().type == TOK_NUMBER) {
             Token num = ts_advance();
             if (strchr(num.lexeme, '.') != NULL) {
@@ -33,12 +34,12 @@ static ASTNode *parse_slice_content(int line) {
             int val = atoi(num.lexeme);
             if (val < 1) error(line, "Índice inválido: debe ser positivo");
             if (ts_peek().type == TOK_STAR) {
-                ts_advance(); // consumir '*'
-                mode = 4; // *start*
+                ts_advance();
+                mode = 4;
                 start = val;
                 end = val;
             } else {
-                mode = 3; // *start  (antes de start)
+                mode = 3;
                 start = -1;
                 end = val;
             }
@@ -53,14 +54,13 @@ static ASTNode *parse_slice_content(int line) {
         int val = atoi(num.lexeme);
         if (val < 1) error(line, "Índice inválido: debe ser positivo");
 
-        // Ver siguiente token
         Token next = ts_peek();
         if (next.type == TOK_RBRACKET) {
-            mode = 0; // simple
+            mode = 0;
             start = val;
             end = val;
         } else if (next.type == TOK_COLON) {
-            ts_advance(); // consumir ':'
+            ts_advance();
             Token next2 = ts_peek();
             if (next2.type == TOK_NUMBER) {
                 Token num2 = ts_advance();
@@ -69,7 +69,7 @@ static ASTNode *parse_slice_content(int line) {
                 }
                 int val2 = atoi(num2.lexeme);
                 if (val2 < 1) error(line, "Índice inválido: debe ser positivo");
-                mode = 1; // rango
+                mode = 1;
                 start = val;
                 end = val2;
                 if (start > end) {
@@ -80,8 +80,8 @@ static ASTNode *parse_slice_content(int line) {
                 error(line, "Se esperaba un número después de ':'");
             }
         } else if (next.type == TOK_STAR) {
-            ts_advance(); // consumir '*'
-            mode = 2; // start*
+            ts_advance();
+            mode = 2;
             start = val;
             end = -1;
         } else {
@@ -91,23 +91,44 @@ static ASTNode *parse_slice_content(int line) {
         error(line, "Se esperaba '*' o un número en el slice");
     }
 
-    // Consumir ']'
     if (!ts_match(TOK_RBRACKET)) {
         error(line, "Se esperaba ']' al final del slice");
     }
 
-    // Crear nodo slice
     ASTNode *node = node_create(NODE_SLICE, line);
     node->data.slice.mode = mode;
     node->data.slice.start = start;
     node->data.slice.end = end;
-    // El campo 'list' se llenará después (lo asigna quien llama)
+    DEBUG_INFO("parse_slice_content: creado NODE_SLICE modo %d, start=%d, end=%d", mode, start, end);
+    return node;
+}
+
+/* ─── parse_index_or_slice: parsea el contenido dentro de [ ] y devuelve NODE_INDEX o NODE_SLICE ── */
+ASTNode *parse_index_or_slice(int line) {
+    // Se asume que ya se ha consumido el '[' y el token actual es el primero dentro.
+    Token t = ts_peek();
+    ASTNode *node = NULL;
+
+    // Determinar si es slice o índice simple según el primer token
+    if (t.type == TOK_STAR || (t.type == TOK_NUMBER && (ts.tokens[ts.pos+1].type == TOK_COLON || ts.tokens[ts.pos+1].type == TOK_STAR))) {
+        // Es slice
+        node = parse_slice_content(line);
+    } else {
+        // Índice simple: parsear una expresión y esperar ']'
+        ASTNode *idx = parse_expression(0);
+        if (!ts_match(TOK_RBRACKET)) error(line, "Se esperaba ']'");
+        node = node_create(NODE_INDEX, line);
+        node->data.idx.index = idx;
+        // El campo list se llenará después
+    }
     return node;
 }
 
 /* ─── parse_primary ────────────────────────────────────────────── */
 ASTNode *parse_primary() {
     Token t = ts_peek();
+    DEBUG_INFO("parse_primary: token '%s' (tipo %d)", t.lexeme, t.type);
+
     if (t.type == TOK_NUMBER) {
         ts_advance();
         ASTNode *n = node_create(NODE_LITERAL, t.line);
@@ -125,17 +146,13 @@ ASTNode *parse_primary() {
         ASTNode *n = node_create(NODE_LITERAL, t.line);
         n->data.lit.type = TOK_STRING;
         n->data.lit.sval = strdup(t.lexeme);
-        // Indexación sobre string (igual que antes)
         while (ts_match(TOK_LBRACKET)) {
-            // Determinar si es slice o índice simple
             Token next = ts_peek();
             if (next.type == TOK_STAR || (next.type == TOK_NUMBER && (ts.tokens[ts.pos+1].type == TOK_COLON || ts.tokens[ts.pos+1].type == TOK_STAR))) {
-                // Es slice
                 ASTNode *slice = parse_slice_content(t.line);
                 slice->data.slice.list = n;
                 n = slice;
             } else {
-                // Índice simple
                 ASTNode *idx = parse_expression(0);
                 if (!ts_match(TOK_RBRACKET)) error(t.line, "Se esperaba ']'");
                 ASTNode *ni = node_create(NODE_INDEX, t.line);
@@ -156,11 +173,11 @@ ASTNode *parse_primary() {
     if (t.type == TOK_IDENT) {
         bool is_call = (ts.pos + 1 < ts.count && ts.tokens[ts.pos + 1].type == TOK_LPAREN);
         if (is_call) {
-            ts_advance(); // consumir identificador
+            ts_advance();
             char *func_name = strdup(t.lexeme);
 
             if (strcmp(func_name, "exited") == 0) {
-                ts_advance(); // consumir '('
+                ts_advance();
                 int start_pos = ts.pos;
                 int depth = 1;
                 while (depth > 0 && ts.pos < ts.count) {
@@ -185,7 +202,7 @@ ASTNode *parse_primary() {
             n->data.call.name = func_name;
             n->data.call.argc = 0;
             n->data.call.args = NULL;
-            ts_advance(); // consumir '('
+            ts_advance();
             if (!ts_match(TOK_RPAREN)) {
                 do {
                     n->data.call.args = realloc(n->data.call.args,
@@ -200,17 +217,13 @@ ASTNode *parse_primary() {
             ts_advance();
             ASTNode *n = node_create(NODE_VAR, t.line);
             n->data.var.name = strdup(t.lexeme);
-            // Indexación
             while (ts_match(TOK_LBRACKET)) {
-                // Determinar si es slice o índice simple
                 Token next = ts_peek();
                 if (next.type == TOK_STAR || (next.type == TOK_NUMBER && (ts.tokens[ts.pos+1].type == TOK_COLON || ts.tokens[ts.pos+1].type == TOK_STAR))) {
-                    // Es slice
                     ASTNode *slice = parse_slice_content(t.line);
                     slice->data.slice.list = n;
                     n = slice;
                 } else {
-                    // Índice simple
                     ASTNode *idx = parse_expression(0);
                     if (!ts_match(TOK_RBRACKET)) error(t.line, "Se esperaba ']'");
                     ASTNode *ni = node_create(NODE_INDEX, t.line);
@@ -266,7 +279,7 @@ static ASTNode *parse_member_access() {
     if (left->kind == NODE_VAR && strchr(left->data.var.name, '.') != NULL) {
         if (ts_peek().type == TOK_LPAREN) {
             char *fullname = left->data.var.name;
-            ts_advance(); // '('
+            ts_advance();
             ASTNode *call = node_create(NODE_CALL, left->line);
             call->data.call.name = strdup(fullname);
             call->data.call.argc = 0;
@@ -304,7 +317,7 @@ static ASTNode *parse_unary() {
     return parse_member_access();
 }
 
-/* ─── Term (multiplicación, división, módulo) ────────────────── */
+/* ─── Term ────────────────────────────────────────────────── */
 static ASTNode *parse_term() {
     ASTNode *left = parse_unary();
     while (ts_peek().type == TOK_STAR || ts_peek().type == TOK_SLASH || ts_peek().type == TOK_PERCENT) {
@@ -324,21 +337,21 @@ static ASTNode *parse_expr() {
     ASTNode *left = parse_term();
     while (ts_peek().type == TOK_PLUS || ts_peek().type == TOK_MINUS) {
         Token op = ts_advance();
-        // Caso especial: resta de un slice:  expr - [ ... ]
+        DEBUG_INFO("parse_expr: operador '%s', siguiente token: '%s' (tipo %d)", op.lexeme, ts_peek().lexeme, ts_peek().type);
+
+        // DETECCIÓN ESTRICTA: si encontramos "- [" lo tratamos como slice
         if (op.type == TOK_MINUS && ts_peek().type == TOK_LBRACKET) {
-            // Parseamos el contenido como slice
+            DEBUG_INFO("parse_expr: detectado '- [' -> slice");
             ts_advance(); // consumir '['
             ASTNode *slice = parse_slice_content(op.line);
-            // Necesitamos la lista a la izquierda (left)
             slice->data.slice.list = left;
-            // Creamos un NODE_BINOP con MINUS y el slice como derecho
             ASTNode *n = node_create(NODE_BINOP, op.line);
             n->data.binop.op = TOK_MINUS;
             n->data.binop.left = left;
             n->data.binop.right = slice;
             left = n;
-            // No avanzamos más, salimos del bucle porque ya consumimos el slice
-            break;
+            DEBUG_INFO("parse_expr: creado NODE_BINOP con NODE_SLICE");
+            break; // Salimos del bucle porque ya consumimos todo
         } else {
             ASTNode *right = parse_term();
             ASTNode *n = node_create(NODE_BINOP, op.line);
@@ -346,6 +359,7 @@ static ASTNode *parse_expr() {
             n->data.binop.left = left;
             n->data.binop.right = right;
             left = n;
+            DEBUG_INFO("parse_expr: creado NODE_BINOP normal con operador %d", op.type);
         }
     }
     return left;
@@ -368,7 +382,7 @@ static ASTNode *parse_comparison() {
         return left;
 }
 
-/* ─── AND lógico ───────────────────────────────────────────────── */
+/* ─── AND ───────────────────────────────────────────────── */
 static ASTNode *parse_logic_and() {
     ASTNode *left = parse_comparison();
     while (ts_peek().type == TOK_AND) {
@@ -383,7 +397,7 @@ static ASTNode *parse_logic_and() {
     return left;
 }
 
-/* ─── OR lógico ────────────────────────────────────────────────── */
+/* ─── OR ────────────────────────────────────────────────── */
 static ASTNode *parse_logic_or() {
     ASTNode *left = parse_logic_and();
     while (ts_peek().type == TOK_OR) {
@@ -398,7 +412,7 @@ static ASTNode *parse_logic_or() {
     return left;
 }
 
-/* ─── Expresión principal (punto de entrada) ──────────────────── */
+/* ─── Expresión principal ──────────────────────────────────── */
 ASTNode *parse_expression(int dummy) {
     (void)dummy;
     return parse_logic_or();

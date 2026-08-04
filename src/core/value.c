@@ -1,5 +1,5 @@
 /*
- * Infernal: el lenguaje de programación. Copyright (C) 2026, GPL v3+ License, Lynds Corp., Aros Legendarios, David Baña Szymaniak.
+ * Infernal: el lenguaje de programación. Copyright (C) 2026, GPL v3+ License.
  * Código fuente de Infernal: core/value.c
 */
 
@@ -26,7 +26,7 @@ Value val_bool(bool x) {
 
 Value val_string(const char *s) {
     Value v; v.type = VAL_STRING;
-    v.data.sval = infernal_strdup(s);
+    v.data.sval = infernal_strdup(s ? s : "");
     return v;
 }
 
@@ -46,11 +46,36 @@ void val_list_append(Value *list, Value item) {
     list->data.list.items[list->data.list.count++] = item;
 }
 
+/* ─── Copia profunda de un valor ────────────────────────────── */
+Value value_copy(Value src) {
+    if (src.type == VAL_STRING) {
+        return val_string(src.data.sval);
+    } else if (src.type == VAL_LIST) {
+        Value new_list = val_list_empty();
+        for (int i = 0; i < src.data.list.count; i++) {
+            val_list_append(&new_list, value_copy(src.data.list.items[i]));
+        }
+        return new_list;
+    } else {
+        return src; // int, float, bool, null, ptr se copian por valor
+    }
+}
+
 Value val_list_copy(Value *src) {
-    Value v = val_list_empty();
-    for (int i = 0; i < src->data.list.count; i++)
-        val_list_append(&v, src->data.list.items[i]);
-    return v;
+    return value_copy(*src);
+}
+
+/* ─── Liberar recursivamente un valor ──────────────────────── */
+void free_value(Value v) {
+    if (v.type == VAL_STRING) {
+        free(v.data.sval);
+    } else if (v.type == VAL_LIST) {
+        for (int i = 0; i < v.data.list.count; i++) {
+            free_value(v.data.list.items[i]);
+        }
+        free(v.data.list.items);
+    }
+    // otros tipos no requieren liberación
 }
 
 int valtype_to_tokentype(int vtype) {

@@ -40,7 +40,7 @@ GlobalEntry vm_global_entries[MAX_GLOBALS];
 int vm_global_count = 0;
 char *vm_global_names[MAX_GLOBALS];
 Value vm_globals[MAX_GLOBALS];
-int vm_global_types[MAX_GLOBALS] = {0};   // <-- NUEVO: tipos de globales
+int vm_global_types[MAX_GLOBALS] = {0};
 
 VmBuiltin vm_builtins[256];
 int vm_builtin_count = 0;
@@ -61,7 +61,7 @@ int vm_register_global(const char *name, int scope_type, int vtype) {
     vm_global_entries[vm_global_count].name = strdup(name);
     vm_global_entries[vm_global_count].scope_type = scope_type;
     vm_globals[vm_global_count] = val_make_null();
-    vm_global_types[vm_global_count] = vtype;                // <-- NUEVO
+    vm_global_types[vm_global_count] = vtype;
     vm_global_names[vm_global_count] = vm_global_entries[vm_global_count].name;
     return vm_global_count++;
 }
@@ -119,10 +119,8 @@ static char *expand_command_vm(Chunk *chunk, Value *locals, const char *cmd) {
 
 /* ─── Función de conversión de tipos para la VM ────────────── */
 static Value vm_convert_value(Value v, int target_tok_type) {
-    // Si no se pide conversión, devolver igual
     if (target_tok_type == 0) return v;
 
-    // De string a otros tipos
     if (v.type == VAL_STRING) {
         const char *s = v.data.sval;
         if (target_tok_type == TOK_INT) {
@@ -161,12 +159,9 @@ static Value vm_convert_value(Value v, int target_tok_type) {
                 return v;
             }
         }
-        // Si no se puede convertir, devolvemos el valor original (o podríamos lanzar error)
-        // pero mantenemos el string.
         return v;
     }
 
-    // De int a float, y viceversa
     if (v.type == VAL_INT && target_tok_type == TOK_FLOAT) {
         v.type = VAL_FLOAT;
         v.data.fval = (double)v.data.ival;
@@ -177,7 +172,6 @@ static Value vm_convert_value(Value v, int target_tok_type) {
         v.data.ival = (int)v.data.fval;
         return v;
     }
-    // Si los tipos ya coinciden o no se puede, devolver sin cambios
     return v;
 }
 
@@ -233,7 +227,6 @@ Value vm_run(Chunk *chunk) {
                 if (v.type == VAL_NULL) {
                     error(0, "Variable local no definida");
                 }
-                // Copia profunda si es string
                 if (v.type == VAL_STRING) {
                     v = val_string(v.data.sval);
                 }
@@ -244,7 +237,6 @@ Value vm_run(Chunk *chunk) {
             OP_STORE_VAR: {
                 Value val = pop();
                 int slot = ip->operand;
-                // Convertir si hay tipo fijo
                 if (slot < chunk->local_count && chunk->local_types[slot] != 0) {
                     val = vm_convert_value(val, chunk->local_types[slot]);
                 }
@@ -269,7 +261,6 @@ Value vm_run(Chunk *chunk) {
                     if (v.type == VAL_NULL) {
                         error(0, "Variable global no definida: %s", vm_global_names[ip->operand]);
                     }
-                    // Copia profunda si es string
                     if (v.type == VAL_STRING) {
                         v = val_string(v.data.sval);
                     }
@@ -286,7 +277,6 @@ Value vm_run(Chunk *chunk) {
                 int idx = ip->operand;
                 int scope_type = ip->operand2;
                 if (idx < vm_global_count) {
-                    // Convertir si hay tipo fijo
                     if (vm_global_types[idx] != 0) {
                         val = vm_convert_value(val, vm_global_types[idx]);
                     }
@@ -532,7 +522,7 @@ Value vm_run(Chunk *chunk) {
                 Value cmd_val = chunk->constants[ip->operand];
                 const char *cmd = cmd_val.data.sval;
                 char *expanded = expand_command_vm(chunk, locals, cmd);
-                int ret = run_shell_command(expanded);   // <-- CAMBIADO
+                int ret = run_shell_command(expanded);
                 if (ret != 0) error(0, "Comando shell falló (código %d)", ret);
                 free(expanded);
                 ip++;
@@ -651,30 +641,30 @@ Value vm_run(Chunk *chunk) {
                     }
                     int gidx = vm_find_global_index(var->name);
                     if (gidx >= 0) {
-                        vm_globals[gidx] = var->value;
+                        // ─── CORRECCIÓN: copia profunda ──────────────────
+                        vm_globals[gidx] = value_copy(var->value);
                     }
                 }
 
-                // ─── NUEVO: Sincronizar global_scope con vm_globals, registrando automáticamente ───
-                for (VarEntry *var = global_scope->vars; var; var = var->next) {
-                    int gidx = vm_find_global_index(var->name);
-                    if (gidx < 0) {
-                        // Registramos automáticamente como GLOBAL_SCRIPT
-                        gidx = vm_register_global(var->name, GLOBAL_SCRIPT, var->vtype);
-                    }
-                    if (gidx >= 0) {
-                        vm_globals[gidx] = var->value;
-                    }
-                }
-
-                // También sincronizar super_global_scope con vm_globals (por si acaso)
+                // Sincronizar super_global_scope con vm_globals
                 for (VarEntry *var = super_global_scope->vars; var; var = var->next) {
                     int gidx = vm_find_global_index(var->name);
                     if (gidx < 0) {
                         gidx = vm_register_global(var->name, GLOBAL_SUPER, var->vtype);
                     }
                     if (gidx >= 0) {
-                        vm_globals[gidx] = var->value;
+                        vm_globals[gidx] = value_copy(var->value);
+                    }
+                }
+
+                // También sincronizar global_scope con vm_globals (por si acaso)
+                for (VarEntry *var = global_scope->vars; var; var = var->next) {
+                    int gidx = vm_find_global_index(var->name);
+                    if (gidx < 0) {
+                        gidx = vm_register_global(var->name, GLOBAL_SCRIPT, var->vtype);
+                    }
+                    if (gidx >= 0) {
+                        vm_globals[gidx] = value_copy(var->value);
                     }
                 }
 
@@ -693,13 +683,10 @@ Value vm_run(Chunk *chunk) {
                     error(0, "Se esperaba una lista para la operación de inserción");
                 }
                 int pos = (idx.type == VAL_INT) ? idx.data.ival : 1;
-                // Ajustar fuera de rango: si pos < 1 o pos > len+1, se pone al final
                 if (pos < 1 || pos > list.data.list.count + 1) {
                     pos = list.data.list.count + 1;
                 }
-                // Copiar la lista
                 Value new_list = val_list_copy(&list);
-                // Insertar: añadir un hueco y desplazar
                 val_list_append(&new_list, val_make_null());
                 for (int i = new_list.data.list.count - 1; i > pos - 1; i--) {
                     new_list.data.list.items[i] = new_list.data.list.items[i - 1];
