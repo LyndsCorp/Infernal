@@ -605,7 +605,7 @@ NodeList parse_block(const char *terminator) {
                 value = parse_expression(0);
             }
 
-            stmt = node_create(NODE_ASSIGN, t.line);
+            stmt = node_create(NODE_ASSIGN, t.line);  // <-- CORREGIDO: usa t.line
             stmt->data.assign.name = vname;
             stmt->data.assign.is_cmd = is_cmd;
             stmt->data.assign.cmd_str = cmd_str;
@@ -658,7 +658,7 @@ NodeList parse_block(const char *terminator) {
                 value = parse_expression(0);
             }
 
-            stmt = node_create(NODE_ASSIGN, t.line);
+            stmt = node_create(NODE_ASSIGN, t.line);  // <-- CORREGIDO: usa t.line
             stmt->data.assign.name = vname;
             stmt->data.assign.is_cmd = is_cmd;
             stmt->data.assign.cmd_str = cmd_str;
@@ -668,7 +668,6 @@ NodeList parse_block(const char *terminator) {
             stmt->data.assign.is_global = false;
             stmt->data.assign.lhs_index = lhs_index;
 
-            /* ─── IDENTIFICADOR ────────────────────────────────────────── */
             } else if (t.type == TOK_IDENT) {
                 Token saved_t = t;
                 ts_advance(); // consume identificador
@@ -704,7 +703,7 @@ NodeList parse_block(const char *terminator) {
                         value = parse_expression(0);
                     }
 
-                    stmt = node_create(NODE_ASSIGN, saved_t.line);
+                    stmt = node_create(NODE_ASSIGN, saved_t.line);  // <-- CORREGIDO
                     stmt->data.assign.name = vname;
                     stmt->data.assign.is_cmd = is_cmd;
                     stmt->data.assign.cmd_str = cmd_str;
@@ -751,7 +750,7 @@ NodeList parse_block(const char *terminator) {
                         value = parse_expression(0);
                     }
 
-                    stmt = node_create(NODE_ASSIGN, saved_t.line);
+                    stmt = node_create(NODE_ASSIGN, saved_t.line);  // <-- CORREGIDO
                     stmt->data.assign.name = vname;
                     stmt->data.assign.is_cmd = is_cmd;
                     stmt->data.assign.cmd_str = cmd_str;
@@ -763,12 +762,9 @@ NodeList parse_block(const char *terminator) {
 
                 } else {
                     // NO ES ASIGNACIÓN → puede ser expresión o comando shell
-                    // Si el siguiente token es '(' o '[' siempre es expresión
                     if (ts_peek().type == TOK_LPAREN || ts_peek().type == TOK_LBRACKET) {
-                        // Retrocedemos para que parse_primary vea el identificador
                         ts.pos--;
                         ASTNode *expr = parse_expression(0);
-                        // Se debe haber consumido hasta newline o fin de bloque
                         if (ts_peek().type == TOK_NEWLINE || ts_peek().type == TOK_EOF ||
                             ts_peek().type == TOK_FI || ts_peek().type == TOK_RBRACE) {
                             stmt = node_create(NODE_EXPR_STMT, t.line);
@@ -777,13 +773,10 @@ NodeList parse_block(const char *terminator) {
                         ts_skip_newlines();
                         continue;
                             } else {
-                                // Si no se consumió todo, dar error
                                 error(t.line, "Expresión incompleta");
                             }
                     } else {
-                        // Comando shell
-                        // Recolocar el puntero para incluir el identificador
-                        ts.pos--; // retroceder para incluir saved_t
+                        ts.pos--;
                         int start_pos = ts.pos;
                         while (ts_peek().type != TOK_NEWLINE && ts_peek().type != TOK_EOF) {
                             ts_advance();

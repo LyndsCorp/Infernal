@@ -19,63 +19,7 @@
 #include "parser/parser.h"
 #include "developer/debug.h"
 
-/* ─── Convierte un valor a su representación en cadena ────────────── */
-static char *value_to_string(Value v) {
-    char buf[256];
-    switch (v.type) {
-        case VAL_INT:
-            snprintf(buf, sizeof(buf), "%d", v.data.ival);
-            return strdup(buf);
-        case VAL_FLOAT:
-            snprintf(buf, sizeof(buf), "%g", v.data.fval);
-            return strdup(buf);
-        case VAL_BOOL:
-            return strdup(v.data.bval ? "true" : "false");
-        case VAL_STRING:
-            return strdup(v.data.sval);
-        case VAL_LIST: {
-            size_t total_len = 0;
-            for (int i = 0; i < v.data.list.count; i++) {
-                Value item = v.data.list.items[i];
-                char item_buf[256];
-                const char *str;
-                switch (item.type) {
-                    case VAL_INT: snprintf(item_buf, sizeof(item_buf), "%d", item.data.ival); str = item_buf; break;
-                    case VAL_FLOAT: snprintf(item_buf, sizeof(item_buf), "%g", item.data.fval); str = item_buf; break;
-                    case VAL_BOOL: str = item.data.bval ? "true" : "false"; break;
-                    case VAL_STRING: str = item.data.sval ? item.data.sval : ""; break;
-                    default: str = "null";
-                }
-                total_len += strlen(str);
-                if (i > 0) total_len++; // espacio
-            }
-            char *out = malloc(total_len + 1);
-            if (!out) return strdup("");
-            char *p = out;
-            for (int i = 0; i < v.data.list.count; i++) {
-                Value item = v.data.list.items[i];
-                char item_buf[256];
-                const char *str;
-                switch (item.type) {
-                    case VAL_INT: snprintf(item_buf, sizeof(item_buf), "%d", item.data.ival); str = item_buf; break;
-                    case VAL_FLOAT: snprintf(item_buf, sizeof(item_buf), "%g", item.data.fval); str = item_buf; break;
-                    case VAL_BOOL: str = item.data.bval ? "true" : "false"; break;
-                    case VAL_STRING: str = item.data.sval ? item.data.sval : ""; break;
-                    default: str = "null";
-                }
-                if (i > 0) *p++ = ' ';
-                size_t len = strlen(str);
-                memcpy(p, str, len);
-                p += len;
-            }
-            *p = '\0';
-            return out;
-        }
-                    default:
-                        return strdup("null");
-    }
-}
-
+/* ─── Funciones auxiliares ────────────────────────────────────── */
 static bool val_is_truthy(Value v) {
     switch (v.type) {
         case VAL_BOOL:   return v.data.bval;
@@ -98,7 +42,8 @@ static const char *type_name(int tok_type) {
     }
 }
 
-static bool try_convert_value(Value *val, int target_tok_type) {
+/* ─── Conversión de tipos (pública) ──────────────────────────── */
+bool try_convert_value(Value *val, int target_tok_type) {
     if (val->type == VAL_STRING) {
         const char *s = val->data.sval;
         if (target_tok_type == TOK_INT) {
@@ -158,9 +103,10 @@ static bool try_convert_value(Value *val, int target_tok_type) {
                 default:         str = "null";
             }
             total_len += strlen(str);
-            if (i > 0) total_len++;
+            if (i > 0) total_len++; // espacio
         }
         char *out = malloc(total_len + 1);
+        if (!out) return false;
         char *p = out;
         for (int i = 0; i < val->data.list.count; i++) {
             Value item = val->data.list.items[i];
@@ -500,16 +446,9 @@ Value eval_expr(ASTNode *expr) {
             return val_make_null();
         }
         case NODE_VAR: {
-            const char *orig_name = expr->data.var.name;
-            const char *name = orig_name;
-            bool convert_to_string = false;
-
-            if (name[0] == '$') {
-                convert_to_string = true;
-                name++;
-            } else if (name[0] == '?') {
-                name++;
-            }
+            const char *name = expr->data.var.name;
+            // Eliminar prefijo '$' o '?' para obtener el nombre real
+            if (name[0] == '$' || name[0] == '?') name++;
 
             if (*name == '\0')
                 error(expr->line, "Nombre de variable vacío");
@@ -518,25 +457,8 @@ Value eval_expr(ASTNode *expr) {
             if (!e)
                 error(expr->line, "Variable no definida: %s", name);
 
-            Value val = copy_value_secure(e->value);
-
-            if (convert_to_string) {
-                char *str = value_to_string(val);
-                // Liberar la memoria del valor copiado (si es string o lista)
-                if (val.type == VAL_STRING) {
-                    free(val.data.sval);
-                } else if (val.type == VAL_LIST) {
-                    for (int i = 0; i < val.data.list.count; i++) {
-                        if (val.data.list.items[i].type == VAL_STRING)
-                            free(val.data.list.items[i].data.sval);
-                    }
-                    free(val.data.list.items);
-                }
-                val = val_string(str);
-                free(str);
-            }
-
-            return val;
+            // Devolver una copia profunda del valor (sin conversión)
+            return copy_value_secure(e->value);
         }
         case NODE_LIST: {
             Value list = val_list_empty();
@@ -988,16 +910,30 @@ void exec_block_from(NodeList *block, int start_index) {
 
                 DEBUG_INFO("Valor obtenido para asignación: tipo %d", val.type);
                 int vtype = stmt->data.assign.vtype;
+
+                // ─── CONVERSIÓN FORZADA SI EL TIPO DESTINO ES STRING Y EL VALOR ES LISTA ───
+                if (vtype == TOK_STRING && val.type == VAL_LIST) {
+                    if (!try_convert_value(&val, TOK_STRING)) {
+                        error(stmt->line, "No se pudo convertir la lista a string en la asignación a '%s'",
+                              stmt->data.assign.name);
+                    }
+                }
+
+                // También intentamos conversión general para otros tipos fijos
                 if (vtype != 0) {
                     int actual_type = valtype_to_tokentype(val.type);
                     if (vtype != actual_type) {
-                        if (!try_convert_value(&val, vtype)) {
-                            error(stmt->line, "Error de tipado fijo: se esperaba %s pero se obtuvo %s",
-                                  type_name(vtype), type_name(actual_type));
+                        // Evitar doble conversión si ya se convirtió de lista a string
+                        if (!(vtype == TOK_STRING && val.type == VAL_STRING)) {
+                            if (!try_convert_value(&val, vtype)) {
+                                error(stmt->line, "Error de tipado fijo: se esperaba %s pero se obtuvo %s",
+                                      type_name(vtype), type_name(actual_type));
+                            }
                         }
                     }
                 }
 
+                // Almacenar en el ámbito correspondiente
                 if (stmt->data.assign.is_global) {
                     scope_define(super_global_scope, stmt->data.assign.name, vtype, val);
                 } else if (stmt->data.assign.is_local) {

@@ -13,6 +13,7 @@
 #include "runtime/evaluator.h"
 #include "core/ast.h"
 #include "lexer/lexer.h"
+#include "runtime/evaluator.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -240,7 +241,17 @@ Value vm_run(Chunk *chunk) {
                 Value val = pop();
                 int slot = ip->operand;
                 if (slot < chunk->local_count && chunk->local_types[slot] != 0) {
-                    val = vm_convert_value(val, chunk->local_types[slot]);
+                    int target_type = chunk->local_types[slot];
+                    // Si el target es string y el valor es lista, convertir
+                    if (target_type == TOK_STRING && val.type == VAL_LIST) {
+                        if (!try_convert_value(&val, TOK_STRING)) {
+                            error(0, "No se pudo convertir lista a string en asignación a local '%s'",
+                                  chunk->local_names[slot] ? chunk->local_names[slot] : "?");
+                        }
+                    } else {
+                        // Conversión general para otros tipos
+                        val = vm_convert_value(val, target_type);
+                    }
                 }
                 locals[slot] = val;
                 if (slot < chunk->local_count && chunk->local_names[slot]) {
@@ -278,9 +289,17 @@ Value vm_run(Chunk *chunk) {
                 int scope_type = ip->operand2;
                 if (idx < vm_global_count) {
                     if (vm_global_types[idx] != 0) {
-                        val = vm_convert_value(val, vm_global_types[idx]);
+                        int target_type = vm_global_types[idx];
+                        if (target_type == TOK_STRING && val.type == VAL_LIST) {
+                            if (!try_convert_value(&val, TOK_STRING)) {
+                                error(0, "No se pudo convertir lista a string en asignación a global '%s'",
+                                      vm_global_names[idx] ? vm_global_names[idx] : "?");
+                            }
+                        } else {
+                            val = vm_convert_value(val, target_type);
+                        }
                     }
-                    // ─── Copia profunda para evitar punteros colgantes ──
+                    // Ahora copia segura y almacena
                     vm_globals[idx] = copy_value_secure(val);
                     const char *gname = vm_global_entries[idx].name;
                     if (gname) {
