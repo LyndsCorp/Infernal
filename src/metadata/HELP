@@ -1,4 +1,4 @@
-Infernal - lenguaje de scripting inspirado en Bash + Lua + Python.
+Aro Infernal - lenguaje de scripting inspirado en Bash + Lua + Python.
 
 Uso:
   infernal <script.inf> [flags...]

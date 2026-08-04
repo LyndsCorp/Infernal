@@ -1,7 +1,7 @@
-Infernal 1.15 (Testing)
+Aro Infernal 1.16 (Main)
 ──────────────────────────────────────────────
 
-Versión:           1.15
+Versión:           1.16
 Edición:           Código fuente de Infernal
 Arquitectura:      La que compiles
 Sistema operativo: POSIX (Linux, macOS)
@@ -11,8 +11,9 @@ Proyecto:          Aros Legendarios
 Licencia:          GPL v3+
 
 
-Código fuente:     https://github.com/LyndsCorp/Infernal/tree/testing
+Código fuente:     https://github.com/LyndsCorp/Infernal/tree/main
 Repositorio:       https://github.com/LyndsCorp/Infernal
 Documentación:     https://github.com/LyndsCorp/Infernal-Documentation
 
 Copyright (C) Lynds Corp.
+Hecho con <3 por David Baña Szymaniak
