@@ -1,22 +1,22 @@
-# Infernal
-*Infernal* es un lenguaje de programación cuyo intérprete está escrito en *C*. Combina ideas de *Lua*, *Bash* y *Python*:
+# Aro Infernal
+*Aro Infernal* es un lenguaje de programación cuyo intérprete está escrito en *C*. Combina ideas de *Lua*, *Bash* y *Python*:
 - *Lua*: súper fácil crear bloques.
 - *Bash*: súper fácil ejecutar comandos del shell.
 - *Python*: súper fácil importar librerías.
 
 Si necesitas documentación, entra a:
-https://github.com/Monojo-Project/Infernal-Documentation
+https://github.com/LyndsCorp/Infernal-Documentation
 
 Para compilar el intérprete, solo tienes que poner en la terminal:
 ``` Shell
-make
+make release
 ```
 Y ya se crea el intérprete como el archivo llamado `infernal`.
 Puedes borrar la carpeta `build` después de compilarlo; solo se utiliza durante la compilación.
 
 ## Desarrollo
 
-Infernal se desarrolla y prueba en sistemas POSIX con `make`, un compilador C11 y las APIs GNU/POSIX usadas por el intérprete. Ejecuta `make test` para la batería de regresión y `make sanitize` para compilar y ejecutar pruebas con AddressSanitizer y UndefinedBehaviorSanitizer.
+Ejecuta `make help` para recibir ayuda de las formas de compilaciión y un poco de las estadísticas de tu repo.
 
 
 ## Cómo personalizar/adaptar el intérprete
