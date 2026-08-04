@@ -92,6 +92,54 @@ static bool try_convert_value(Value *val, int target_tok_type) {
         return false;
     }
 
+    /* ─── NUEVO: conversión de lista a string ────────────────── */
+    if (val->type == VAL_LIST && target_tok_type == TOK_STRING) {
+        // Construir un string con los elementos separados por espacio
+        size_t total_len = 0;
+        for (int i = 0; i < val->data.list.count; i++) {
+            Value item = val->data.list.items[i];
+            char buf[64];
+            const char *str;
+            switch (item.type) {
+                case VAL_INT:    snprintf(buf, sizeof(buf), "%d", item.data.ival); str = buf; break;
+                case VAL_FLOAT:  snprintf(buf, sizeof(buf), "%g", item.data.fval); str = buf; break;
+                case VAL_BOOL:   str = item.data.bval ? "true" : "false"; break;
+                case VAL_STRING: str = item.data.sval; break;
+                default:         str = "null";
+            }
+            total_len += strlen(str);
+            if (i > 0) total_len++; // espacio
+        }
+        char *out = malloc(total_len + 1);
+        char *p = out;
+        for (int i = 0; i < val->data.list.count; i++) {
+            Value item = val->data.list.items[i];
+            char buf[64];
+            const char *str;
+            switch (item.type) {
+                case VAL_INT:    snprintf(buf, sizeof(buf), "%d", item.data.ival); str = buf; break;
+                case VAL_FLOAT:  snprintf(buf, sizeof(buf), "%g", item.data.fval); str = buf; break;
+                case VAL_BOOL:   str = item.data.bval ? "true" : "false"; break;
+                case VAL_STRING: str = item.data.sval; break;
+                default:         str = "null";
+            }
+            if (i > 0) *p++ = ' ';
+            size_t len = strlen(str);
+            memcpy(p, str, len);
+            p += len;
+        }
+        *p = '\0';
+        // Liberar la lista antigua
+        for (int i = 0; i < val->data.list.count; i++) {
+            if (val->data.list.items[i].type == VAL_STRING)
+                free(val->data.list.items[i].data.sval);
+        }
+        free(val->data.list.items);
+        val->type = VAL_STRING;
+        val->data.sval = out;
+        return true;
+    }
+
     if (val->type == VAL_INT && target_tok_type == TOK_FLOAT) {
         val->type = VAL_FLOAT;
         val->data.fval = (double)val->data.ival;
@@ -115,6 +163,131 @@ void exec_flag_spec(FlagSpec *spec) {
     ts = saved_ts;
 }
 
+/* ─── Función auxiliar para evaluar un slice ───────────────────── */
+static Value eval_slice(ASTNode *node) {
+    if (node->kind != NODE_SLICE) error(node->line, "Se esperaba un nodo slice");
+    Value list = eval_expr(node->data.slice.list);
+    if (list.type != VAL_LIST) error(node->line, "El slice solo se puede aplicar a listas");
+
+    int len = list.data.list.count;
+    int mode = node->data.slice.mode;
+    int start = node->data.slice.start;
+    int end   = node->data.slice.end;
+
+    Value result = val_list_empty();
+
+    // Validar índices según modo
+    if (mode == 0) { // simple: solo start
+        if (start < 1 || start > len) error(node->line, "Índice fuera de rango: %d", start);
+        val_list_append(&result, list.data.list.items[start-1]);
+        return result;
+    } else if (mode == 1) { // rango start:end
+        if (start < 1 || start > len) error(node->line, "Índice inicial fuera de rango: %d", start);
+        // end puede ser mayor que len: se trunca
+        int real_end = (end > len) ? len : end;
+        if (start > real_end) return val_list_empty(); // rango vacío
+        for (int i = start-1; i < real_end; i++) {
+            val_list_append(&result, list.data.list.items[i]);
+        }
+        return result;
+    } else if (mode == 2) { // start* : después de start
+        if (start < 1 || start > len) error(node->line, "Índice fuera de rango: %d", start);
+        for (int i = start; i < len; i++) { // desde start+1
+            val_list_append(&result, list.data.list.items[i]);
+        }
+        return result;
+    } else if (mode == 3) { // *start : antes de start
+        if (start == -1) { // en realidad end es el límite
+            int lim = end;
+            if (lim < 1 || lim > len) error(node->line, "Índice fuera de rango: %d", lim);
+            for (int i = 0; i < lim-1; i++) {
+                val_list_append(&result, list.data.list.items[i]);
+            }
+            return result;
+        }
+        // fallback
+        error(node->line, "Modo *start no implementado correctamente");
+    } else if (mode == 4) { // *start* : todo menos start
+        if (start < 1 || start > len) error(node->line, "Índice fuera de rango: %d", start);
+        for (int i = 0; i < len; i++) {
+            if (i != start-1) val_list_append(&result, list.data.list.items[i]);
+        }
+        return result;
+    } else if (mode == 5) { // * : vaciar
+        return val_list_empty();
+    } else {
+        error(node->line, "Modo de slice inválido");
+    }
+    return val_make_null(); // no se alcanza
+}
+
+/* ─── Función auxiliar para eliminar según slice ──────────────── */
+static Value remove_slice(Value list, ASTNode *slice_node) {
+    if (slice_node->kind != NODE_SLICE) error(slice_node->line, "Se esperaba un nodo slice para eliminación");
+    int len = list.data.list.count;
+    int mode = slice_node->data.slice.mode;
+    int start = slice_node->data.slice.start;
+    int end   = slice_node->data.slice.end;
+
+    Value new_list = val_list_copy(&list);
+
+    if (mode == 0) { // simple: eliminar un elemento
+        if (start < 1 || start > len) error(slice_node->line, "Índice fuera de rango: %d", start);
+        for (int i = start-1; i < len-1; i++) {
+            new_list.data.list.items[i] = new_list.data.list.items[i+1];
+        }
+        new_list.data.list.count--;
+        return new_list;
+    } else if (mode == 1) { // rango start:end
+        if (start < 1 || start > len) error(slice_node->line, "Índice inicial fuera de rango: %d", start);
+        int real_end = (end > len) ? len : end;
+        if (start > real_end) return new_list; // nada que eliminar
+        // Eliminar desde start hasta real_end (inclusive)
+        int remove_count = real_end - start + 1;
+        for (int i = start-1; i < len - remove_count; i++) {
+            new_list.data.list.items[i] = new_list.data.list.items[i + remove_count];
+        }
+        new_list.data.list.count -= remove_count;
+        return new_list;
+    } else if (mode == 2) { // start* : eliminar después de start
+        if (start < 1 || start > len) error(slice_node->line, "Índice fuera de rango: %d", start);
+        // Mantener hasta start (inclusive), eliminar desde start+1 hasta el final
+        new_list.data.list.count = start;
+        return new_list;
+    } else if (mode == 3) { // *start : eliminar antes de start
+        if (start == -1) {
+            int lim = end;
+            if (lim < 1 || lim > len) error(slice_node->line, "Índice fuera de rango: %d", lim);
+            // Eliminar desde 1 hasta lim-1
+            int remove_count = lim - 1;
+            for (int i = 0; i < len - remove_count; i++) {
+                new_list.data.list.items[i] = new_list.data.list.items[i + remove_count];
+            }
+            new_list.data.list.count -= remove_count;
+            return new_list;
+        }
+        error(slice_node->line, "Modo *start no implementado correctamente para eliminación");
+    } else if (mode == 4) { // *start* : eliminar todo menos start
+        if (start < 1 || start > len) error(slice_node->line, "Índice fuera de rango: %d", start);
+        // Mantener solo el elemento en start
+        Value kept = list.data.list.items[start-1];
+        // Liberar lista antigua (copiamos)
+        for (int i = 0; i < new_list.data.list.count; i++) {
+            if (new_list.data.list.items[i].type == VAL_STRING)
+                free(new_list.data.list.items[i].data.sval);
+        }
+        free(new_list.data.list.items);
+        new_list = val_list_empty();
+        val_list_append(&new_list, kept);
+        return new_list;
+    } else if (mode == 5) { // * : vaciar
+        return val_list_empty();
+    } else {
+        error(slice_node->line, "Modo de slice inválido para eliminación");
+    }
+    return val_make_null();
+}
+
 Value eval_expr(ASTNode *expr) {
     switch (expr->kind) {
         case NODE_LITERAL: {
@@ -130,10 +303,8 @@ Value eval_expr(ASTNode *expr) {
                 name++;
                 if (*name == '\0') error(expr->line, "Nombre de variable vacío tras $");
             }
-            // Buscar en la cadena de ámbitos (local → global → superglobal)
             VarEntry *e = scope_find(current_scope, name);
             if (!e) error(expr->line, "Variable no definida: %s", name);
-            // Si es una referencia a una lista, resolverla
             if (e->value.type == VAL_REFERENCE) {
                 VarEntry *list_var = scope_find(current_scope, e->value.data.ref.list_name);
                 if (!list_var || list_var->value.type != VAL_LIST) {
@@ -156,6 +327,37 @@ Value eval_expr(ASTNode *expr) {
             }
             return list;
         }
+        case NODE_SLICE: {
+            return eval_slice(expr);
+        }
+        case NODE_INDEX: {
+            // Si el índice es un slice, delegamos a eval_slice
+            if (expr->data.idx.index->kind == NODE_SLICE) {
+                ASTNode *slice = expr->data.idx.index;
+                slice->data.slice.list = expr->data.idx.list;
+                return eval_slice(slice);
+            }
+            // Caso normal: índice simple
+            Value base = eval_expr(expr->data.idx.list);
+            Value idx = eval_expr(expr->data.idx.index);
+            if (base.type == VAL_LIST) {
+                int i = (idx.type == VAL_INT) ? idx.data.ival : 1;
+                if (i < 1 || i > base.data.list.count)
+                    error(expr->line, "Índice fuera de rango");
+                return base.data.list.items[i-1];
+            } else if (base.type == VAL_STRING) {
+                if (idx.type != VAL_INT)
+                    error(expr->line, "El índice de string debe ser un entero");
+                int position = idx.data.ival;
+                size_t length = strlen(base.data.sval);
+                if (position < 1 || (size_t)position > length)
+                    error(expr->line, "Índice de string fuera de rango");
+                char character[2] = {base.data.sval[position - 1], '\0'};
+                return val_string(character);
+            }
+            error(expr->line, "No se puede indexar este tipo de valor");
+            return val_make_null();
+        }
         case NODE_BINOP: {
             if (expr->data.binop.op == TOK_AND) {
                 Value left = eval_expr(expr->data.binop.left);
@@ -172,10 +374,17 @@ Value eval_expr(ASTNode *expr) {
 
             Value left = eval_expr(expr->data.binop.left);
 
-            if (left.type == VAL_LIST && expr->data.binop.op == TOK_PLUS &&
-                expr->data.binop.right->kind == NODE_INDEX) {
-                ASTNode *idx_node = expr->data.binop.right;
-            Value base = eval_expr(idx_node->data.idx.list);
+            /* ─── Caso especial: eliminación con slice ─────────── */
+            if (expr->data.binop.op == TOK_MINUS && left.type == VAL_LIST &&
+                expr->data.binop.right->kind == NODE_SLICE) {
+                return remove_slice(left, expr->data.binop.right);
+                }
+
+                /* ─── Inserción: lista + elemento[pos] (ya implementado) ─ */
+                if (left.type == VAL_LIST && expr->data.binop.op == TOK_PLUS &&
+                    expr->data.binop.right->kind == NODE_INDEX) {
+                    ASTNode *idx_node = expr->data.binop.right;
+                Value base = eval_expr(idx_node->data.idx.list);
             Value index_val = eval_expr(idx_node->data.idx.index);
             int pos = (index_val.type == VAL_INT) ? index_val.data.ival : 1;
             Value new_list = val_list_copy(&left);
@@ -188,157 +397,140 @@ Value eval_expr(ASTNode *expr) {
             }
             new_list.data.list.items[pos-1] = base;
             return new_list;
-                }
+                    }
 
-                Value right = eval_expr(expr->data.binop.right);
-
-                if (left.type == VAL_LIST && expr->data.binop.op == TOK_MINUS && right.type == VAL_INT) {
-                    int pos = right.data.ival;
+                    /* ─── Resta simple de entero (legacy) ──────────────── */
+                    if (expr->data.binop.op == TOK_MINUS && left.type == VAL_LIST &&
+                        expr->data.binop.right->kind == NODE_LITERAL &&
+                        expr->data.binop.right->data.lit.type == TOK_INT) {
+                        int pos = expr->data.binop.right->data.lit.ival;
                     Value new_list = val_list_copy(&left);
                     if (pos < 1 || pos > new_list.data.list.count)
                         error(expr->line, "Índice fuera de rango para eliminación: %d", pos);
-                    for (int i = pos-1; i < new_list.data.list.count-1; i++)
-                        new_list.data.list.items[i] = new_list.data.list.items[i+1];
-                    new_list.data.list.count--;
+                        for (int i = pos-1; i < new_list.data.list.count-1; i++)
+                            new_list.data.list.items[i] = new_list.data.list.items[i+1];
+                        new_list.data.list.count--;
                     return new_list;
-                }
-
-                if (expr->data.binop.op == TOK_EEQ || expr->data.binop.op == TOK_NEQ) {
-                    bool equal = false;
-                    if (left.type == right.type) {
-                        switch (left.type) {
-                            case VAL_NULL:   equal = true; break;
-                            case VAL_BOOL:   equal = (left.data.bval == right.data.bval); break;
-                            case VAL_INT:    equal = (left.data.ival == right.data.ival); break;
-                            case VAL_FLOAT:  equal = (left.data.fval == right.data.fval); break;
-                            case VAL_STRING: equal = (strcmp(left.data.sval, right.data.sval) == 0); break;
-                            default: equal = false;
                         }
-                    }
-                    return val_bool(expr->data.binop.op == TOK_EEQ ? equal : !equal);
-                }
 
-                if (expr->data.binop.op == TOK_LT_OP || expr->data.binop.op == TOK_GT_OP ||
-                    expr->data.binop.op == TOK_LE    || expr->data.binop.op == TOK_GE) {
-                    double lv = (left.type == VAL_INT) ? left.data.ival :
-                    (left.type == VAL_FLOAT) ? left.data.fval : 0.0;
-                double rv = (right.type == VAL_INT) ? right.data.ival :
-                (right.type == VAL_FLOAT) ? right.data.fval : 0.0;
-                switch (expr->data.binop.op) {
-                    case TOK_LT_OP: return val_bool(lv < rv);
-                    case TOK_GT_OP: return val_bool(lv > rv);
-                    case TOK_LE:    return val_bool(lv <= rv);
-                    case TOK_GE:    return val_bool(lv >= rv);
-                    default: break;
-                }
-                    }
+                        /* ─── Operaciones normales ──────────────────────────── */
+                        Value right = eval_expr(expr->data.binop.right);
 
-                    if (left.type == VAL_STRING || right.type == VAL_STRING) {
-                        char lbuf[64], rbuf[64];
-                        const char *ls = left.type == VAL_STRING ? left.data.sval : lbuf;
-                        const char *rs = right.type == VAL_STRING ? right.data.sval : rbuf;
-                        if (left.type != VAL_STRING)
-                            snprintf(lbuf, sizeof(lbuf), "%d", left.type == VAL_INT ? left.data.ival :
-                            left.type == VAL_FLOAT ? (int)left.data.fval : left.data.bval ? 1 : 0);
-                        if (right.type != VAL_STRING)
-                            snprintf(rbuf, sizeof(rbuf), "%d", right.type == VAL_INT ? right.data.ival :
-                            right.type == VAL_FLOAT ? (int)right.data.fval : right.data.bval ? 1 : 0);
-                        size_t total = strlen(ls) + strlen(rs) + 1;
-                        char *buf = malloc(total);
-                        if (!buf) error(expr->line, "Memoria insuficiente al concatenar cadenas");
-                        snprintf(buf, total, "%s%s", ls, rs);
-                        Value result = val_string(buf);
-                        free(buf);
-                        return result;
-                    }
+                        if (expr->data.binop.op == TOK_EEQ || expr->data.binop.op == TOK_NEQ) {
+                            bool equal = false;
+                            if (left.type == right.type) {
+                                switch (left.type) {
+                                    case VAL_NULL:   equal = true; break;
+                                    case VAL_BOOL:   equal = (left.data.bval == right.data.bval); break;
+                                    case VAL_INT:    equal = (left.data.ival == right.data.ival); break;
+                                    case VAL_FLOAT:  equal = (left.data.fval == right.data.fval); break;
+                                    case VAL_STRING: equal = (strcmp(left.data.sval, right.data.sval) == 0); break;
+                                    default: equal = false;
+                                }
+                            }
+                            return val_bool(expr->data.binop.op == TOK_EEQ ? equal : !equal);
+                        }
 
-                    if (left.type == VAL_INT && right.type == VAL_INT) {
-                        int lv = left.data.ival, rv = right.data.ival;
+                        if (expr->data.binop.op == TOK_LT_OP || expr->data.binop.op == TOK_GT_OP ||
+                            expr->data.binop.op == TOK_LE    || expr->data.binop.op == TOK_GE) {
+                            double lv = (left.type == VAL_INT) ? left.data.ival :
+                            (left.type == VAL_FLOAT) ? left.data.fval : 0.0;
+                        double rv = (right.type == VAL_INT) ? right.data.ival :
+                        (right.type == VAL_FLOAT) ? right.data.fval : 0.0;
                         switch (expr->data.binop.op) {
-                            case TOK_PLUS:  return val_int(lv + rv);
-                            case TOK_MINUS: return val_int(lv - rv);
-                            case TOK_STAR:  return val_int(lv * rv);
-                            case TOK_SLASH: if (rv == 0) error(expr->line, "División por cero"); return val_float((double)lv / rv);
-                            case TOK_PERCENT: if (rv == 0) error(expr->line, "Módulo por cero"); return val_int(lv % rv);
-                            default: error(expr->line, "Operador no soportado");
+                            case TOK_LT_OP: return val_bool(lv < rv);
+                            case TOK_GT_OP: return val_bool(lv > rv);
+                            case TOK_LE:    return val_bool(lv <= rv);
+                            case TOK_GE:    return val_bool(lv >= rv);
+                            default: break;
                         }
-                    }
+                            }
 
-                    double lv = (left.type == VAL_INT) ? left.data.ival :
-                    (left.type == VAL_FLOAT) ? left.data.fval :
-                    (left.type == VAL_BOOL) ? (left.data.bval ? 1.0 : 0.0) : 0.0;
-                    double rv = (right.type == VAL_INT) ? right.data.ival :
-                    (right.type == VAL_FLOAT) ? right.data.fval :
-                    (right.type == VAL_BOOL) ? (right.data.bval ? 1.0 : 0.0) : 0.0;
-                    switch (expr->data.binop.op) {
-                        case TOK_PLUS: return val_float(lv + rv);
-                        case TOK_MINUS: return val_float(lv - rv);
-                        case TOK_STAR: return val_float(lv * rv);
-                        case TOK_SLASH: if (rv == 0) error(expr->line, "División por cero"); return val_float(lv / rv);
-                        case TOK_PERCENT: if (rv == 0) error(expr->line, "Módulo por cero"); return val_float((int)lv % (int)rv);
-                        default: error(expr->line, "Operador no soportado");
-                    }
-                    break;
+                            if (left.type == VAL_STRING || right.type == VAL_STRING) {
+                                char lbuf[64], rbuf[64];
+                                const char *ls = left.type == VAL_STRING ? left.data.sval : lbuf;
+                                const char *rs = right.type == VAL_STRING ? right.data.sval : rbuf;
+                                if (left.type != VAL_STRING)
+                                    snprintf(lbuf, sizeof(lbuf), "%d", left.type == VAL_INT ? left.data.ival :
+                                    left.type == VAL_FLOAT ? (int)left.data.fval : left.data.bval ? 1 : 0);
+                                if (right.type != VAL_STRING)
+                                    snprintf(rbuf, sizeof(rbuf), "%d", right.type == VAL_INT ? right.data.ival :
+                                    right.type == VAL_FLOAT ? (int)right.data.fval : right.data.bval ? 1 : 0);
+                                size_t total = strlen(ls) + strlen(rs) + 1;
+                                char *buf = malloc(total);
+                                if (!buf) error(expr->line, "Memoria insuficiente al concatenar cadenas");
+                                snprintf(buf, total, "%s%s", ls, rs);
+                                Value result = val_string(buf);
+                                free(buf);
+                                return result;
+                            }
+
+                            if (left.type == VAL_INT && right.type == VAL_INT) {
+                                int lv = left.data.ival, rv = right.data.ival;
+                                switch (expr->data.binop.op) {
+                                    case TOK_PLUS:  return val_int(lv + rv);
+                                    case TOK_MINUS: return val_int(lv - rv);
+                                    case TOK_STAR:  return val_int(lv * rv);
+                                    case TOK_SLASH: if (rv == 0) error(expr->line, "División por cero"); return val_float((double)lv / rv);
+                                    case TOK_PERCENT: if (rv == 0) error(expr->line, "Módulo por cero"); return val_int(lv % rv);
+                                    default: error(expr->line, "Operador no soportado");
+                                }
+                            }
+
+                            double lv = (left.type == VAL_INT) ? left.data.ival :
+                            (left.type == VAL_FLOAT) ? left.data.fval :
+                            (left.type == VAL_BOOL) ? (left.data.bval ? 1.0 : 0.0) : 0.0;
+                            double rv = (right.type == VAL_INT) ? right.data.ival :
+                            (right.type == VAL_FLOAT) ? right.data.fval :
+                            (right.type == VAL_BOOL) ? (right.data.bval ? 1.0 : 0.0) : 0.0;
+                            switch (expr->data.binop.op) {
+                                case TOK_PLUS: return val_float(lv + rv);
+                                case TOK_MINUS: return val_float(lv - rv);
+                                case TOK_STAR: return val_float(lv * rv);
+                                case TOK_SLASH: if (rv == 0) error(expr->line, "División por cero"); return val_float(lv / rv);
+                                case TOK_PERCENT: if (rv == 0) error(expr->line, "Módulo por cero"); return val_float((int)lv % (int)rv);
+                                default: error(expr->line, "Operador no soportado");
+                            }
+                            break;
         }
-                        case NODE_CALL: {
-                            FuncObject *fobj = func_lookup(expr->data.call.name);
-                            if (!fobj) error(expr->line, "Función no definida: %s", expr->data.call.name);
+                                case NODE_CALL: {
+                                    FuncObject *fobj = func_lookup(expr->data.call.name);
+                                    if (!fobj) error(expr->line, "Función no definida: %s", expr->data.call.name);
 
-                            if (fobj->kind == FUNC_BUILTIN) {
-                                Value *args = malloc(sizeof(Value) * expr->data.call.argc);
-                                for (int i = 0; i < expr->data.call.argc; i++)
-                                    args[i] = eval_expr(expr->data.call.args[i]);
-                                Value ret = fobj->builtin(expr->data.call.argc, args);
-                                free(args);
-                                return ret;
-                            } else {
-                                ASTNode *func = fobj->def;
-                                if (expr->data.call.argc != func->data.func.param_count) {
-                                    error(expr->line, "La función '%s' espera %d argumento(s), recibió %d",
-                                          expr->data.call.name, func->data.func.param_count,
-                                          expr->data.call.argc);
+                                    if (fobj->kind == FUNC_BUILTIN) {
+                                        Value *args = malloc(sizeof(Value) * expr->data.call.argc);
+                                        for (int i = 0; i < expr->data.call.argc; i++)
+                                            args[i] = eval_expr(expr->data.call.args[i]);
+                                        Value ret = fobj->builtin(expr->data.call.argc, args);
+                                        free(args);
+                                        return ret;
+                                    } else {
+                                        ASTNode *func = fobj->def;
+                                        if (expr->data.call.argc != func->data.func.param_count) {
+                                            error(expr->line, "La función '%s' espera %d argumento(s), recibió %d",
+                                                  expr->data.call.name, func->data.func.param_count,
+                                                  expr->data.call.argc);
+                                        }
+                                        Scope *new_scope = scope_new(current_scope, expr->data.call.name);
+                                        Scope *prev_scope = current_scope;
+                                        current_scope = new_scope;
+                                        for (int i = 0; i < func->data.func.param_count; i++) {
+                                            Value arg = (i < expr->data.call.argc) ? eval_expr(expr->data.call.args[i]) : val_make_null();
+                                            scope_define(new_scope, func->data.func.params[i], func->data.func.ptypes[i], arg);
+                                        }
+                                        int saved_cf = control_flow;
+                                        Value saved_ret = return_value;
+                                        control_flow = CF_NONE;
+                                        exec_block(&func->data.func.body);
+                                        Value ret = (control_flow == CF_RETURN) ? return_value : val_make_null();
+                                        control_flow = saved_cf;
+                                        return_value = saved_ret;
+                                        current_scope = prev_scope;
+                                        return ret;
+                                    }
                                 }
-                                Scope *new_scope = scope_new(current_scope, expr->data.call.name);
-                                Scope *prev_scope = current_scope;
-                                current_scope = new_scope;
-                                for (int i = 0; i < func->data.func.param_count; i++) {
-                                    Value arg = (i < expr->data.call.argc) ? eval_expr(expr->data.call.args[i]) : val_make_null();
-                                    scope_define(new_scope, func->data.func.params[i], func->data.func.ptypes[i], arg);
-                                }
-                                int saved_cf = control_flow;
-                                Value saved_ret = return_value;
-                                control_flow = CF_NONE;
-                                exec_block(&func->data.func.body);
-                                Value ret = (control_flow == CF_RETURN) ? return_value : val_make_null();
-                                control_flow = saved_cf;
-                                return_value = saved_ret;
-                                current_scope = prev_scope;
-                                return ret;
-                            }
-                        }
-                        case NODE_INDEX: {
-                            Value base = eval_expr(expr->data.idx.list);
-                            Value idx = eval_expr(expr->data.idx.index);
-                            if (base.type == VAL_LIST) {
-                                int i = (idx.type == VAL_INT) ? idx.data.ival : 1;
-                                if (i < 1 || i > base.data.list.count)
-                                    error(expr->line, "Índice fuera de rango");
-                                return base.data.list.items[i-1];
-                            } else if (base.type == VAL_STRING) {
-                                if (idx.type != VAL_INT)
-                                    error(expr->line, "El índice de string debe ser un entero");
-                                int position = idx.data.ival;
-                                size_t length = strlen(base.data.sval);
-                                if (position < 1 || (size_t)position > length)
-                                    error(expr->line, "Índice de string fuera de rango");
-                                char character[2] = {base.data.sval[position - 1], '\0'};
-                                return val_string(character);
-                            }
-                            error(expr->line, "No se puede indexar este tipo de valor");
-                            return val_make_null();
-                        }
-                        default:
-                            error(expr->line, "Expresión no implementada");
+                                default:
+                                    error(expr->line, "Expresión no implementada");
     }
     return val_make_null();
 }
@@ -382,28 +574,20 @@ void exec_block_from(NodeList *block, int start_index) {
                     char *cmd = stmt->data.assign.cmd_str;
                     int exit_code = 0;
 
-                    // Si es bool, ejecutamos sin mostrar salida
                     if (stmt->data.assign.vtype == TOK_BOOL) {
                         char *expanded_cmd = expand_command(cmd);
                         FILE *fp = popen(expanded_cmd, "r");
                         if (!fp) {
                             error(stmt->line, "Error al ejecutar comando: %s", expanded_cmd);
                         }
-                        // Leer y descartar la salida para evitar bloqueos del proceso hijo
                         char buf[1024];
-                        while (fgets(buf, sizeof(buf), fp) != NULL) {
-                            // descartar
-                        }
+                        while (fgets(buf, sizeof(buf), fp) != NULL) {}
                         int status = pclose(fp);
-                        if (WIFEXITED(status)) {
-                            exit_code = WEXITSTATUS(status);
-                        } else {
-                            exit_code = -1;
-                        }
+                        if (WIFEXITED(status)) exit_code = WEXITSTATUS(status);
+                        else exit_code = -1;
                         free(expanded_cmd);
                         val = val_bool(exit_code == 0);
                     } else {
-                        // Para otros tipos (int, string, list) capturamos la salida
                         char *expanded_cmd = expand_command(cmd);
                         FILE *fp = NULL;
                         char *temp_path = NULL;
@@ -463,7 +647,6 @@ void exec_block_from(NodeList *block, int start_index) {
                         free(expanded_cmd);
                     }
                 } else {
-                    // Asignación normal de expresión
                     if (stmt->data.assign.lhs_index) {
                         VarEntry *var = scope_find(current_scope, stmt->data.assign.name);
                         if (!var || var->value.type != VAL_LIST)
@@ -481,7 +664,6 @@ void exec_block_from(NodeList *block, int start_index) {
                     val = eval_expr(stmt->data.assign.value);
                 }
 
-                // Aplicar conversión de tipos (si el valor no es del tipo esperado)
                 int vtype = stmt->data.assign.vtype;
                 if (vtype != 0) {
                     int actual_type = valtype_to_tokentype(val.type);
@@ -493,7 +675,6 @@ void exec_block_from(NodeList *block, int start_index) {
                     }
                 }
 
-                // Definir/Asignar en el ámbito correspondiente
                 if (stmt->data.assign.is_global) {
                     scope_define(super_global_scope, stmt->data.assign.name, vtype, val);
                     char env_name[512];

@@ -1,7 +1,7 @@
 /*
  * Infernal: el lenguaje de programación. Copyright (C) 2026, GPL v3+ License, Lynds Corp., Aros Legendarios, David Baña Szymaniak.
  * Código fuente de Infernal: core/types.h
- */
+*/
 
 #ifndef CORE_TYPES_H
 #define CORE_TYPES_H
@@ -32,7 +32,8 @@ typedef enum {
     TOK_FLAG,
     TOK_BANG,
     TOK_AT,
-    TOK_LINE
+    TOK_LINE,
+    TOK_COLON          /* <-- NUEVO: para slices */
 } TokenType;
 
 /* ─── Token ──────────────────────────────────────────────── */
@@ -40,8 +41,8 @@ typedef struct {
     TokenType type;
     char *lexeme;
     int line;
-    int start_col;   // columna donde comienza (0‑based, relativa a la línea)
-    int end_col;     // columna donde termina (excluyente)
+    int start_col;
+    int end_col;
 } Token;
 
 /* ─── AST nodes ──────────────────────────────────────────── */
@@ -111,7 +112,8 @@ struct ASTNode {
         NODE_IF, NODE_WHILE, NODE_FOR, NODE_FUNC_DEF, NODE_RETURN,
         NODE_BREAK, NODE_CONTINUE, NODE_REPEAT, NODE_IMPORT, NODE_TRY,
         NODE_VAR, NODE_LITERAL, NODE_BINOP, NODE_CALL, NODE_INDEX,
-        NODE_FLAGS, NODE_LIST, NODE_FOR_IN, NODE_PORTAL
+        NODE_FLAGS, NODE_LIST, NODE_FOR_IN, NODE_PORTAL,
+        NODE_SLICE   // <--- NUEVO: operación de slice/rango
     } kind;
     union {
         struct { NodeList stmts; } prog;
@@ -140,6 +142,13 @@ struct ASTNode {
                 char *portal_name;
             } repeat;
             struct { char *name; bool is_local; } portal;
+            /* ─── NUEVO: slice ──────────────────────────────── */
+            struct {
+                ASTNode *list;   // lista sobre la que se aplica el slice
+                int mode;        // 0=simple (un índice), 1=rango start:end, 2=start* (después), 3=*start (antes), 4=*start* (todo menos), 5=* (vaciar)
+                int start;       // índice start (1‑based), -1 = '*'
+                int end;         // índice end   (1‑based), -1 = '*'
+            } slice;
     } data;
 };
 
