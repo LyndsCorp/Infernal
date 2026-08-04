@@ -97,7 +97,7 @@ static bool try_convert_value(Value *val, int target_tok_type) {
                 case VAL_INT:    snprintf(buf, sizeof(buf), "%d", item.data.ival); str = buf; break;
                 case VAL_FLOAT:  snprintf(buf, sizeof(buf), "%g", item.data.fval); str = buf; break;
                 case VAL_BOOL:   str = item.data.bval ? "true" : "false"; break;
-                case VAL_STRING: str = item.data.sval; break;
+                case VAL_STRING: str = item.data.sval ? item.data.sval : ""; break;
                 default:         str = "null";
             }
             total_len += strlen(str);
@@ -113,7 +113,7 @@ static bool try_convert_value(Value *val, int target_tok_type) {
                 case VAL_INT:    snprintf(buf, sizeof(buf), "%d", item.data.ival); str = buf; break;
                 case VAL_FLOAT:  snprintf(buf, sizeof(buf), "%g", item.data.fval); str = buf; break;
                 case VAL_BOOL:   str = item.data.bval ? "true" : "false"; break;
-                case VAL_STRING: str = item.data.sval; break;
+                case VAL_STRING: str = item.data.sval ? item.data.sval : ""; break;
                 default:         str = "null";
             }
             if (i > 0) *p++ = ' ';
@@ -154,137 +154,211 @@ void exec_flag_spec(FlagSpec *spec) {
     ts = saved_ts;
 }
 
+/* ────────────────────────────────────────────────────────────── */
+/* Slice y eliminación de listas (versión robusta)             */
+/* ────────────────────────────────────────────────────────────── */
+
 static Value eval_slice(ASTNode *node) {
-    if (node->kind != NODE_SLICE) error(node->line, "Se esperaba un nodo slice");
+    DEBUG_INFO("eval_slice: entrada");
+    if (node == NULL) error(0, "eval_slice: nodo es NULL");
+    if (node->kind != NODE_SLICE) error(node->line, "eval_slice: nodo no es NODE_SLICE");
+
+    if (node->data.slice.list == NULL) {
+        error(node->line, "eval_slice: el campo 'list' del nodo slice es NULL");
+    }
+
+    DEBUG_INFO("eval_slice: mode=%d, start=%d, end=%d, list node kind=%d",
+               node->data.slice.mode, node->data.slice.start, node->data.slice.end,
+               node->data.slice.list->kind);
+
     Value list = eval_expr(node->data.slice.list);
-    if (list.type != VAL_LIST) error(node->line, "El slice solo se puede aplicar a listas");
+    DEBUG_INFO("eval_slice: lista evaluada, tipo=%d, count=%d", list.type, list.data.list.count);
+
+    if (list.type != VAL_LIST)
+        error(node->line, "El slice solo se puede aplicar a listas (tipo %d)", list.type);
 
     int len = list.data.list.count;
+    if (len == 0) {
+        DEBUG_INFO("eval_slice: lista vacía, devolviendo lista vacía");
+        return val_list_empty();
+    }
+
+    if (list.data.list.items == NULL) {
+        error(node->line, "eval_slice: lista corrupta: items es NULL pero count=%d", len);
+    }
+
     int mode = node->data.slice.mode;
     int start = node->data.slice.start;
     int end   = node->data.slice.end;
 
     Value result = val_list_empty();
 
-    if (mode == 0) {
-        if (start < 1 || start > len) error(node->line, "Índice fuera de rango: %d", start);
-        val_list_append(&result, value_copy(list.data.list.items[start-1]));
-    } else if (mode == 1) {
-        if (start < 1 || start > len) error(node->line, "Índice inicial fuera de rango: %d", start);
-        int real_end = (end > len) ? len : end;
-        if (start > real_end) {
-            for (int i = 0; i < len; i++) val_list_append(&result, value_copy(list.data.list.items[i]));
-        } else {
-            for (int i = start-1; i < real_end; i++) val_list_append(&result, value_copy(list.data.list.items[i]));
+    switch (mode) {
+        case 0: {
+            if (start < 1 || start > len)
+                error(node->line, "Índice fuera de rango: %d (lista tiene %d elementos)", start, len);
+            val_list_append(&result, copy_value_secure(list.data.list.items[start - 1]));
+            break;
         }
-    } else if (mode == 2) {
-        if (start < 1 || start > len) error(node->line, "Índice fuera de rango: %d", start);
-        for (int i = start; i < len; i++) val_list_append(&result, value_copy(list.data.list.items[i]));
-    } else if (mode == 3) {
-        if (start == -1) {
-            int lim = end;
-            if (lim < 1 || lim > len) error(node->line, "Índice fuera de rango: %d", lim);
-            for (int i = 0; i < lim-1; i++) val_list_append(&result, value_copy(list.data.list.items[i]));
-        } else {
-            error(node->line, "Modo *start no implementado correctamente");
+        case 1: {
+            if (start < 1 || start > len)
+                error(node->line, "Índice inicial fuera de rango: %d", start);
+            int real_end = (end > len) ? len : end;
+            if (start > real_end) {
+                break;
+            }
+            for (int i = start - 1; i < real_end; i++) {
+                val_list_append(&result, copy_value_secure(list.data.list.items[i]));
+            }
+            break;
         }
-    } else if (mode == 4) {
-        if (start < 1 || start > len) error(node->line, "Índice fuera de rango: %d", start);
-        for (int i = 0; i < len; i++) if (i != start-1) val_list_append(&result, value_copy(list.data.list.items[i]));
-    } else if (mode == 5) {
-        // vaciar lista
-        // no copiamos nada, result ya está vacía
-    } else {
-        error(node->line, "Modo de slice inválido");
+        case 2: {
+            if (start < 1 || start > len)
+                error(node->line, "Índice fuera de rango: %d", start);
+            for (int i = start; i < len; i++) {
+                val_list_append(&result, copy_value_secure(list.data.list.items[i]));
+            }
+            break;
+        }
+        case 3: {
+            if (start != -1) {
+                error(node->line, "Modo *start no implementado correctamente");
+            }
+            if (end < 1 || end > len)
+                error(node->line, "Índice fuera de rango: %d", end);
+            for (int i = 0; i < end - 1; i++) {
+                val_list_append(&result, copy_value_secure(list.data.list.items[i]));
+            }
+            break;
+        }
+        case 4: {
+            if (start < 1 || start > len)
+                error(node->line, "Índice fuera de rango: %d", start);
+            for (int i = 0; i < len; i++) {
+                if (i != start - 1)
+                    val_list_append(&result, copy_value_secure(list.data.list.items[i]));
+            }
+            break;
+        }
+        case 5: {
+            break;
+        }
+        default:
+            error(node->line, "Modo de slice inválido: %d", mode);
     }
 
-    // Liberar la lista original (ya no se necesita)
-    free_value(list);
+    DEBUG_INFO("eval_slice: resultado lista con %d elementos", result.data.list.count);
     return result;
 }
 
 static Value remove_slice(Value list, ASTNode *slice_node) {
-    if (slice_node->kind != NODE_SLICE) error(slice_node->line, "Se esperaba un nodo slice para eliminación");
+    if (slice_node == NULL) error(0, "remove_slice: nodo slice es NULL");
+    if (slice_node->kind != NODE_SLICE) error(slice_node->line, "remove_slice: nodo no es NODE_SLICE");
+
+    if (list.type != VAL_LIST)
+        error(slice_node->line, "La eliminación solo se puede aplicar a listas");
+
     int len = list.data.list.count;
+    if (len == 0) {
+        return val_list_empty();
+    }
+
+    if (list.data.list.items == NULL) {
+        error(slice_node->line, "remove_slice: lista corrupta: items es NULL pero count=%d", len);
+    }
+
     int mode = slice_node->data.slice.mode;
     int start = slice_node->data.slice.start;
     int end   = slice_node->data.slice.end;
 
     Value new_list = val_list_empty();
 
-    if (mode == 0) {
-        if (start < 1 || start > len) error(slice_node->line, "Índice fuera de rango: %d", start);
-        for (int i = 0; i < len; i++) {
-            if (i == start-1) continue;
-            val_list_append(&new_list, value_copy(list.data.list.items[i]));
-        }
-    } else if (mode == 1) {
-        if (start < 1 || start > len) error(slice_node->line, "Índice inicial fuera de rango: %d", start);
-        int real_end = (end > len) ? len : end;
-        if (start > real_end) {
-            for (int i = 0; i < len; i++) val_list_append(&new_list, value_copy(list.data.list.items[i]));
-        } else {
+    switch (mode) {
+        case 0: {
+            if (start < 1 || start > len)
+                error(slice_node->line, "Índice fuera de rango: %d", start);
             for (int i = 0; i < len; i++) {
-                if (i >= start-1 && i <= real_end-1) continue;
-                val_list_append(&new_list, value_copy(list.data.list.items[i]));
+                if (i == start - 1) continue;
+                val_list_append(&new_list, copy_value_secure(list.data.list.items[i]));
             }
+            break;
         }
-    } else if (mode == 2) {
-        if (start < 1 || start > len) error(slice_node->line, "Índice fuera de rango: %d", start);
-        for (int i = 0; i < start-1; i++) {
-            val_list_append(&new_list, value_copy(list.data.list.items[i]));
-        }
-    } else if (mode == 3) {
-        if (start == -1) {
-            int lim = end;
-            if (lim < 1 || lim > len) error(slice_node->line, "Índice fuera de rango: %d", lim);
-            for (int i = lim-1; i < len; i++) {
-                val_list_append(&new_list, value_copy(list.data.list.items[i]));
+        case 1: {
+            if (start < 1 || start > len)
+                error(slice_node->line, "Índice inicial fuera de rango: %d", start);
+            int real_end = (end > len) ? len : end;
+            if (start > real_end) {
+                for (int i = 0; i < len; i++)
+                    val_list_append(&new_list, copy_value_secure(list.data.list.items[i]));
+            } else {
+                for (int i = 0; i < len; i++) {
+                    if (i >= start - 1 && i <= real_end - 1) continue;
+                    val_list_append(&new_list, copy_value_secure(list.data.list.items[i]));
+                }
             }
-        } else {
-            error(slice_node->line, "Modo *start no implementado correctamente para eliminación");
+            break;
         }
-    } else if (mode == 4) {
-        if (start < 1 || start > len) error(slice_node->line, "Índice fuera de rango: %d", start);
-        val_list_append(&new_list, value_copy(list.data.list.items[start-1]));
-    } else if (mode == 5) {
-        // vaciar lista: new_list ya está vacía
-    } else {
-        error(slice_node->line, "Modo de slice inválido para eliminación");
+        case 2: {
+            if (start < 1 || start > len)
+                error(slice_node->line, "Índice fuera de rango: %d", start);
+            for (int i = 0; i < start - 1; i++) {
+                val_list_append(&new_list, copy_value_secure(list.data.list.items[i]));
+            }
+            break;
+        }
+        case 3: {
+            if (start != -1) {
+                error(slice_node->line, "Modo *start no implementado correctamente para eliminación");
+            }
+            if (end < 1 || end > len)
+                error(slice_node->line, "Índice fuera de rango: %d", end);
+            for (int i = end - 1; i < len; i++) {
+                val_list_append(&new_list, copy_value_secure(list.data.list.items[i]));
+            }
+            break;
+        }
+        case 4: {
+            if (start < 1 || start > len)
+                error(slice_node->line, "Índice fuera de rango: %d", start);
+            val_list_append(&new_list, copy_value_secure(list.data.list.items[start - 1]));
+            break;
+        }
+        case 5: {
+            break;
+        }
+        default:
+            error(slice_node->line, "Modo de slice inválido para eliminación: %d", mode);
     }
 
-    // Liberar la lista original
-    free_value(list);
     return new_list;
 }
 
 static int extract_integer_index(ASTNode *node, int line) {
-    if (node->kind == NODE_LITERAL && node->data.lit.type == TOK_INT) return node->data.lit.ival;
+    if (!node) error(line, "Nodo nulo al extraer índice");
+
+    if (node->kind == NODE_LITERAL && node->data.lit.type == TOK_INT)
+        return node->data.lit.ival;
+
     if (node->kind == NODE_INDEX) {
         Value idx_val = eval_expr(node->data.idx.index);
-        if (idx_val.type != VAL_INT) error(line, "El índice debe ser un entero");
-        int res = idx_val.data.ival;
-        free_value(idx_val);
-        return res;
+        if (idx_val.type != VAL_INT)
+            error(line, "El índice debe ser un entero");
+        return idx_val.data.ival;
     }
+
     if (node->kind == NODE_LIST && node->data.list_lit.count == 1) {
         return extract_integer_index(node->data.list_lit.items[0], line);
     }
+
     Value v = eval_expr(node);
-    if (v.type == VAL_INT) {
-        int res = v.data.ival;
-        free_value(v);
-        return res;
-    }
+    if (v.type == VAL_INT)
+        return v.data.ival;
     if (v.type == VAL_LIST && v.data.list.count == 1) {
         Value item = v.data.list.items[0];
-        if (item.type == VAL_INT) {
-            int res = item.data.ival;
-            free_value(v);
-            return res;
-        }
-        free_value(v);
+        if (item.type == VAL_INT)
+            return item.data.ival;
     }
+
     error(line, "No se pudo extraer un índice entero para la eliminación");
     return -1;
 }
@@ -316,12 +390,11 @@ Value eval_expr(ASTNode *expr) {
         }
         case NODE_VAR: {
             const char *name = expr->data.var.name;
-            if (name[0] == '$') name++;
-            if (*name == '\0') error(expr->line, "Nombre de variable vacío tras $");
+            if (name[0] == '$' || name[0] == '?') name++;
+            if (*name == '\0') error(expr->line, "Nombre de variable vacío");
             VarEntry *e = scope_find(current_scope, name);
             if (!e) error(expr->line, "Variable no definida: %s", name);
-            // Devolver copia profunda para evitar que se modifique la original
-            return value_copy(e->value);
+            return copy_value_secure(e->value);
         }
         case NODE_LIST: {
             Value list = val_list_empty();
@@ -331,6 +404,9 @@ Value eval_expr(ASTNode *expr) {
             return list;
         }
         case NODE_SLICE: {
+            if (expr->data.slice.list == NULL) {
+                error(expr->line, "NODE_SLICE: campo 'list' es NULL");
+            }
             return eval_slice(expr);
         }
         case NODE_INDEX: {
@@ -344,20 +420,22 @@ Value eval_expr(ASTNode *expr) {
             Value result = val_make_null();
             if (base.type == VAL_LIST) {
                 int i = (idx.type == VAL_INT) ? idx.data.ival : 1;
-                if (i < 1 || i > base.data.list.count) error(expr->line, "Índice fuera de rango");
-                result = value_copy(base.data.list.items[i-1]);
+                if (i < 1 || i > base.data.list.count)
+                    error(expr->line, "Índice fuera de rango");
+                if (base.data.list.items == NULL)
+                    error(expr->line, "Lista corrupta: items es NULL");
+                result = copy_value_secure(base.data.list.items[i-1]);
             } else if (base.type == VAL_STRING) {
                 if (idx.type != VAL_INT) error(expr->line, "El índice de string debe ser un entero");
                 int position = idx.data.ival;
                 size_t length = strlen(base.data.sval);
-                if (position < 1 || (size_t)position > length) error(expr->line, "Índice de string fuera de rango");
+                if (position < 1 || (size_t)position > length)
+                    error(expr->line, "Índice de string fuera de rango");
                 char character[2] = {base.data.sval[position - 1], '\0'};
                 result = val_string(character);
             } else {
                 error(expr->line, "No se puede indexar este tipo de valor");
             }
-            free_value(base);
-            free_value(idx);
             return result;
         }
         case NODE_BINOP: {
@@ -387,9 +465,6 @@ Value eval_expr(ASTNode *expr) {
                 DEBUG_INFO("Resuelta referencia a lista, tipo: %d", left.type);
             }
 
-            // ============================================================
-            // ELIMINACIÓN EN LISTA: lista - [especificación]
-            // ============================================================
             if (expr->data.binop.op == TOK_MINUS && left.type == VAL_LIST) {
                 DEBUG_OP("=== ELIMINACIÓN DE LISTA DETECTADA ===");
                 DEBUG_VAR("lista", left);
@@ -398,7 +473,6 @@ Value eval_expr(ASTNode *expr) {
 
                 if (right_node->kind == NODE_SLICE) {
                     Value result = remove_slice(left, right_node);
-                    // left ya fue liberada en remove_slice
                     return result;
                 }
 
@@ -416,17 +490,17 @@ Value eval_expr(ASTNode *expr) {
                         Value item = right_val.data.list.items[0];
                         if (item.type == VAL_INT) idx = item.data.ival;
                     }
-                    free_value(right_val);
                 }
 
                 if (idx != -1) {
                     DEBUG_INFO("Índice extraído: %d", idx);
                     Value new_list = val_list_empty();
+                    if (left.data.list.items == NULL && left.data.list.count > 0)
+                        error(expr->line, "Lista corrupta al eliminar elemento");
                     for (int i = 0; i < left.data.list.count; i++) {
-                        if (i == idx-1) continue;
-                        val_list_append(&new_list, value_copy(left.data.list.items[i]));
+                        if (i == idx - 1) continue;
+                        val_list_append(&new_list, copy_value_secure(left.data.list.items[i]));
                     }
-                    free_value(left); // liberar la original
                     DEBUG_VAR("lista resultado", new_list);
                     return new_list;
                 }
@@ -434,41 +508,34 @@ Value eval_expr(ASTNode *expr) {
                 error(expr->line, "No se puede eliminar de la lista con este tipo de especificación (nodo: %d)", right_node->kind);
             }
 
-            // ============================================================
-            // INSERCIÓN EN LISTA: lista + elemento[pos]
-            // ============================================================
             if (left.type == VAL_LIST && expr->data.binop.op == TOK_PLUS &&
                 expr->data.binop.right->kind == NODE_INDEX) {
                 DEBUG_OP("=== INSERCIÓN EN LISTA DETECTADA ===");
             ASTNode *idx_node = expr->data.binop.right;
             Value base = eval_expr(idx_node->data.idx.list);
             Value index_val = eval_expr(idx_node->data.idx.index);
-            if (index_val.type != VAL_INT) error(expr->line, "El índice de inserción debe ser un entero");
+            if (index_val.type != VAL_INT) {
+                error(expr->line, "El índice de inserción debe ser un entero");
+            }
             int pos = index_val.data.ival;
-                if (pos < 1) error(expr->line, "El índice de inserción debe ser positivo");
-                DEBUG_INFO("Insertando elemento en posición %d", pos);
+            if (pos < 1) error(expr->line, "El índice de inserción debe ser positivo");
+            DEBUG_INFO("Insertando elemento en posición %d", pos);
                 Value new_list = val_list_empty();
                 for (int i = 0; i < left.data.list.count; i++) {
-                    val_list_append(&new_list, value_copy(left.data.list.items[i]));
+                    val_list_append(&new_list, copy_value_secure(left.data.list.items[i]));
                 }
-                // Insertar elemento en la posición
-                if (pos > new_list.data.list.count + 1) pos = new_list.data.list.count + 1;
+                if (pos > new_list.data.list.count + 1)
+                    pos = new_list.data.list.count + 1;
                 val_list_append(&new_list, val_make_null());
                 for (int i = new_list.data.list.count - 1; i > pos - 1; i--) {
                     new_list.data.list.items[i] = new_list.data.list.items[i - 1];
                 }
-                new_list.data.list.items[pos - 1] = value_copy(base);
-                free_value(left);
-                free_value(base);
-                free_value(index_val);
+                new_list.data.list.items[pos - 1] = copy_value_secure(base);
                 DEBUG_VAR("nueva lista", new_list);
                 DEBUG_INFO("Devolviendo lista (tipo %d)", new_list.type);
                 return new_list;
                 }
 
-                // ============================================================
-                // OPERACIONES NUMÉRICAS (solo si no es lista)
-                // ============================================================
                 if (left.type == VAL_LIST) {
                     error(expr->line, "Operación no soportada con lista y operador '%s'", op_name);
                 }
@@ -488,10 +555,7 @@ Value eval_expr(ASTNode *expr) {
                             default: equal = false;
                         }
                     }
-                    bool result = (expr->data.binop.op == TOK_EEQ) ? equal : !equal;
-                    free_value(left);
-                    free_value(right);
-                    return val_bool(result);
+                    return val_bool(expr->data.binop.op == TOK_EEQ ? equal : !equal);
                 }
 
                 if (expr->data.binop.op == TOK_LT_OP || expr->data.binop.op == TOK_GT_OP ||
@@ -506,8 +570,6 @@ Value eval_expr(ASTNode *expr) {
                     case TOK_GE:    result = (lv >= rv); break;
                     default: break;
                 }
-                free_value(left);
-                free_value(right);
                 return val_bool(result);
                     }
 
@@ -527,8 +589,6 @@ Value eval_expr(ASTNode *expr) {
                         snprintf(buf, total, "%s%s", ls, rs);
                         Value result = val_string(buf);
                         free(buf);
-                        free_value(left);
-                        free_value(right);
                         return result;
                     }
 
@@ -543,8 +603,6 @@ Value eval_expr(ASTNode *expr) {
                             case TOK_PERCENT: if (rv == 0) error(expr->line, "Módulo por cero"); result = val_int(lv % rv); break;
                             default: error(expr->line, "Operador no soportado");
                         }
-                        free_value(left);
-                        free_value(right);
                         return result;
                     }
 
@@ -563,8 +621,6 @@ Value eval_expr(ASTNode *expr) {
                         case TOK_PERCENT: if (rv == 0) error(expr->line, "Módulo por cero"); result = val_float((int)lv % (int)rv); break;
                         default: error(expr->line, "Operador no soportado");
                     }
-                    free_value(left);
-                    free_value(right);
                     return result;
         }
                         case NODE_CALL: {
@@ -575,7 +631,6 @@ Value eval_expr(ASTNode *expr) {
                                 Value *args = malloc(sizeof(Value) * expr->data.call.argc);
                                 for (int i = 0; i < expr->data.call.argc; i++) args[i] = eval_expr(expr->data.call.args[i]);
                                 Value ret = fobj->builtin(expr->data.call.argc, args);
-                                for (int i = 0; i < expr->data.call.argc; i++) free_value(args[i]);
                                 free(args);
                                 return ret;
                             } else {
@@ -608,7 +663,7 @@ Value eval_expr(ASTNode *expr) {
     return val_make_null();
 }
 
-/* ─── Ejecución de bloques ─────────────────────────────────────── */
+/* ─── Ejecución de bloques ────────────────────────────────────── */
 void exec_block(NodeList *block) {
     exec_block_from(block, 0);
 }
@@ -622,8 +677,7 @@ void exec_block_from(NodeList *block, int start_index) {
 
         switch (stmt->kind) {
             case NODE_EXPR_STMT: {
-                Value v = eval_expr(stmt->data.expr_stmt.expr);
-                free_value(v);
+                eval_expr(stmt->data.expr_stmt.expr);
                 break;
             }
             case NODE_CMD_STMT: {
@@ -642,9 +696,6 @@ void exec_block_from(NodeList *block, int start_index) {
             }
             case NODE_ASSIGN: {
                 DEBUG_INFO("ASIGNACION: nombre='%s', value->kind=%d", stmt->data.assign.name, stmt->data.assign.value->kind);
-                if (stmt->data.assign.value->kind == NODE_BINOP) {
-                    DEBUG_INFO("ASIGNACION: value es BINOP con operador %d", stmt->data.assign.value->data.binop.op);
-                }
                 Value val;
                 if (stmt->data.assign.is_cmd) {
                     char *cmd = stmt->data.assign.cmd_str;
@@ -732,11 +783,7 @@ void exec_block_from(NodeList *block, int start_index) {
                         int idx = idx_val.data.ival;
                         if (idx < 1 || idx > var->value.data.list.count) error(stmt->line, "Índice fuera de rango");
                         Value new_val = eval_expr(stmt->data.assign.value);
-                        // Liberar el valor anterior si es string o lista
-                        free_value(var->value.data.list.items[idx - 1]);
-                        var->value.data.list.items[idx - 1] = value_copy(new_val);
-                        free_value(new_val);
-                        free_value(idx_val);
+                        var->value.data.list.items[idx - 1] = copy_value_secure(new_val);
                         break;
                     }
                     val = eval_expr(stmt->data.assign.value);
@@ -756,25 +803,11 @@ void exec_block_from(NodeList *block, int start_index) {
 
                 if (stmt->data.assign.is_global) {
                     scope_define(super_global_scope, stmt->data.assign.name, vtype, val);
-                    char env_name[512];
-                    snprintf(env_name, sizeof(env_name), "INFERNAL_VAR_%s", stmt->data.assign.name);
-                    char *str_val = NULL;
-                    switch (val.type) {
-                        case VAL_INT:   asprintf(&str_val, "i:%d", val.data.ival); break;
-                        case VAL_FLOAT: asprintf(&str_val, "f:%g", val.data.fval); break;
-                        case VAL_BOOL:  asprintf(&str_val, "b:%s", val.data.bval ? "true" : "false"); break;
-                        case VAL_STRING: asprintf(&str_val, "s:%s", val.data.sval); break;
-                        default:        str_val = strdup("s:");
-                    }
-                    setenv(env_name, str_val, 1);
-                    free(str_val);
                 } else if (stmt->data.assign.is_local) {
                     scope_define(current_scope, stmt->data.assign.name, vtype, val);
                 } else {
                     VarEntry *var = scope_find(global_scope, stmt->data.assign.name);
                     if (var) {
-                        // Liberar el valor anterior si existe
-                        free_value(var->value);
                         scope_assign(global_scope, stmt->data.assign.name, val, stmt->line);
                         if (var->vtype == 0 && vtype != 0) var->vtype = vtype;
                     } else {
@@ -783,172 +816,217 @@ void exec_block_from(NodeList *block, int start_index) {
                 }
                 break;
             }
-                        case NODE_IF: {
-                            Value cond = eval_expr(stmt->data.if_stmt.cond);
-                            bool truthy = val_is_truthy(cond);
-                            free_value(cond);
-                            Scope *block_scope = scope_new(current_scope, NULL);
-                            Scope *old_scope = current_scope;
-                            current_scope = block_scope;
-                            if (truthy)
-                                exec_block(&stmt->data.if_stmt.then_block);
-                            else
-                                exec_block(&stmt->data.if_stmt.else_block);
-                            current_scope = old_scope;
-                            if (control_flow == CF_REPEAT_LINE) return;
-                            break;
-                        }
-                        case NODE_WHILE: {
-                            int iter_count = 0;
-                            while (1) {
-                                if (iter_count >= max_loop_iterations)
-                                    error(stmt->line, "Límite de iteraciones (%d) alcanzado en bucle while", max_loop_iterations);
-                                iter_count++;
-                                Value cond = eval_expr(stmt->data.while_stmt.cond);
-                                if (!val_is_truthy(cond)) { free_value(cond); break; }
-                                free_value(cond);
-                                Scope *block_scope = scope_new(current_scope, NULL);
-                                Scope *old_scope = current_scope;
-                                current_scope = block_scope;
-                                exec_block(&stmt->data.while_stmt.body);
-                                current_scope = old_scope;
-                                if (control_flow == CF_BREAK) { control_flow = CF_NONE; break; }
-                                if (control_flow == CF_CONTINUE) { control_flow = CF_NONE; continue; }
-                                if (control_flow == CF_REPEAT_LINE) return;
-                                if (control_flow == CF_RETURN) return;
-                            }
-                            break;
-                        }
-                        case NODE_FOR: {
-                            Value init_val = eval_expr(stmt->data.for_stmt.init);
-                            Scope *for_scope = scope_new(current_scope, NULL);
-                            Scope *old_scope = current_scope;
-                            current_scope = for_scope;
-                            scope_define(for_scope, stmt->data.for_stmt.var, stmt->data.for_stmt.vtype, init_val);
-                            free_value(init_val);
-                            int iter_count = 0;
-                            while (1) {
-                                if (iter_count >= max_loop_iterations)
-                                    error(stmt->line, "Límite de iteraciones (%d) alcanzado en bucle for", max_loop_iterations);
-                                iter_count++;
-                                Value cond = eval_expr(stmt->data.for_stmt.cond);
-                                if (!val_is_truthy(cond)) { free_value(cond); break; }
-                                free_value(cond);
-                                exec_block(&stmt->data.for_stmt.body);
-                                if (control_flow == CF_BREAK) { control_flow = CF_NONE; break; }
-                                if (control_flow == CF_CONTINUE) { control_flow = CF_NONE; }
-                                if (control_flow == CF_REPEAT_LINE) { current_scope = old_scope; return; }
-                                if (control_flow == CF_RETURN) { current_scope = old_scope; return; }
-                                Value incr_val = eval_expr(stmt->data.for_stmt.incr);
-                                free_value(incr_val);
-                            }
-                            current_scope = old_scope;
-                            break;
-                        }
-                        case NODE_FOR_IN: {
-                            Value list_val = eval_expr(stmt->data.for_in.list_expr);
-                            if (list_val.type != VAL_LIST) error(stmt->line, "Se esperaba una lista en for-in");
-                            for (int i = 0; i < list_val.data.list.count; i++) {
-                                Scope *iter_scope = scope_new(current_scope, NULL);
-                                Scope *old_scope = current_scope;
-                                current_scope = iter_scope;
-                                scope_define(iter_scope, stmt->data.for_in.var, 0, value_copy(list_val.data.list.items[i]));
-                                exec_block(&stmt->data.for_in.body);
-                                current_scope = old_scope;
-                                if (control_flow == CF_BREAK) { control_flow = CF_NONE; break; }
-                                if (control_flow == CF_CONTINUE) { control_flow = CF_NONE; continue; }
-                                if (control_flow == CF_REPEAT_LINE) { free_value(list_val); return; }
-                                if (control_flow == CF_RETURN) { free_value(list_val); return; }
-                            }
-                            free_value(list_val);
-                            break;
-                        }
-                        case NODE_FUNC_DEF: break;
-                        case NODE_RETURN:
-                            return_value = stmt->data.ret.expr ? eval_expr(stmt->data.ret.expr) : val_make_null();
-                            control_flow = CF_RETURN;
-                            return;
-                        case NODE_BREAK:
-                            control_flow = CF_BREAK;
-                            return;
-                        case NODE_CONTINUE:
-                            control_flow = CF_CONTINUE;
-                            return;
-                        case NODE_PORTAL: {
-                            const char *name = stmt->data.portal.name;
-                            bool is_local = stmt->data.portal.is_local;
-                            Scope *target_scope = is_local ? current_scope : global_scope;
-                            if (portal_find_in_scope(target_scope, name)) {
-                                error(stmt->line, "Portal '%s' ya existe en este ámbito", name);
-                            }
-                            int next_line = stmt->line + 1;
-                            for (int j = i + 1; j < block->count; j++) {
-                                if (block->stmts[j]->kind != NODE_PORTAL) {
-                                    next_line = block->stmts[j]->line;
-                                    break;
-                                }
-                            }
-                            portal_define(target_scope, name, next_line);
-                            break;
-                        }
-                        case NODE_REPEAT: {
-                            if (stmt->data.repeat.portal_name) {
-                                PortalEntry *p = portal_find(current_scope, stmt->data.repeat.portal_name);
-                                if (!p) error(stmt->line, "Portal '%s' no encontrado", stmt->data.repeat.portal_name);
-                                repeat_line_target = p->line;
-                            } else {
-                                Value line_val = eval_expr(stmt->data.repeat.line_expr);
-                                if (line_val.type != VAL_INT)
-                                    error(stmt->line, "repeat line requiere un número entero");
-                                repeat_line_target = line_val.data.ival;
-                                free_value(line_val);
-                            }
-                            control_flow = CF_REPEAT_LINE;
-                            return;
-                        }
-                        case NODE_IMPORT: {
-                            Scope *old_scope = current_scope; current_scope = global_scope;
-                            exec_block(&stmt->data.import.module_block);
-                            current_scope = old_scope;
-                            if (control_flow == CF_REPEAT_LINE) return;
-                            break;
-                        }
-                        case NODE_TRY: {
-                            jmp_buf saved_env; memcpy(&saved_env, &exception_env, sizeof(jmp_buf));
-                            int saved_raised = exception_raised; exception_raised = 0;
-                            if (!setjmp(exception_env)) {
-                                exec_block(&stmt->data.try_stmt.try_block);
-                            } else {
-                                exception_raised = 0;
-                                exec_block(&stmt->data.try_stmt.catch_block);
-                            }
-                            memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
-                            exception_raised = saved_raised;
-                            if (control_flow == CF_REPEAT_LINE) return;
-                            break;
-                        }
-                        case NODE_FLAGS: {
-                            int mode = stmt->data.flags.mode;
-                            bool *handled = calloc(script_argc, sizeof(bool));
-                            FlagSpec *catch_all = NULL;
-                            for (int s = 0; s < stmt->data.flags.spec_count; s++) {
-                                if (stmt->data.flags.specs[s].catch_all) {
-                                    catch_all = &stmt->data.flags.specs[s];
-                                    break;
-                                }
-                            }
+            case NODE_IF: {
+                Value cond = eval_expr(stmt->data.if_stmt.cond);
+                bool truthy = val_is_truthy(cond);
+                Scope *block_scope = scope_new(current_scope, NULL);
+                Scope *old_scope = current_scope;
+                current_scope = block_scope;
+                if (truthy)
+                    exec_block(&stmt->data.if_stmt.then_block);
+                else
+                    exec_block(&stmt->data.if_stmt.else_block);
+                current_scope = old_scope;
+                if (control_flow == CF_REPEAT_LINE) return;
+                break;
+            }
+            case NODE_WHILE: {
+                int iter_count = 0;
+                while (1) {
+                    if (iter_count >= max_loop_iterations)
+                        error(stmt->line, "Límite de iteraciones (%d) alcanzado en bucle while", max_loop_iterations);
+                    iter_count++;
+                    Value cond = eval_expr(stmt->data.while_stmt.cond);
+                    if (!val_is_truthy(cond)) break;
+                    Scope *block_scope = scope_new(current_scope, NULL);
+                    Scope *old_scope = current_scope;
+                    current_scope = block_scope;
+                    exec_block(&stmt->data.while_stmt.body);
+                    current_scope = old_scope;
+                    if (control_flow == CF_BREAK) { control_flow = CF_NONE; break; }
+                    if (control_flow == CF_CONTINUE) { control_flow = CF_NONE; continue; }
+                    if (control_flow == CF_REPEAT_LINE) return;
+                    if (control_flow == CF_RETURN) return;
+                }
+                break;
+            }
+            case NODE_FOR: {
+                Value init_val = eval_expr(stmt->data.for_stmt.init);
+                Scope *for_scope = scope_new(current_scope, NULL);
+                Scope *old_scope = current_scope;
+                current_scope = for_scope;
+                scope_define(for_scope, stmt->data.for_stmt.var, stmt->data.for_stmt.vtype, init_val);
+                int iter_count = 0;
+                while (1) {
+                    if (iter_count >= max_loop_iterations)
+                        error(stmt->line, "Límite de iteraciones (%d) alcanzado en bucle for", max_loop_iterations);
+                    iter_count++;
+                    Value cond = eval_expr(stmt->data.for_stmt.cond);
+                    if (!val_is_truthy(cond)) break;
+                    exec_block(&stmt->data.for_stmt.body);
+                    if (control_flow == CF_BREAK) { control_flow = CF_NONE; break; }
+                    if (control_flow == CF_CONTINUE) { control_flow = CF_NONE; }
+                    if (control_flow == CF_REPEAT_LINE) { current_scope = old_scope; return; }
+                    if (control_flow == CF_RETURN) { current_scope = old_scope; return; }
+                    eval_expr(stmt->data.for_stmt.incr);
+                }
+                current_scope = old_scope;
+                break;
+            }
+            case NODE_FOR_IN: {
+                Value list_val = eval_expr(stmt->data.for_in.list_expr);
+                if (list_val.type != VAL_LIST) error(stmt->line, "Se esperaba una lista en for-in");
+                for (int i = 0; i < list_val.data.list.count; i++) {
+                    Scope *iter_scope = scope_new(current_scope, NULL);
+                    Scope *old_scope = current_scope;
+                    current_scope = iter_scope;
+                    scope_define(iter_scope, stmt->data.for_in.var, 0, copy_value_secure(list_val.data.list.items[i]));
+                    exec_block(&stmt->data.for_in.body);
+                    current_scope = old_scope;
+                    if (control_flow == CF_BREAK) { control_flow = CF_NONE; break; }
+                    if (control_flow == CF_CONTINUE) { control_flow = CF_NONE; continue; }
+                    if (control_flow == CF_REPEAT_LINE) return;
+                    if (control_flow == CF_RETURN) return;
+                }
+                break;
+            }
+            case NODE_FUNC_DEF: break;
+            case NODE_RETURN:
+                return_value = stmt->data.ret.expr ? eval_expr(stmt->data.ret.expr) : val_make_null();
+                control_flow = CF_RETURN;
+                return;
+            case NODE_BREAK:
+                control_flow = CF_BREAK;
+                return;
+            case NODE_CONTINUE:
+                control_flow = CF_CONTINUE;
+                return;
+            case NODE_PORTAL: {
+                const char *name = stmt->data.portal.name;
+                bool is_local = stmt->data.portal.is_local;
+                Scope *target_scope = is_local ? current_scope : global_scope;
+                if (portal_find_in_scope(target_scope, name)) {
+                    error(stmt->line, "Portal '%s' ya existe en este ámbito", name);
+                }
+                int next_line = stmt->line + 1;
+                for (int j = i + 1; j < block->count; j++) {
+                    if (block->stmts[j]->kind != NODE_PORTAL) {
+                        next_line = block->stmts[j]->line;
+                        break;
+                    }
+                }
+                portal_define(target_scope, name, next_line);
+                break;
+            }
+            case NODE_REPEAT: {
+                if (stmt->data.repeat.portal_name) {
+                    PortalEntry *p = portal_find(current_scope, stmt->data.repeat.portal_name);
+                    if (!p) error(stmt->line, "Portal '%s' no encontrado", stmt->data.repeat.portal_name);
+                    repeat_line_target = p->line;
+                } else {
+                    Value line_val = eval_expr(stmt->data.repeat.line_expr);
+                    if (line_val.type != VAL_INT)
+                        error(stmt->line, "repeat line requiere un número entero");
+                    repeat_line_target = line_val.data.ival;
+                }
+                control_flow = CF_REPEAT_LINE;
+                return;
+            }
+            case NODE_IMPORT: {
+                Scope *old_scope = current_scope; current_scope = global_scope;
+                exec_block(&stmt->data.import.module_block);
+                current_scope = old_scope;
+                if (control_flow == CF_REPEAT_LINE) return;
+                break;
+            }
+            case NODE_TRY: {
+                jmp_buf saved_env; memcpy(&saved_env, &exception_env, sizeof(jmp_buf));
+                int saved_raised = exception_raised; exception_raised = 0;
+                if (!setjmp(exception_env)) {
+                    exec_block(&stmt->data.try_stmt.try_block);
+                } else {
+                    exception_raised = 0;
+                    exec_block(&stmt->data.try_stmt.catch_block);
+                }
+                memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
+                exception_raised = saved_raised;
+                if (control_flow == CF_REPEAT_LINE) return;
+                break;
+            }
+            case NODE_FLAGS: {
+                int mode = stmt->data.flags.mode;
+                bool *handled = calloc(script_argc, sizeof(bool));
+                FlagSpec *catch_all = NULL;
+                for (int s = 0; s < stmt->data.flags.spec_count; s++) {
+                    if (stmt->data.flags.specs[s].catch_all) {
+                        catch_all = &stmt->data.flags.specs[s];
+                        break;
+                    }
+                }
 
-                            int total_matched = 0;
+                int total_matched = 0;
 
-                            if (mode == 1) {
-                                int arg_idx = 2;
-                                for (int s = 0; s < stmt->data.flags.spec_count; s++) {
-                                    FlagSpec *spec = &stmt->data.flags.specs[s];
-                                    if (spec->catch_all) continue;
-                                    if (arg_idx >= script_argc)
-                                        error(stmt->line, "Falta el argumento para el flag posicional %d", arg_idx - 1);
+                if (mode == 1) {
+                    int arg_idx = 2;
+                    for (int s = 0; s < stmt->data.flags.spec_count; s++) {
+                        FlagSpec *spec = &stmt->data.flags.specs[s];
+                        if (spec->catch_all) continue;
+                        if (arg_idx >= script_argc)
+                            error(stmt->line, "Falta el argumento para el flag posicional %d", arg_idx - 1);
+                        if (spec->vtype && spec->var_name) {
+                            char *val_str = script_argv[arg_idx];
+                            char cleaned[512]; int c = 0;
+                            if (val_str[0] == '"' || val_str[0] == '\'') {
+                                char quote = val_str[0];
+                                for (int j=1; val_str[j] && val_str[j] != quote; j++) cleaned[c++] = val_str[j];
+                                cleaned[c] = '\0';
+                            } else {
+                                strncpy(cleaned, val_str, sizeof(cleaned));
+                                cleaned[sizeof(cleaned)-1] = '\0';
+                            }
+                            if (spec->vtype == TOK_FLOAT) {
+                                char *coma = strchr(cleaned, ',');
+                                if (coma) *coma = '.';
+                            }
+                            Value v;
+                            switch (spec->vtype) {
+                                case TOK_INT: v = val_int(atoi(cleaned)); break;
+                                case TOK_FLOAT: v = val_float(atof(cleaned)); break;
+                                case TOK_BOOL: v = val_bool(strcmp(cleaned,"0")!=0 && strlen(cleaned)>0); break;
+                                case TOK_STRING: v = val_string(cleaned); break;
+                                default: v = val_string(cleaned);
+                            }
+                            scope_define(current_scope, spec->var_name, spec->vtype, v);
+                        }
+                        exec_flag_spec(spec);
+                        handled[arg_idx] = true;
+                        total_matched++;
+                        arg_idx++;
+                    }
+                    if (catch_all) {
+                        for (int a = 2; a < script_argc; a++)
+                            if (!handled[a]) {
+                                scope_define(current_scope, "_", 0, val_string(script_argv[a]));
+                                exec_flag_spec(catch_all);
+                                total_matched++;
+                            }
+                    }
+                } else {
+                    for (int a = 2; a < script_argc; a++) {
+                        char *arg = script_argv[a];
+                        char *arg_dup = strdup(arg);
+                        char *eq_pos = strchr(arg_dup, '=');
+                        if (eq_pos) *eq_pos = '\0';
+                        bool matched = false;
+                        for (int s = 0; s < stmt->data.flags.spec_count; s++) {
+                            FlagSpec *spec = &stmt->data.flags.specs[s];
+                            if (spec->catch_all) continue;
+                            for (int n = 0; n < spec->name_count; n++) {
+                                if (strcmp(arg_dup, spec->names[n]) == 0) {
                                     if (spec->vtype && spec->var_name) {
-                                        char *val_str = script_argv[arg_idx];
+                                        if (!eq_pos && a + 1 >= script_argc)
+                                            error(stmt->line, "Falta el valor para el flag '%s'", arg_dup);
+                                        char *val_str = eq_pos ? eq_pos + 1 : script_argv[++a];
                                         char cleaned[512]; int c = 0;
                                         if (val_str[0] == '"' || val_str[0] == '\'') {
                                             char quote = val_str[0];
@@ -973,104 +1051,52 @@ void exec_block_from(NodeList *block, int start_index) {
                                         scope_define(current_scope, spec->var_name, spec->vtype, v);
                                     }
                                     exec_flag_spec(spec);
-                                    handled[arg_idx] = true;
+                                    handled[a] = true;
+                                    matched = true;
                                     total_matched++;
-                                    arg_idx++;
-                                }
-                                if (catch_all) {
-                                    for (int a = 2; a < script_argc; a++)
-                                        if (!handled[a]) {
-                                            scope_define(current_scope, "_", 0, val_string(script_argv[a]));
-                                            exec_flag_spec(catch_all);
-                                            total_matched++;
-                                        }
-                                }
-                            } else {
-                                for (int a = 2; a < script_argc; a++) {
-                                    char *arg = script_argv[a];
-                                    char *arg_dup = strdup(arg);
-                                    char *eq_pos = strchr(arg_dup, '=');
-                                    if (eq_pos) *eq_pos = '\0';
-                                    bool matched = false;
-                                    for (int s = 0; s < stmt->data.flags.spec_count; s++) {
-                                        FlagSpec *spec = &stmt->data.flags.specs[s];
-                                        if (spec->catch_all) continue;
-                                        for (int n = 0; n < spec->name_count; n++) {
-                                            if (strcmp(arg_dup, spec->names[n]) == 0) {
-                                                if (spec->vtype && spec->var_name) {
-                                                    if (!eq_pos && a + 1 >= script_argc)
-                                                        error(stmt->line, "Falta el valor para el flag '%s'", arg_dup);
-                                                    char *val_str = eq_pos ? eq_pos + 1 : script_argv[++a];
-                                                    char cleaned[512]; int c = 0;
-                                                    if (val_str[0] == '"' || val_str[0] == '\'') {
-                                                        char quote = val_str[0];
-                                                        for (int j=1; val_str[j] && val_str[j] != quote; j++) cleaned[c++] = val_str[j];
-                                                        cleaned[c] = '\0';
-                                                    } else {
-                                                        strncpy(cleaned, val_str, sizeof(cleaned));
-                                                        cleaned[sizeof(cleaned)-1] = '\0';
-                                                    }
-                                                    if (spec->vtype == TOK_FLOAT) {
-                                                        char *coma = strchr(cleaned, ',');
-                                                        if (coma) *coma = '.';
-                                                    }
-                                                    Value v;
-                                                    switch (spec->vtype) {
-                                                        case TOK_INT: v = val_int(atoi(cleaned)); break;
-                                                        case TOK_FLOAT: v = val_float(atof(cleaned)); break;
-                                                        case TOK_BOOL: v = val_bool(strcmp(cleaned,"0")!=0 && strlen(cleaned)>0); break;
-                                                        case TOK_STRING: v = val_string(cleaned); break;
-                                                        default: v = val_string(cleaned);
-                                                    }
-                                                    scope_define(current_scope, spec->var_name, spec->vtype, v);
-                                                }
-                                                exec_flag_spec(spec);
-                                                handled[a] = true;
-                                                matched = true;
-                                                total_matched++;
-                                                break;
-                                            }
-                                        }
-                                        if (matched) break;
-                                    }
-                                    if (!matched && arg_dup[0] == '-' && arg_dup[1] != '-' && strlen(arg_dup) > 2) {
-                                        for (int c = 1; arg_dup[c]; c++) {
-                                            char sn[3] = {'-', arg_dup[c], '\0'};
-                                            bool found = false;
-                                            for (int s = 0; s < stmt->data.flags.spec_count; s++) {
-                                                FlagSpec *spec = &stmt->data.flags.specs[s];
-                                                if (spec->catch_all) continue;
-                                                for (int n = 0; n < spec->name_count; n++) {
-                                                    if (strcmp(sn, spec->names[n]) == 0) {
-                                                        exec_flag_spec(spec);
-                                                        found = true;
-                                                        total_matched++;
-                                                        break;
-                                                    }
-                                                }
-                                                if (found) break;
-                                            }
-                                            if (!found && catch_all) {
-                                                scope_define(current_scope, "_", 0, val_string(sn));
-                                                exec_flag_spec(catch_all);
-                                                total_matched++;
-                                            }
-                                        }
-                                        handled[a] = true;
-                                    } else if (!matched && catch_all) {
-                                        scope_define(current_scope, "_", 0, val_string(arg));
-                                        exec_flag_spec(catch_all);
-                                        handled[a] = true;
-                                        total_matched++;
-                                    }
-                                    free(arg_dup);
+                                    break;
                                 }
                             }
-                            if (total_matched == 0 && catch_all != NULL) exec_flag_spec(catch_all);
-                            free(handled);
-                            break;
+                            if (matched) break;
                         }
-                                                        default: error(stmt->line, "Sentencia no implementada");
+                        if (!matched && arg_dup[0] == '-' && arg_dup[1] != '-' && strlen(arg_dup) > 2) {
+                            for (int c = 1; arg_dup[c]; c++) {
+                                char sn[3] = {'-', arg_dup[c], '\0'};
+                                bool found = false;
+                                for (int s = 0; s < stmt->data.flags.spec_count; s++) {
+                                    FlagSpec *spec = &stmt->data.flags.specs[s];
+                                    if (spec->catch_all) continue;
+                                    for (int n = 0; n < spec->name_count; n++) {
+                                        if (strcmp(sn, spec->names[n]) == 0) {
+                                            exec_flag_spec(spec);
+                                            found = true;
+                                            total_matched++;
+                                            break;
+                                        }
+                                    }
+                                    if (found) break;
+                                }
+                                if (!found && catch_all) {
+                                    scope_define(current_scope, "_", 0, val_string(sn));
+                                    exec_flag_spec(catch_all);
+                                    total_matched++;
+                                }
+                            }
+                            handled[a] = true;
+                        } else if (!matched && catch_all) {
+                            scope_define(current_scope, "_", 0, val_string(arg));
+                            exec_flag_spec(catch_all);
+                            handled[a] = true;
+                            total_matched++;
+                        }
+                        free(arg_dup);
+                    }
+                }
+                if (total_matched == 0 && catch_all != NULL) exec_flag_spec(catch_all);
+                free(handled);
+                break;
+            }
+                                            default: error(stmt->line, "Sentencia no implementada");
         }
 
         if (control_flow != CF_NONE) break;

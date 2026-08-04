@@ -99,6 +99,7 @@ ASTNode *parse_slice_content(int line) {
     node->data.slice.mode = mode;
     node->data.slice.start = start;
     node->data.slice.end = end;
+    node->data.slice.list = NULL;  // se asignará después
     DEBUG_INFO("parse_slice_content: creado NODE_SLICE modo %d, start=%d, end=%d", mode, start, end);
     return node;
 }
@@ -339,10 +340,9 @@ static ASTNode *parse_expr() {
         Token op = ts_advance();
         DEBUG_INFO("parse_expr: operador '%s', siguiente token: '%s' (tipo %d)", op.lexeme, ts_peek().lexeme, ts_peek().type);
 
-        // DETECCIÓN ESTRICTA: si encontramos "- [" lo tratamos como slice
         if (op.type == TOK_MINUS && ts_peek().type == TOK_LBRACKET) {
             DEBUG_INFO("parse_expr: detectado '- [' -> slice");
-            ts_advance(); // consumir '['
+            ts_advance();
             ASTNode *slice = parse_slice_content(op.line);
             slice->data.slice.list = left;
             ASTNode *n = node_create(NODE_BINOP, op.line);
@@ -351,7 +351,7 @@ static ASTNode *parse_expr() {
             n->data.binop.right = slice;
             left = n;
             DEBUG_INFO("parse_expr: creado NODE_BINOP con NODE_SLICE");
-            break; // Salimos del bucle porque ya consumimos todo
+            break;
         } else {
             ASTNode *right = parse_term();
             ASTNode *n = node_create(NODE_BINOP, op.line);

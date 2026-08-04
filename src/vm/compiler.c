@@ -203,7 +203,6 @@ static void compile_expr(Compiler *c, ASTNode *expr) {
                     break;
                 }
                 case NODE_BINOP: {
-                    // Detectar inserción en lista: lista + elemento[pos]
                     if (expr->data.binop.op == TOK_PLUS &&
                         expr->data.binop.right != NULL &&
                         expr->data.binop.right->kind == NODE_INDEX) {
@@ -213,7 +212,6 @@ static void compile_expr(Compiler *c, ASTNode *expr) {
                     break;
                         }
 
-                        // --- NUEVO: Detectar eliminación en lista: lista - [especificación] ---
                         if (expr->data.binop.op == TOK_MINUS &&
                             (expr->data.binop.right->kind == NODE_SLICE ||
                             expr->data.binop.right->kind == NODE_INDEX ||
@@ -290,6 +288,15 @@ static void compile_expr(Compiler *c, ASTNode *expr) {
                                         compile_expr(c, expr->data.idx.list);
                                         compile_expr(c, expr->data.idx.index);
                                         emit(c->chunk, OP_INDEX, 0);
+                                        break;
+                                    }
+                                    case NODE_SLICE: {
+                                        if (expr->data.slice.list == NULL) {
+                                            error(expr->line, "Compilador: nodo slice sin lista asignada");
+                                        }
+                                        int const_idx = add_constant(c, val_ptr(expr));
+                                        emit(c->chunk, OP_INTERPRET_NODE, const_idx);
+                                        c->chunk->code[c->chunk->code_count - 1].operand2 = 1;
                                         break;
                                     }
                                     default: {

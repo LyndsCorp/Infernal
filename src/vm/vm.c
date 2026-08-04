@@ -261,10 +261,8 @@ Value vm_run(Chunk *chunk) {
                     if (v.type == VAL_NULL) {
                         error(0, "Variable global no definida: %s", vm_global_names[ip->operand]);
                     }
-                    if (v.type == VAL_STRING) {
-                        v = val_string(v.data.sval);
-                    }
-                    push(v);
+                    // ─── Copia profunda para evitar punteros colgantes ──
+                    push(copy_value_secure(v));
                 } else {
                     error(0, "Acceso a global inválido");
                 }
@@ -280,16 +278,17 @@ Value vm_run(Chunk *chunk) {
                     if (vm_global_types[idx] != 0) {
                         val = vm_convert_value(val, vm_global_types[idx]);
                     }
-                    vm_globals[idx] = val;
+                    // ─── Copia profunda para evitar punteros colgantes ──
+                    vm_globals[idx] = copy_value_secure(val);
                     const char *gname = vm_global_entries[idx].name;
                     if (gname) {
                         Scope *target_scope = (scope_type == GLOBAL_SUPER) ? super_global_scope : global_scope;
                         VarEntry *e = scope_find(target_scope, gname);
                         if (e) {
-                            scope_assign(target_scope, gname, val, 0);
+                            scope_assign(target_scope, gname, copy_value_secure(val), 0);
                         } else {
                             int vtype = valtype_to_tokentype(val.type);
-                            scope_define(target_scope, gname, vtype, val);
+                            scope_define(target_scope, gname, vtype, copy_value_secure(val));
                         }
                     }
                 } else {
@@ -641,8 +640,7 @@ Value vm_run(Chunk *chunk) {
                     }
                     int gidx = vm_find_global_index(var->name);
                     if (gidx >= 0) {
-                        // ─── CORRECCIÓN: copia profunda ──────────────────
-                        vm_globals[gidx] = value_copy(var->value);
+                        vm_globals[gidx] = copy_value_secure(var->value);
                     }
                 }
 
@@ -653,7 +651,7 @@ Value vm_run(Chunk *chunk) {
                         gidx = vm_register_global(var->name, GLOBAL_SUPER, var->vtype);
                     }
                     if (gidx >= 0) {
-                        vm_globals[gidx] = value_copy(var->value);
+                        vm_globals[gidx] = copy_value_secure(var->value);
                     }
                 }
 
@@ -664,7 +662,7 @@ Value vm_run(Chunk *chunk) {
                         gidx = vm_register_global(var->name, GLOBAL_SCRIPT, var->vtype);
                     }
                     if (gidx >= 0) {
-                        vm_globals[gidx] = value_copy(var->value);
+                        vm_globals[gidx] = copy_value_secure(var->value);
                     }
                 }
 

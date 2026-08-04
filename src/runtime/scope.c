@@ -105,20 +105,7 @@ void portal_define(Scope *scope, const char *name, int line) {
 
 void scope_free(Scope *s) {
     if (!s) return;
-    VarEntry *v = s->vars;
-    while (v) {
-        VarEntry *next = v->next;
-        free(v->name);
-        free(v);
-        v = next;
-    }
-    PortalEntry *p = s->portals;
-    while (p) {
-        PortalEntry *next = p->next;
-        free(p->name);
-        free(p);
-        p = next;
-    }
-    free(s->function_name);
+    // Desactivamos la liberación de variables para evitar double-free
+    // ya que los valores pueden estar referenciados en vm_globals.
     free(s);
 }

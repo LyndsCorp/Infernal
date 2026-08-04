@@ -584,8 +584,9 @@ NodeList parse_block(const char *terminator) {
             if (next_token.type == TOK_IDENT && (next_token.lexeme[0] == '$' || next_token.lexeme[0] == '?')) {
                 value = parse_expression(0);
             } else if (next_token.type == TOK_IDENT) {
+                // Verificar si el siguiente token es '[' o '(' -> expresión
                 int next_pos = ts.pos + 1;
-                if (next_pos < ts.count && ts.tokens[next_pos].type == TOK_LPAREN) {
+                if (next_pos < ts.count && (ts.tokens[next_pos].type == TOK_LBRACKET || ts.tokens[next_pos].type == TOK_LPAREN)) {
                     value = parse_expression(0);
                 } else {
                     is_cmd = true;
@@ -637,7 +638,7 @@ NodeList parse_block(const char *terminator) {
                 value = parse_expression(0);
             } else if (next_token.type == TOK_IDENT) {
                 int next_pos = ts.pos + 1;
-                if (next_pos < ts.count && ts.tokens[next_pos].type == TOK_LPAREN) {
+                if (next_pos < ts.count && (ts.tokens[next_pos].type == TOK_LBRACKET || ts.tokens[next_pos].type == TOK_LPAREN)) {
                     value = parse_expression(0);
                 } else {
                     is_cmd = true;
@@ -683,7 +684,7 @@ NodeList parse_block(const char *terminator) {
                         value = parse_expression(0);
                     } else if (next_token.type == TOK_IDENT) {
                         int next_pos = ts.pos + 1;
-                        if (next_pos < ts.count && ts.tokens[next_pos].type == TOK_LPAREN) {
+                        if (next_pos < ts.count && (ts.tokens[next_pos].type == TOK_LBRACKET || ts.tokens[next_pos].type == TOK_LPAREN)) {
                             value = parse_expression(0);
                         } else {
                             is_cmd = true;
@@ -730,7 +731,7 @@ NodeList parse_block(const char *terminator) {
                         value = parse_expression(0);
                     } else if (next_token.type == TOK_IDENT) {
                         int next_pos = ts.pos + 1;
-                        if (next_pos < ts.count && ts.tokens[next_pos].type == TOK_LPAREN) {
+                        if (next_pos < ts.count && (ts.tokens[next_pos].type == TOK_LBRACKET || ts.tokens[next_pos].type == TOK_LPAREN)) {
                             value = parse_expression(0);
                         } else {
                             is_cmd = true;
