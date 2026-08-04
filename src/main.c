@@ -1,7 +1,7 @@
 /*
  * Infernal: el lenguaje de programación. Copyright (C) 2026, GPL v3+ License, Lynds Corp., Aros Legendarios, David Baña Szymaniak.
  * Código fuente de Infernal: main.c
- */
+*/
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -148,8 +148,6 @@ int main(int argc, char **argv) {
     current_scope = global_scope;
 
     register_all_builtins();
-
-    printf("[DEBUG] print registrado en VM: %d\n", vm_find_builtin_index("print"));
 
     // ─── Cargar configuración de shell (solo si no se especificó --shell) ──
     if (!infernal_shell) {
