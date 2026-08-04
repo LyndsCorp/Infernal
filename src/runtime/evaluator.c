@@ -1,7 +1,5 @@
 /*
- * Aros Infernal: el lenguaje de programación.
- * Copyright (C) 2026 Lynds Corp., David Baña Szymaniak
- * GPL v3+ License.
+ * Infernal: el lenguaje de programación. Copyright (C) 2026, GPL v3+ License.
  * Código fuente de Infernal: runtime/evaluator.c
 */
 
@@ -605,32 +603,49 @@ Value eval_expr(ASTNode *expr) {
                 error(expr->line, "No se puede eliminar de la lista con este tipo de especificación (nodo: %d)", right_node->kind);
             }
 
+            /* ─── INSERCIÓN EN LISTA: lista + elemento[pos] ─── */
             if (left.type == VAL_LIST && expr->data.binop.op == TOK_PLUS &&
                 expr->data.binop.right->kind == NODE_INDEX) {
                 DEBUG_OP("=== INSERCIÓN EN LISTA DETECTADA ===");
             ASTNode *idx_node = expr->data.binop.right;
             Value base = eval_expr(idx_node->data.idx.list);
             Value index_val = eval_expr(idx_node->data.idx.index);
-            if (index_val.type != VAL_INT) {
-                error(expr->line, "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
+
+            // Determinar la posición deseada, ajustando al final si es inválida
+            int pos = -1; // inválido por defecto
+
+            if (index_val.type == VAL_INT) {
+                pos = index_val.data.ival;
+            } else if (index_val.type == VAL_FLOAT) {
+                // Si es un entero exacto, lo usamos; si no, se considera inválido
+                double f = index_val.data.fval;
+                if (f == (double)(int)f) {
+                    pos = (int)f;
+                }
             }
-            int pos = index_val.data.ival;
-            if (pos < 1) error(expr->line, "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
+            // Si pos es inválido (negativo, cero o mayor que len+1), lo ponemos al final
+            int len = left.data.list.count;
+            if (pos < 1 || pos > len + 1) {
+                pos = len + 1;
+            }
+
             DEBUG_INFO("Insertando elemento en posición %d", pos);
-                Value new_list = val_list_empty();
-                for (int i = 0; i < left.data.list.count; i++) {
-                    val_list_append(&new_list, copy_value_secure(left.data.list.items[i]));
-                }
-                if (pos > new_list.data.list.count + 1)
-                    pos = new_list.data.list.count + 1;
-                val_list_append(&new_list, val_make_null());
-                for (int i = new_list.data.list.count - 1; i > pos - 1; i--) {
-                    new_list.data.list.items[i] = new_list.data.list.items[i - 1];
-                }
-                new_list.data.list.items[pos - 1] = copy_value_secure(base);
-                DEBUG_VAR("nueva lista", new_list);
-                DEBUG_INFO("Devolviendo lista (tipo %d)", new_list.type);
-                return new_list;
+            Value new_list = val_list_empty();
+            for (int i = 0; i < left.data.list.count; i++) {
+                val_list_append(&new_list, copy_value_secure(left.data.list.items[i]));
+            }
+            // Insertar en la posición pos (1-indexed)
+            if (pos > new_list.data.list.count + 1) {
+                pos = new_list.data.list.count + 1;
+            }
+            val_list_append(&new_list, val_make_null());
+            for (int i = new_list.data.list.count - 1; i > pos - 1; i--) {
+                new_list.data.list.items[i] = new_list.data.list.items[i - 1];
+            }
+            new_list.data.list.items[pos - 1] = copy_value_secure(base);
+            DEBUG_VAR("nueva lista", new_list);
+            DEBUG_INFO("Devolviendo lista (tipo %d)", new_list.type);
+            return new_list;
                 }
 
                 if (left.type == VAL_LIST) {
