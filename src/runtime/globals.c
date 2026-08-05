@@ -1,7 +1,7 @@
 /*
  * Infernal: el lenguaje de programación. Copyright (C) 2026, GPL v3+ License, Lynds Corp., Aros Legendarios, David Baña Szymaniak.
  * Código fuente de Infernal: runtime/globals.c
- */
+*/
 
 #include <stdlib.h>
 #include <string.h>
@@ -36,6 +36,7 @@ char *script_dir = NULL;
 char *current_source_file = NULL;
 
 int current_eval_line = 0;
+int flags_arg_index = 2;   /* <-- NUEVO: primer argumento después del script */
 
 /* ─── Shell configurado ───────────────────────────────────── */
 char *infernal_shell = NULL;

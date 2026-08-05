@@ -65,5 +65,6 @@ void load_infernal_config(void);
 void show_shell_info(void);
 
 extern int current_eval_line;
+extern int flags_arg_index;   /* <-- NUEVO: índice global para argumentos en modo 1 */
 
 #endif

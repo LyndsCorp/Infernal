@@ -60,6 +60,7 @@ typedef struct {
     Token *body_tokens;
     int body_count;
     bool catch_all;
+    bool is_empty;   /* <-- NUEVO: indica que es un flag 'empty' */
 } FlagSpec;
 
 /* ─── Value types ────────────────────────────────────────── */

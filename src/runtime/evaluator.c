@@ -1100,42 +1100,49 @@ void exec_block_from(NodeList *block, int start_index) {
                 int total_matched = 0;
 
                 if (mode == 1) {
-                    int arg_idx = 2;
+                    int arg_idx = flags_arg_index;
+                    int consumed = 0;
                     for (int s = 0; s < stmt->data.flags.spec_count; s++) {
                         FlagSpec *spec = &stmt->data.flags.specs[s];
                         if (spec->catch_all) continue;
-                        if (arg_idx >= script_argc)
-                            error(stmt->line, "Falta el argumento para el flag posicional %d", arg_idx - 1);
-                        if (spec->vtype && spec->var_name) {
+                        if (arg_idx < script_argc) {
                             char *val_str = script_argv[arg_idx];
-                            char cleaned[512]; int c = 0;
-                            if (val_str[0] == '"' || val_str[0] == '\'') {
-                                char quote = val_str[0];
-                                for (int j=1; val_str[j] && val_str[j] != quote; j++) cleaned[c++] = val_str[j];
-                                cleaned[c] = '\0';
-                            } else {
-                                strncpy(cleaned, val_str, sizeof(cleaned));
-                                cleaned[sizeof(cleaned)-1] = '\0';
+                            if (spec->vtype && spec->var_name) {
+                                char cleaned[512]; int c = 0;
+                                if (val_str[0] == '"' || val_str[0] == '\'') {
+                                    char quote = val_str[0];
+                                    for (int j=1; val_str[j] && val_str[j] != quote; j++) cleaned[c++] = val_str[j];
+                                    cleaned[c] = '\0';
+                                } else {
+                                    strncpy(cleaned, val_str, sizeof(cleaned));
+                                    cleaned[sizeof(cleaned)-1] = '\0';
+                                }
+                                if (spec->vtype == TOK_FLOAT) {
+                                    char *coma = strchr(cleaned, ',');
+                                    if (coma) *coma = '.';
+                                }
+                                Value v;
+                                switch (spec->vtype) {
+                                    case TOK_INT: v = val_int(atoi(cleaned)); break;
+                                    case TOK_FLOAT: v = val_float(atof(cleaned)); break;
+                                    case TOK_BOOL: v = val_bool(strcmp(cleaned,"0")!=0 && strlen(cleaned)>0); break;
+                                    case TOK_STRING: v = val_string(cleaned); break;
+                                    default: v = val_string(cleaned);
+                                }
+                                scope_define(current_scope, spec->var_name, spec->vtype, v);
                             }
-                            if (spec->vtype == TOK_FLOAT) {
-                                char *coma = strchr(cleaned, ',');
-                                if (coma) *coma = '.';
-                            }
-                            Value v;
-                            switch (spec->vtype) {
-                                case TOK_INT: v = val_int(atoi(cleaned)); break;
-                                case TOK_FLOAT: v = val_float(atof(cleaned)); break;
-                                case TOK_BOOL: v = val_bool(strcmp(cleaned,"0")!=0 && strlen(cleaned)>0); break;
-                                case TOK_STRING: v = val_string(cleaned); break;
-                                default: v = val_string(cleaned);
-                            }
-                            scope_define(current_scope, spec->var_name, spec->vtype, v);
+                            handled[arg_idx] = true;
+                            total_matched++;
+                            arg_idx++;
+                            consumed++;
+                        } else {
+                            // No hay argumento: no se asigna nada
+                            // El bloque se ejecuta igual (si existe)
                         }
                         exec_flag_spec(spec);
-                        handled[arg_idx] = true;
-                        total_matched++;
-                        arg_idx++;
                     }
+                    flags_arg_index = arg_idx;  /* actualizar el índice global */
+
                     if (catch_all) {
                         for (int a = 2; a < script_argc; a++)
                             if (!handled[a]) {
@@ -1145,6 +1152,7 @@ void exec_block_from(NodeList *block, int start_index) {
                             }
                     }
                 } else {
+                    /* ─── Modo 0 (flags con nombre) ─── */
                     for (int a = 2; a < script_argc; a++) {
                         char *arg = script_argv[a];
                         char *arg_dup = strdup(arg);
