@@ -1,7 +1,7 @@
-Infernal 1.14 (Stable)
+Infernal 1.21 (Stable)
 ──────────────────────────────────────────────
 
-Versión:           1.14
+Versión:           1.21
 Edición:           Distribuido mediante Casata
 Arquitectura:      amd64
 Sistema operativo: POSIX (Linux, macOS)
@@ -16,3 +16,4 @@ Repositorio:       https://github.com/LyndsCorp/Infernal
 Documentación:     https://github.com/LyndsCorp/Infernal-Documentation
 
 Copyright (C) Lynds Corp.
+Hecho con <3 por David Baña Szymaniak
