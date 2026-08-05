@@ -1,7 +1,7 @@
-Aro Infernal 1.18 (Main)
+Aro Infernal 1.19 (Testing)
 ──────────────────────────────────────────────
 
-Versión:           1.18
+Versión:           1.19
 Edición:           Código fuente de Infernal
 Arquitectura:      En la que lo compiles
 Sistema operativo: POSIX (Linux, macOS)
@@ -11,7 +11,7 @@ Proyecto:          Aros Legendarios
 Licencia:          GPL v3+
 
 
-Código fuente:     https://github.com/LyndsCorp/Infernal/tree/main
+Código fuente:     https://github.com/LyndsCorp/Infernal/tree/testing
 Repositorio:       https://github.com/LyndsCorp/Infernal
 Documentación:     https://github.com/LyndsCorp/Infernal-Documentation
 
