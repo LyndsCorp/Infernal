@@ -4,13 +4,7 @@ Ahora mismo, los strings ya tienen:
   head(str, i) -> devuelve los primeros `i` caractéres de `str`.
   tail(str, i) -> devuelve los últimos `i` caractéres de `str`.
 
-Pero faltan más cosas.
-Por ejemplo:
-  upper(str)          -> pasa el `str` a mayúsculas.
-  starts(string, str) -> devuelve un booleano de si `string` comienza por el contenido de `str`.
-  ends(string, str)   -> lo mismo que starts(), pero con el final.
-  has(string, str)    -> devuelve un booleano, y lo que hace en buscar en `string` el texto de `str` en cualquier parte.
-
+Pero faltan más cosas:
 Para obtener información sobre los strings:
   length(str)        -> devuelve un int de la cantidad de caractéres que tiene `str`.
   count(string, str) -> cuenta cúantas veces sale el texto `str` dentro de `string` y devuelve un int. Por ejemplo: count("hola a todos, hola hola", "hola") devuelve 3.
