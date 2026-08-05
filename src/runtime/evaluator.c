@@ -1099,7 +1099,7 @@ void exec_block_from(NodeList *block, int start_index) {
 
                 int total_matched = 0;
 
-                if (mode == 1) {
+                if (mode > 0) {
                     int arg_idx = flags_arg_index;
                     int consumed = 0;
                     for (int s = 0; s < stmt->data.flags.spec_count; s++) {

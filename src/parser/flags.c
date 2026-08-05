@@ -10,10 +10,8 @@
 #include "core/ast.h"
 #include "lexer/lexer.h"
 #include "runtime/error.h"
+#include "runtime/globals.h"
 #include "expression.h"
-
-/* ─── Control de definiciones de flags en modo 1 ── */
-static int flags_mode1_line = 0;   /* 0 = no definido aún */
 
 static bool is_valid_flag_name(const char *s) {
     if (!s || !(isalpha((unsigned char)s[0]) || s[0] == '_'))
@@ -87,18 +85,36 @@ ASTNode *parse_flags() {
     if (!ts_match(TOK_COMMA)) error(ts_peek().line, "Se esperaba ',' después del modo");
 
     ASTNode *node = node_create(NODE_FLAGS, mode_expr->line);
-    node->data.flags.mode = 0;
-    if (mode_expr->kind == NODE_LITERAL && mode_expr->data.lit.type == TOK_INT &&
-        (mode_expr->data.lit.ival == 0 || mode_expr->data.lit.ival == 1))
-        node->data.flags.mode = mode_expr->data.lit.ival;
-    else
-        error(mode_expr->line, "El modo de flags debe ser 0 o 1");
+    node->data.flags.mode = -1;
 
-    /* ─── Verificación de duplicidad para modo 1 ─── */
-    if (node->data.flags.mode == 1 && flags_mode1_line != 0) {
-        error(node->line,
-              "Ya existe una definición de flags en modo 1 en la línea %d. "
-              "Usa ese flags en lugar de crear uno nuevo.", flags_mode1_line);
+    if (mode_expr->kind == NODE_LITERAL && mode_expr->data.lit.type == TOK_INT) {
+        int mode = mode_expr->data.lit.ival;
+        if (mode < 0) {
+            error(mode_expr->line, "El modo de flags no puede ser negativo");
+        }
+        if (mode >= MAX_FLAGS_MODES) {
+            error(mode_expr->line, "Modo de flags demasiado grande (máximo %d)", MAX_FLAGS_MODES - 1);
+        }
+
+        if (mode == 0) {
+            /* Modo 0: siempre permitido, sin restricciones, puede repetirse */
+            /* No se registra en defined_flags_modes para permitir múltiples definiciones */
+        } else {
+            /* Modo >0: debe definirse en orden y solo una vez */
+            if (mode > 1 && !defined_flags_modes[mode - 1]) {
+                error(mode_expr->line,
+                      "No se puede definir flags modo %d sin haber definido el modo %d antes",
+                      mode, mode - 1);
+            }
+            if (defined_flags_modes[mode]) {
+                error(mode_expr->line,
+                      "El modo %d de flags ya fue definido anteriormente", mode);
+            }
+            defined_flags_modes[mode] = 1;   /* marcar como definido */
+        }
+        node->data.flags.mode = mode;
+    } else {
+        error(mode_expr->line, "El modo de flags debe ser un número entero");
     }
 
     node->data.flags.specs = NULL;
@@ -113,8 +129,8 @@ ASTNode *parse_flags() {
 
         /* ─── DETECTAR 'empty' ─────────────────────────────────── */
         if (ts_peek().type == TOK_IDENT && strcmp(ts_peek().lexeme, "empty") == 0) {
-            if (node->data.flags.mode != 1) {
-                error(ts_peek().line, "'empty' solo se puede usar en modo 1 (flags posicionales)");
+            if (node->data.flags.mode == 0) {
+                error(ts_peek().line, "'empty' solo se puede usar en modos > 0 (flags posicionales)");
             }
             if (++empty_count > 1) {
                 error(ts_peek().line, "No puede haber más de un 'empty' en la misma definición de flags");
@@ -184,11 +200,6 @@ ASTNode *parse_flags() {
 
         ts_skip_newlines();
         if (ts_peek().type == TOK_COMMA) { ts_advance(); ts_skip_newlines(); }
-    }
-
-    /* ─── Registrar esta definición de flags modo 1 ─── */
-    if (node->data.flags.mode == 1) {
-        flags_mode1_line = node->line;
     }
 
     return node;

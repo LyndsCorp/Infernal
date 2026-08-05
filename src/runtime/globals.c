@@ -36,7 +36,10 @@ char *script_dir = NULL;
 char *current_source_file = NULL;
 
 int current_eval_line = 0;
-int flags_arg_index = 2;   /* <-- NUEVO: primer argumento después del script */
+int flags_arg_index = 2;   /* primer argumento después del script */
+
+/* ─── Registro de modos de flags definidos ────────────────── */
+int defined_flags_modes[MAX_FLAGS_MODES] = {0};
 
 /* ─── Shell configurado ───────────────────────────────────── */
 char *infernal_shell = NULL;
