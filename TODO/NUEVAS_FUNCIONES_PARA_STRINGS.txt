@@ -14,6 +14,7 @@ Por ejemplo:
 Para obtener información sobre los strings:
   length(str)        -> devuelve un int de la cantidad de caractéres que tiene `str`.
   count(string, str) -> cuenta cúantas veces sale el texto `str` dentro de `string` y devuelve un int. Por ejemplo: count("hola a todos, hola hola", "hola") devuelve 3.
+                        Pero si pones count("aaaa", "aa"), entonces lo cuenta sin solapamiento y devuelve 2 (con solapamiento sería 3)
 
 Y para manipular strings:
   replace(string, que, con_que) -> en el `string`, reemplaza todo el texto que coincide con `que` por `con_que`.
