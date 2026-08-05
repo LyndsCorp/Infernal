@@ -1129,19 +1129,22 @@ void exec_block_from(NodeList *block, int start_index) {
                                     case TOK_STRING: v = val_string(cleaned); break;
                                     default: v = val_string(cleaned);
                                 }
-                                scope_define(current_scope, spec->var_name, spec->vtype, v);
+                                if (spec->is_global) {
+                                    scope_define(super_global_scope, spec->var_name, spec->vtype, v);
+                                } else {
+                                    scope_define(global_scope, spec->var_name, spec->vtype, v);
+                                }
                             }
                             handled[arg_idx] = true;
                             total_matched++;
                             arg_idx++;
                             consumed++;
-                        } else {
-                            // No hay argumento: no se asigna nada
-                            // El bloque se ejecuta igual (si existe)
                         }
-                        exec_flag_spec(spec);
+                        if (spec->body_count > 0) {
+                            exec_flag_spec(spec);
+                        }
                     }
-                    flags_arg_index = arg_idx;  /* actualizar el índice global */
+                    flags_arg_index = arg_idx;
 
                     if (catch_all) {
                         for (int a = 2; a < script_argc; a++)
@@ -1152,7 +1155,7 @@ void exec_block_from(NodeList *block, int start_index) {
                             }
                     }
                 } else {
-                    /* ─── Modo 0 (flags con nombre) ─── */
+                    /* Modo 0 */
                     for (int a = 2; a < script_argc; a++) {
                         char *arg = script_argv[a];
                         char *arg_dup = strdup(arg);
@@ -1189,9 +1192,15 @@ void exec_block_from(NodeList *block, int start_index) {
                                             case TOK_STRING: v = val_string(cleaned); break;
                                             default: v = val_string(cleaned);
                                         }
-                                        scope_define(current_scope, spec->var_name, spec->vtype, v);
+                                        if (spec->is_global) {
+                                            scope_define(super_global_scope, spec->var_name, spec->vtype, v);
+                                        } else {
+                                            scope_define(global_scope, spec->var_name, spec->vtype, v);
+                                        }
                                     }
-                                    exec_flag_spec(spec);
+                                    if (spec->body_count > 0) {
+                                        exec_flag_spec(spec);
+                                    }
                                     handled[a] = true;
                                     matched = true;
                                     total_matched++;
@@ -1209,7 +1218,9 @@ void exec_block_from(NodeList *block, int start_index) {
                                     if (spec->catch_all) continue;
                                     for (int n = 0; n < spec->name_count; n++) {
                                         if (strcmp(sn, spec->names[n]) == 0) {
-                                            exec_flag_spec(spec);
+                                            if (spec->body_count > 0) {
+                                                exec_flag_spec(spec);
+                                            }
                                             found = true;
                                             total_matched++;
                                             break;

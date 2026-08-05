@@ -60,7 +60,8 @@ typedef struct {
     Token *body_tokens;
     int body_count;
     bool catch_all;
-    bool is_empty;   /* <-- NUEVO: indica que es un flag 'empty' */
+    bool is_empty;
+    bool is_global;      /* <-- NUEVO: si la variable se define en ámbito superglobal */
 } FlagSpec;
 
 /* ─── Value types ────────────────────────────────────────── */
@@ -114,7 +115,7 @@ struct ASTNode {
         NODE_BREAK, NODE_CONTINUE, NODE_REPEAT, NODE_IMPORT, NODE_TRY,
         NODE_VAR, NODE_LITERAL, NODE_BINOP, NODE_CALL, NODE_INDEX,
         NODE_FLAGS, NODE_LIST, NODE_FOR_IN, NODE_PORTAL,
-        NODE_SLICE   // <--- NUEVO: operación de slice/rango
+        NODE_SLICE
     } kind;
     union {
         struct { NodeList stmts; } prog;
@@ -143,12 +144,11 @@ struct ASTNode {
                 char *portal_name;
             } repeat;
             struct { char *name; bool is_local; } portal;
-            /* ─── NUEVO: slice ──────────────────────────────── */
             struct {
-                ASTNode *list;   // lista sobre la que se aplica el slice
-                int mode;        // 0=simple (un índice), 1=rango start:end, 2=start* (después), 3=*start (antes), 4=*start* (todo menos), 5=* (vaciar)
-                int start;       // índice start (1‑based), -1 = '*'
-                int end;         // índice end   (1‑based), -1 = '*'
+                ASTNode *list;
+                int mode;
+                int start;
+                int end;
             } slice;
     } data;
 };

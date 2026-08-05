@@ -97,10 +97,8 @@ ASTNode *parse_flags() {
         }
 
         if (mode == 0) {
-            /* Modo 0: siempre permitido, sin restricciones, puede repetirse */
-            /* No se registra en defined_flags_modes para permitir múltiples definiciones */
+            /* Modo 0: siempre permitido, sin restricciones */
         } else {
-            /* Modo >0: debe definirse en orden y solo una vez */
             if (mode > 1 && !defined_flags_modes[mode - 1]) {
                 error(mode_expr->line,
                       "No se puede definir flags modo %d sin haber definido el modo %d antes",
@@ -110,7 +108,7 @@ ASTNode *parse_flags() {
                 error(mode_expr->line,
                       "El modo %d de flags ya fue definido anteriormente", mode);
             }
-            defined_flags_modes[mode] = 1;   /* marcar como definido */
+            defined_flags_modes[mode] = 1;
         }
         node->data.flags.mode = mode;
     } else {
@@ -126,6 +124,7 @@ ASTNode *parse_flags() {
         FlagSpec spec;
         memset(&spec, 0, sizeof(spec));
         spec.is_empty = false;
+        spec.is_global = false;
 
         /* ─── DETECTAR 'empty' ─────────────────────────────────── */
         if (ts_peek().type == TOK_IDENT && strcmp(ts_peek().lexeme, "empty") == 0) {
@@ -135,9 +134,8 @@ ASTNode *parse_flags() {
             if (++empty_count > 1) {
                 error(ts_peek().line, "No puede haber más de un 'empty' en la misma definición de flags");
             }
-            ts_advance();  // consumir 'empty'
+            ts_advance();
             spec.is_empty = true;
-            /* Se espera '= tipo var' */
             if (!ts_match(TOK_EQ)) {
                 error(ts_peek().line, "Se esperaba '=' después de 'empty'");
             }
@@ -150,7 +148,6 @@ ASTNode *parse_flags() {
                 error(ts_peek().line, "Se esperaba nombre de variable para el empty");
             }
             spec.var_name = strdup(ts_advance().lexeme);
-            /* Bloque opcional */
             if (ts_peek().type == TOK_LBRACE) {
                 ts_advance();
                 parse_flag_body_tokens(&spec.body_tokens, &spec.body_count);
@@ -177,21 +174,34 @@ ASTNode *parse_flags() {
             }
 
             if (ts_match(TOK_EQ)) {
+                /* ─── Detectar 'global' antes del tipo ────────── */
+                bool is_global = false;
+                if (ts_peek().type == TOK_IDENT && strcmp(ts_peek().lexeme, "global") == 0) {
+                    is_global = true;
+                    ts_advance(); // consumir 'global'
+                }
+                /* También se podría soportar 'local' pero no es necesario para flags */
                 TokenType t = ts_peek().type;
                 if (t == TOK_INT || t == TOK_FLOAT || t == TOK_BOOL || t == TOK_STRING || t == TOK_LIST) {
                     spec.vtype = ts_advance().type;
                     if (!is_valid_flag_name(ts_peek().lexeme))
                         error(ts_peek().line, "Se esperaba nombre de variable para el flags");
                     spec.var_name = strdup(ts_advance().lexeme);
+                    spec.is_global = is_global;
                 } else {
-                    error(ts_peek().line, "Los flags no tienen tipado automático, por lo que se esperaba tipo después de '=' en flags (int, float, bool, string, list)");
+                    error(ts_peek().line, "Se esperaba un tipo (int, float, bool, string, list) después de '=' (o global tipo)");
                 }
             }
 
-            /* Bloque obligatorio para flags normales */
-            if (!ts_match(TOK_LBRACE))
-                error(ts_peek().line, "Se esperaba '{' después de la especificación del flag");
-            parse_flag_body_tokens(&spec.body_tokens, &spec.body_count);
+            /* ─── Bloque opcional ──────────────────────────────── */
+            if (ts_peek().type == TOK_LBRACE) {
+                ts_advance();
+                parse_flag_body_tokens(&spec.body_tokens, &spec.body_count);
+            } else {
+                /* Sin bloque: solo se define la variable, no se ejecuta código */
+                spec.body_tokens = NULL;
+                spec.body_count = 0;
+            }
         }
 
         node->data.flags.specs = realloc(node->data.flags.specs,
