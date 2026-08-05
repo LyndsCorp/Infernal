@@ -20,3 +20,6 @@ Y para manipular strings:
   replace(string, que, con_que) -> en el `string`, reemplaza todo el texto que coincide con `que` por `con_que`.
   reverse(str)                  -> devuelve el `str` invertido. Por ejemplo: reverse("david") devuelve "divad".
   join(list, str)               -> convierte `list` en string con `str`. Por ejemplo: join(["a", "b", "c"], "-") devuelve "a-b-c".
+  trim(string)                  -> elimina todos los espacios sobrantes delante y atrás.
+  rtrim(string)                 -> trim() pero solo los de la derecha.
+  ltrim(string)                 -> trim() pero solo los de la izquirda.
