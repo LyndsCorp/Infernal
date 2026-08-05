@@ -148,7 +148,8 @@ bool try_convert_value(Value *val, int target_tok_type) {
 }
 
 void exec_flag_spec(FlagSpec *spec) {
-    TokenStream saved_ts = ts;
+    if (spec->body_count == 0) return;   /* <-- NUEVO: si no hay cuerpo, no hacer nada */
+        TokenStream saved_ts = ts;
     ts.tokens = spec->body_tokens;
     ts.count = spec->body_count;
     ts.pos = 0;
@@ -447,17 +448,12 @@ Value eval_expr(ASTNode *expr) {
         }
         case NODE_VAR: {
             const char *name = expr->data.var.name;
-            // Eliminar prefijo '$' o '?' para obtener el nombre real
             if (name[0] == '$' || name[0] == '?') name++;
-
             if (*name == '\0')
                 error(expr->line, "Nombre de variable vacío");
-
             VarEntry *e = scope_find(current_scope, name);
             if (!e)
                 error(expr->line, "Variable no definida: %s", name);
-
-            // Devolver una copia profunda del valor (sin conversión)
             return copy_value_secure(e->value);
         }
         case NODE_LIST: {
@@ -911,7 +907,6 @@ void exec_block_from(NodeList *block, int start_index) {
                 DEBUG_INFO("Valor obtenido para asignación: tipo %d", val.type);
                 int vtype = stmt->data.assign.vtype;
 
-                // ─── CONVERSIÓN FORZADA SI EL TIPO DESTINO ES STRING Y EL VALOR ES LISTA ───
                 if (vtype == TOK_STRING && val.type == VAL_LIST) {
                     if (!try_convert_value(&val, TOK_STRING)) {
                         error(stmt->line, "No se pudo convertir la lista a string en la asignación a '%s'",
@@ -919,11 +914,9 @@ void exec_block_from(NodeList *block, int start_index) {
                     }
                 }
 
-                // También intentamos conversión general para otros tipos fijos
                 if (vtype != 0) {
                     int actual_type = valtype_to_tokentype(val.type);
                     if (vtype != actual_type) {
-                        // Evitar doble conversión si ya se convirtió de lista a string
                         if (!(vtype == TOK_STRING && val.type == VAL_STRING)) {
                             if (!try_convert_value(&val, vtype)) {
                                 error(stmt->line, "Error de tipado fijo: se esperaba %s pero se obtuvo %s",
@@ -933,7 +926,6 @@ void exec_block_from(NodeList *block, int start_index) {
                     }
                 }
 
-                // Almacenar en el ámbito correspondiente
                 if (stmt->data.assign.is_global) {
                     scope_define(super_global_scope, stmt->data.assign.name, vtype, val);
                 } else if (stmt->data.assign.is_local) {
@@ -1086,6 +1078,32 @@ void exec_block_from(NodeList *block, int start_index) {
                 if (control_flow == CF_REPEAT_LINE) return;
                 break;
             }
+            /* ─── EXECUTE ────────────────────────────────────────────────── */
+            case NODE_EXECUTE: {
+                const char *path = stmt->data.execute.path;
+                FILE *fp = fopen(path, "r");
+                if (!fp) {
+                    error(stmt->line, "No se pudo abrir el script '%s'", path);
+                }
+                // Guardar el token stream actual
+                TokenStream saved_ts = ts;
+                ts_init();
+                tokenize_file(fp);
+                fclose(fp);
+                // Parsear el script completo (hasta EOF)
+                NodeList script_block = parse_block(NULL);
+                // Restaurar el token stream original
+                ts = saved_ts;
+                // Crear un ámbito hijo para el script (las variables locales no afectan al padre)
+                Scope *child_scope = scope_new(current_scope, NULL);
+                Scope *old_scope = current_scope;
+                current_scope = child_scope;
+                // Ejecutar el script hijo
+                exec_block(&script_block);
+                // Restaurar el ámbito
+                current_scope = old_scope;
+                break;
+            }
             case NODE_FLAGS: {
                 int mode = stmt->data.flags.mode;
                 bool *handled = calloc(script_argc, sizeof(bool));
@@ -1155,7 +1173,7 @@ void exec_block_from(NodeList *block, int start_index) {
                             }
                     }
                 } else {
-                    /* Modo 0 */
+                    /* ─── Modo 0 (flags con nombre) ─── */
                     for (int a = 2; a < script_argc; a++) {
                         char *arg = script_argv[a];
                         char *arg_dup = strdup(arg);
@@ -1248,7 +1266,7 @@ void exec_block_from(NodeList *block, int start_index) {
                 free(handled);
                 break;
             }
-                                            default: error(stmt->line, "Sentencia no implementada");
+            default: error(stmt->line, "Sentencia no implementada");
         }
 
         if (control_flow != CF_NONE) break;

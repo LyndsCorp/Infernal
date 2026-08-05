@@ -33,7 +33,8 @@ typedef enum {
     TOK_BANG,
     TOK_AT,
     TOK_LINE,
-    TOK_COLON          /* <-- NUEVO: para slices */
+    TOK_COLON,
+    TOK_EXECUTE          /* <-- NUEVO */
 } TokenType;
 
 /* ─── Token ──────────────────────────────────────────────── */
@@ -61,7 +62,7 @@ typedef struct {
     int body_count;
     bool catch_all;
     bool is_empty;
-    bool is_global;      /* <-- NUEVO: si la variable se define en ámbito superglobal */
+    bool is_global;
 } FlagSpec;
 
 /* ─── Value types ────────────────────────────────────────── */
@@ -115,7 +116,8 @@ struct ASTNode {
         NODE_BREAK, NODE_CONTINUE, NODE_REPEAT, NODE_IMPORT, NODE_TRY,
         NODE_VAR, NODE_LITERAL, NODE_BINOP, NODE_CALL, NODE_INDEX,
         NODE_FLAGS, NODE_LIST, NODE_FOR_IN, NODE_PORTAL,
-        NODE_SLICE
+        NODE_SLICE,
+        NODE_EXECUTE     /* <-- NUEVO */
     } kind;
     union {
         struct { NodeList stmts; } prog;
@@ -150,6 +152,7 @@ struct ASTNode {
                 int start;
                 int end;
             } slice;
+            struct { char *path; } execute;   /* <-- NUEVO */
     } data;
 };
 

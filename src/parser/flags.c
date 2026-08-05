@@ -97,7 +97,7 @@ ASTNode *parse_flags() {
         }
 
         if (mode == 0) {
-            /* Modo 0: siempre permitido, sin restricciones */
+            /* Modo 0: siempre permitido */
         } else {
             if (mode > 1 && !defined_flags_modes[mode - 1]) {
                 error(mode_expr->line,
@@ -174,22 +174,22 @@ ASTNode *parse_flags() {
             }
 
             if (ts_match(TOK_EQ)) {
-                /* ─── Detectar 'global' antes del tipo ────────── */
+                /* ─── Detectar 'global' o 'local' antes del tipo ── */
                 bool is_global = false;
-                if (ts_peek().type == TOK_IDENT && strcmp(ts_peek().lexeme, "global") == 0) {
-                    is_global = true;
-                    ts_advance(); // consumir 'global'
+                TokenType peek = ts_peek().type;
+                if (peek == TOK_GLOBAL || peek == TOK_LOCAL) {
+                    if (peek == TOK_GLOBAL) is_global = true;
+                    ts_advance(); // consumir global/local
                 }
-                /* También se podría soportar 'local' pero no es necesario para flags */
                 TokenType t = ts_peek().type;
                 if (t == TOK_INT || t == TOK_FLOAT || t == TOK_BOOL || t == TOK_STRING || t == TOK_LIST) {
                     spec.vtype = ts_advance().type;
-                    if (!is_valid_flag_name(ts_peek().lexeme))
+                    if (ts_peek().type != TOK_IDENT || !is_valid_flag_name(ts_peek().lexeme))
                         error(ts_peek().line, "Se esperaba nombre de variable para el flags");
                     spec.var_name = strdup(ts_advance().lexeme);
                     spec.is_global = is_global;
                 } else {
-                    error(ts_peek().line, "Se esperaba un tipo (int, float, bool, string, list) después de '=' (o global tipo)");
+                    error(ts_peek().line, "Se esperaba un tipo (int, float, bool, string, list) después de '=' (o global/local tipo)");
                 }
             }
 
@@ -198,7 +198,6 @@ ASTNode *parse_flags() {
                 ts_advance();
                 parse_flag_body_tokens(&spec.body_tokens, &spec.body_count);
             } else {
-                /* Sin bloque: solo se define la variable, no se ejecuta código */
                 spec.body_tokens = NULL;
                 spec.body_count = 0;
             }

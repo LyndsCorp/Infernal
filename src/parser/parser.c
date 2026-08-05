@@ -312,6 +312,22 @@ NodeList parse_block(const char *terminator) {
             continue;
         }
 
+        /* ─── Execute ────────────────────────────────────────────────── */
+        if (t.type == TOK_EXECUTE) {
+            ts_advance();
+            Token path_tok = ts_peek();
+            if (path_tok.type != TOK_STRING_LITERAL && path_tok.type != TOK_IDENT) {
+                error(t.line, "Se esperaba una ruta de script (string o identificador) después de 'execute'");
+            }
+            ts_advance();
+            char *path = strdup(path_tok.lexeme);
+            stmt = node_create(NODE_EXECUTE, t.line);
+            stmt->data.execute.path = path;
+            nodelist_add(&block, stmt);
+            ts_skip_newlines();
+            continue;
+        }
+
         /* ─── Estructuras de control ────────────────────────────────── */
         if (t.type == TOK_IF) {
             stmt = parse_if_statement();
