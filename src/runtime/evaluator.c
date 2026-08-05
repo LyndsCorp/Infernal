@@ -1080,10 +1080,14 @@ void exec_block_from(NodeList *block, int start_index) {
             }
             /* ─── EXECUTE ────────────────────────────────────────────────── */
             case NODE_EXECUTE: {
-                const char *path = stmt->data.execute.path;
-                FILE *fp = fopen(path, "r");
+                // Expandir la ruta (sustituye $variable por su valor)
+                char *expanded_path = expand_command(stmt->data.execute.path);
+                if (!expanded_path) {
+                    error(stmt->line, "Error al expandir la ruta del script");
+                }
+                FILE *fp = fopen(expanded_path, "r");
                 if (!fp) {
-                    error(stmt->line, "No se pudo abrir el script '%s'", path);
+                    error(stmt->line, "No se pudo abrir el script '%s'", expanded_path);
                 }
                 // Guardar el token stream actual
                 TokenStream saved_ts = ts;
@@ -1102,6 +1106,7 @@ void exec_block_from(NodeList *block, int start_index) {
                 exec_block(&script_block);
                 // Restaurar el ámbito
                 current_scope = old_scope;
+                free(expanded_path);
                 break;
             }
             case NODE_FLAGS: {
