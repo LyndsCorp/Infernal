@@ -2,7 +2,7 @@
  * Infernal: el lenguaje de programación.
  * Copyright (C) 2026, Lynds Corp., David Baña Szymaniak, GPL v3+ License.
  * Proyecto: Aros Legendarios
- * Código fuente de Infernal: vm/bytecode.h
+ * Código fuente de Infernal: stdlib/output.c
 */
 
 #include <stdio.h>
@@ -92,41 +92,40 @@ static Value builtin_print(int argc, Value *args) {
     return val_make_null();
 }
 
-/* ─── Funciones warn, error, success usando print con color ── */
+/* ─── Funciones warn, error, success ────────────────────────── */
+/* Ahora imprimen directamente, sin espacio delante del primer argumento */
+
 static Value builtin_warn(int argc, Value *args) {
-    Value *new_args = malloc((argc + 1) * sizeof(Value));
-    if (!new_args) return val_make_null();
-    new_args[0] = val_string("\033[33m");
+    printf("\033[33m");                 // amarillo
     for (int i = 0; i < argc; i++) {
-        new_args[i+1] = args[i];
+        if (i > 0) printf(" ");
+        print_value(args[i]);
     }
-    Value ret = builtin_print(argc + 1, new_args);
-    free(new_args);
-    return ret;
+    printf("\033[0m\n");
+    fflush(stdout);
+    return val_make_null();
 }
 
 static Value builtin_error(int argc, Value *args) {
-    Value *new_args = malloc((argc + 1) * sizeof(Value));
-    if (!new_args) return val_make_null();
-    new_args[0] = val_string("\033[31m");
+    printf("\033[31m");                 // rojo
     for (int i = 0; i < argc; i++) {
-        new_args[i+1] = args[i];
+        if (i > 0) printf(" ");
+        print_value(args[i]);
     }
-    Value ret = builtin_print(argc + 1, new_args);
-    free(new_args);
-    return ret;
+    printf("\033[0m\n");
+    fflush(stdout);
+    return val_make_null();
 }
 
 static Value builtin_success(int argc, Value *args) {
-    Value *new_args = malloc((argc + 1) * sizeof(Value));
-    if (!new_args) return val_make_null();
-    new_args[0] = val_string("\033[32m");
+    printf("\033[32m");                 // verde
     for (int i = 0; i < argc; i++) {
-        new_args[i+1] = args[i];
+        if (i > 0) printf(" ");
+        print_value(args[i]);
     }
-    Value ret = builtin_print(argc + 1, new_args);
-    free(new_args);
-    return ret;
+    printf("\033[0m\n");
+    fflush(stdout);
+    return val_make_null();
 }
 
 /* ─── Registro de funciones ──────────────────────────────────── */

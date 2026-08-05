@@ -1,0 +1,28 @@
+#!/bin/infernal
+
+kernel = uname
+kernel_version = uname -r
+so = uname -o
+arquitectura = uname -m
+host = uname -n
+
+user_name = whoami
+user_id = id -u
+
+color_resultados = color("blue")
+
+echo # Salto de linea
+print(color("green") + "INFORMACIÓN SOBRE TU SISTEMA OPERATIVO")
+echo
+print("Tu sistema operativo es de tipo " + color(color_resultados) + so)
+echo
+print("Tu sistema operativo tiene el kernel " + color(color_resultados) + kernel)
+print("La versión de tu kernel es " + color(color_resultados) + kernel_version)
+echo
+print("La arquitectura de tu procesador es " + color(color_resultados) + arquitectura)
+echo
+print("Tu usuario se llama " + color(color_resultados) + user_name)
+print("El ID de tu usuario es " + color(color_resultados) + user_id)
+echo
+print("El hostname de tu ordenador es " + color(color_resultados) + host)
+echo

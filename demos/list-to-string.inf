@@ -1,0 +1,5 @@
+lista = ["hola", "adios"]
+string algo = $lista
+
+print(algo) #Imprime: hola adios
+printAllVars()

@@ -18,6 +18,21 @@
 #include "runtime/error.h"
 #include "stdlib/embedded.h"
 #include "vm/compiler.h"
+#include "developer/debug.h"
+
+/* ─── Función auxiliar para eliminar comillas de un string ── */
+static char *strip_quotes(const char *s) {
+    if (!s) return NULL;
+    size_t len = strlen(s);
+    if (len >= 2 && (s[0] == '"' || s[0] == '\'') && s[0] == s[len - 1]) {
+        char *result = malloc(len - 1);
+        if (!result) return strdup(s);  // fallback
+        memcpy(result, s + 1, len - 2);
+        result[len - 2] = '\0';
+        return result;
+    }
+    return strdup(s);
+}
 
 static void validate_var_name(const char *name, int line) {
     const char invalid[] = "@[](){}";
@@ -38,6 +53,34 @@ static bool safe_module_path(const char *path) {
     return path && *path && !strstr(path, "..") && !strchr(path, '\n') && !strchr(path, '\r');
 }
 
+char *build_command_from_tokens(int start_pos, int end_pos) {
+    if (start_pos >= end_pos) return strdup("");
+    char *cmd = malloc(1);
+    cmd[0] = '\0';
+    size_t len = 0;
+
+    for (int i = start_pos; i < end_pos; i++) {
+        Token *t = &ts.tokens[i];
+        if (t->type == TOK_NEWLINE || t->type == TOK_EOF) break;
+
+        if (i > start_pos) {
+            int prev_end = ts.tokens[i-1].end_col;
+            if (t->start_col > prev_end) {
+                cmd = realloc(cmd, len + 2);
+                cmd[len++] = ' ';
+                cmd[len] = '\0';
+            }
+        }
+
+        size_t tlen = strlen(t->lexeme);
+        cmd = realloc(cmd, len + tlen + 1);
+        memcpy(cmd + len, t->lexeme, tlen);
+        len += tlen;
+        cmd[len] = '\0';
+    }
+    return cmd;
+}
+
 ASTNode *parse_if_statement() {
     Token t = ts_peek();
     int line = t.line;
@@ -45,35 +88,29 @@ ASTNode *parse_if_statement() {
     ASTNode *cond = parse_expression(0);
     if (!ts_match(TOK_THEN)) error_missing_then(line, "if");
     NodeList then_block = parse_block("fi");
-
     ASTNode *first_if = node_create(NODE_IF, line);
     first_if->data.if_stmt.cond = cond;
     first_if->data.if_stmt.then_block = then_block;
     first_if->data.if_stmt.else_block = (NodeList){NULL,0,0};
-
     ASTNode *current_if = first_if;
     while (ts_peek().type == TOK_ELSEIF) {
         ts_advance();
         ASTNode *elseif_cond = parse_expression(0);
         if (!ts_match(TOK_THEN)) error_missing_then(line, "elseif");
         NodeList elseif_then = parse_block("fi");
-
         ASTNode *elseif_node = node_create(NODE_IF, line);
         elseif_node->data.if_stmt.cond = elseif_cond;
         elseif_node->data.if_stmt.then_block = elseif_then;
         elseif_node->data.if_stmt.else_block = (NodeList){NULL,0,0};
-
         NodeList wrapper = {NULL, 0, 0};
         nodelist_add(&wrapper, elseif_node);
         current_if->data.if_stmt.else_block = wrapper;
         current_if = elseif_node;
     }
-
     if (ts_match(TOK_ELSE)) {
         NodeList else_block = parse_block("fi");
         current_if->data.if_stmt.else_block = else_block;
     }
-
     if (!ts_match(TOK_FI)) error(line, "Se esperaba 'fi' al final del bloque if");
     return first_if;
 }
@@ -91,7 +128,7 @@ NodeList parse_block(const char *terminator) {
 
         ASTNode *stmt = NULL;
 
-        /***** COMANDOS CON ! *****/
+        /* ─── Comandos embebidos con ! ────────────────────────────── */
         if (t.type == TOK_BANG) {
             ts_advance();
             char cmd[4096] = {0};
@@ -105,7 +142,6 @@ NodeList parse_block(const char *terminator) {
                     }
                 }
                 if (hay_espacio && cmd[0] != '\0') strcat(cmd, " ");
-
                 if (ct.type == TOK_STRING_LITERAL) {
                     strcat(cmd, "\"");
                     strcat(cmd, ct.lexeme);
@@ -118,7 +154,6 @@ NodeList parse_block(const char *terminator) {
             if (ts_peek().type == TOK_BANG) ts_advance();
             stmt = node_create(NODE_CMD_STMT, t.line);
             stmt->data.cmd_stmt.cmd = strdup(cmd);
-            // Soporte para `or` después de comando embebido
             while (ts_match(TOK_OR)) {
                 ASTNode *next_stmt = NULL;
                 Token next = ts_peek();
@@ -181,7 +216,7 @@ NodeList parse_block(const char *terminator) {
             continue;
         }
 
-        /***** COMANDOS QUE EMPIEZAN CON CADENA LITERAL *****/
+        /* ─── Comandos shell entre comillas ─────────────────────────── */
         if (t.type == TOK_STRING_LITERAL) {
             char cmd[4096] = {0};
             Token first = ts_advance();
@@ -207,7 +242,6 @@ NodeList parse_block(const char *terminator) {
             }
             stmt = node_create(NODE_SHELL_CMD, t.line);
             stmt->data.shell_cmd.cmd = strdup(cmd);
-            // Soporte para `or` después de este comando
             while (ts_match(TOK_OR)) {
                 ASTNode *next_stmt = NULL;
                 Token next = ts_peek();
@@ -265,10 +299,12 @@ NodeList parse_block(const char *terminator) {
                 nodelist_add(&try_node->data.try_stmt.catch_block, next_stmt);
                 stmt = try_node;
             }
-            goto stmt_done;
+            nodelist_add(&block, stmt);
+            ts_skip_newlines();
+            continue;
         }
 
-        /***** PORTALES *****/
+        /* ─── Portales (@) ────────────────────────────────────────── */
         if (t.type == TOK_AT) {
             ts_advance();
             if (ts_peek().type != TOK_IDENT) error(t.line, "Se esperaba nombre de portal después de '@'");
@@ -281,7 +317,7 @@ NodeList parse_block(const char *terminator) {
             continue;
         }
 
-        /***** FLAGS *****/
+        /* ─── Flags ────────────────────────────────────────────────── */
         if (t.type == TOK_FLAG) {
             ts_advance();
             stmt = parse_flags();
@@ -290,7 +326,35 @@ NodeList parse_block(const char *terminator) {
             continue;
         }
 
-        /***** ESTRUCTURAS DE CONTROL *****/
+        /* ─── execute ────────────────────────────────────────────────── */
+        /* ─── execute ────────────────────────────────────────────────── */
+        if (t.type == TOK_EXECUTE) {
+            ts_advance();
+            // Parsear la ruta como una expresión (puede ser $variable, concatenación, etc.)
+            ASTNode *path_expr = parse_expression(0);
+            if (!path_expr) {
+                error(t.line, "Se esperaba una ruta de script después de 'execute'");
+            }
+            // Recolectar argumentos hasta el final de la línea
+            int argc = 0;
+            char **args = NULL;
+            while (ts_peek().type != TOK_NEWLINE && ts_peek().type != TOK_EOF) {
+                Token tok = ts_advance();
+                // Si es un identificador o string, guardar como argumento (se expandirá después)
+                char *arg = (tok.type == TOK_STRING_LITERAL) ? strip_quotes(tok.lexeme) : strdup(tok.lexeme);
+                args = realloc(args, (argc + 1) * sizeof(char*));
+                args[argc++] = arg;
+            }
+            stmt = node_create(NODE_EXECUTE, t.line);
+            stmt->data.execute.path_expr = path_expr;   // <-- nuevo campo
+            stmt->data.execute.args = args;
+            stmt->data.execute.argc = argc;
+            nodelist_add(&block, stmt);
+            ts_skip_newlines();
+            continue;
+        }
+
+        /* ─── Estructuras de control ────────────────────────────────── */
         if (t.type == TOK_IF) {
             stmt = parse_if_statement();
         } else if (t.type == TOK_WHILE) {
@@ -346,13 +410,11 @@ NodeList parse_block(const char *terminator) {
             if (ts_peek().type != TOK_IDENT) error(t.line, "Se esperaba nombre de función");
             char *fname = strdup(ts_advance().lexeme);
 
-            // ─── COMPROBACIÓN DE NOMBRE DUPLICADO (builtin o definida) ───
             if (func_lookup(fname) != NULL) {
                 fprintf(stderr, "Error al declarar función, línea: %d: '%s' es una función interna y no puede ser redefinida. Si quieres crear una función, usa otro nombre.\n",
                         t.line, fname);
                 exit(1);
             }
-            // ─── FIN COMPROBACIÓN ───
 
             if (!ts_match(TOK_LPAREN)) error(t.line, "Se esperaba '('");
             char **params = NULL; int *ptypes = NULL; int pcount = 0;
@@ -550,10 +612,14 @@ NodeList parse_block(const char *terminator) {
             validate_var_name(vname, t.line);
 
             ASTNode *lhs_index = NULL;
-            if (ts_match(TOK_LBRACKET)) {
-                lhs_index = parse_expression(0);
-                if (!ts_match(TOK_RBRACKET))
-                    error(t.line, "Se esperaba ']' tras índice");
+            if (ts_peek().type == TOK_LBRACKET) {
+                Token lb = ts_advance();
+                lhs_index = parse_index_or_slice(lb.line);
+                if (lhs_index->kind == NODE_SLICE) {
+                    error(lb.line, "No se puede usar slice en el lado izquierdo de una asignación");
+                }
+                lhs_index->data.idx.list = node_create(NODE_VAR, t.line);
+                lhs_index->data.idx.list->data.var.name = strdup(vname);
             }
 
             if (!ts_match(TOK_EQ)) error(t.line, "Se esperaba '='");
@@ -562,18 +628,20 @@ NodeList parse_block(const char *terminator) {
             bool is_cmd = false;
             char *cmd_str = NULL;
 
-            // ----- NUEVA LÓGICA PARA RHS -----
-            if (ts_peek().type == TOK_IDENT && ts_peek().lexeme[0] == '$') {
+            Token next_token = ts_peek();
+            if (next_token.type == TOK_IDENT && (next_token.lexeme[0] == '$' || next_token.lexeme[0] == '?')) {
                 value = parse_expression(0);
-            } else if (ts_peek().type == TOK_IDENT) {
-                // Verificar si el siguiente token es '(' para detectar llamada a función
+            } else if (next_token.type == TOK_IDENT) {
                 int next_pos = ts.pos + 1;
-                if (next_pos < ts.count && ts.tokens[next_pos].type == TOK_LPAREN) {
+                if (next_pos < ts.count && (ts.tokens[next_pos].type == TOK_LBRACKET || ts.tokens[next_pos].type == TOK_LPAREN)) {
                     value = parse_expression(0);
                 } else {
                     is_cmd = true;
-                    cmd_str = extract_command_string(t.line);
-                    while (ts_peek().type != TOK_NEWLINE && ts_peek().type != TOK_EOF) ts_advance();
+                    int start_pos = ts.pos;
+                    while (ts_peek().type != TOK_NEWLINE && ts_peek().type != TOK_EOF) {
+                        ts_advance();
+                    }
+                    cmd_str = build_command_from_tokens(start_pos, ts.pos);
                 }
             } else {
                 value = parse_expression(0);
@@ -597,10 +665,14 @@ NodeList parse_block(const char *terminator) {
             validate_var_name(vname, t.line);
 
             ASTNode *lhs_index = NULL;
-            if (ts_match(TOK_LBRACKET)) {
-                lhs_index = parse_expression(0);
-                if (!ts_match(TOK_RBRACKET))
-                    error(t.line, "Se esperaba ']' tras índice");
+            if (ts_peek().type == TOK_LBRACKET) {
+                Token lb = ts_advance();
+                lhs_index = parse_index_or_slice(lb.line);
+                if (lhs_index->kind == NODE_SLICE) {
+                    error(lb.line, "No se puede usar slice en el lado izquierdo de una asignación");
+                }
+                lhs_index->data.idx.list = node_create(NODE_VAR, t.line);
+                lhs_index->data.idx.list->data.var.name = strdup(vname);
             }
 
             if (!ts_match(TOK_EQ)) error(t.line, "Se esperaba '='");
@@ -609,18 +681,20 @@ NodeList parse_block(const char *terminator) {
             bool is_cmd = false;
             char *cmd_str = NULL;
 
-            // ----- NUEVA LÓGICA PARA RHS -----
-            if (ts_peek().type == TOK_IDENT && ts_peek().lexeme[0] == '$') {
+            Token next_token = ts_peek();
+            if (next_token.type == TOK_IDENT && (next_token.lexeme[0] == '$' || next_token.lexeme[0] == '?')) {
                 value = parse_expression(0);
-            } else if (ts_peek().type == TOK_IDENT) {
-                // Verificar si el siguiente token es '(' para detectar llamada a función
+            } else if (next_token.type == TOK_IDENT) {
                 int next_pos = ts.pos + 1;
-                if (next_pos < ts.count && ts.tokens[next_pos].type == TOK_LPAREN) {
+                if (next_pos < ts.count && (ts.tokens[next_pos].type == TOK_LBRACKET || ts.tokens[next_pos].type == TOK_LPAREN)) {
                     value = parse_expression(0);
                 } else {
                     is_cmd = true;
-                    cmd_str = extract_command_string(t.line);
-                    while (ts_peek().type != TOK_NEWLINE && ts_peek().type != TOK_EOF) ts_advance();
+                    int start_pos = ts.pos;
+                    while (ts_peek().type != TOK_NEWLINE && ts_peek().type != TOK_EOF) {
+                        ts_advance();
+                    }
+                    cmd_str = build_command_from_tokens(start_pos, ts.pos);
                 }
             } else {
                 value = parse_expression(0);
@@ -638,35 +712,81 @@ NodeList parse_block(const char *terminator) {
 
             } else if (t.type == TOK_IDENT) {
                 Token saved_t = t;
-                ts_advance();
+                ts_advance(); // consume identificador
 
-                if (ts_match(TOK_EQ) || ts_match(TOK_LBRACKET)) {
+                Token next_tok = ts_peek();
+
+                if (next_tok.type == TOK_EQ) {
+                    // ASIGNACIÓN SIMPLE
+                    ts_advance(); // consumir '='
                     char *vname = strdup(saved_t.lexeme);
                     validate_var_name(vname, saved_t.line);
-                    ASTNode *lhs_index = NULL;
-                    if (ts.tokens[ts.pos-1].type == TOK_LBRACKET) {
-                        lhs_index = parse_expression(0);
-                        if (!ts_match(TOK_RBRACKET))
-                            error(t.line, "Se esperaba ']' tras índice");
-                        if (!ts_match(TOK_EQ)) error(t.line, "Se esperaba '='");
-                    }
 
                     ASTNode *value = NULL;
                     bool is_cmd = false;
                     char *cmd_str = NULL;
 
-                    // ----- NUEVA LÓGICA PARA RHS -----
-                    if (ts_peek().type == TOK_IDENT && ts_peek().lexeme[0] == '$') {
+                    Token next_token = ts_peek();
+                    if (next_token.type == TOK_IDENT && (next_token.lexeme[0] == '$' || next_token.lexeme[0] == '?')) {
                         value = parse_expression(0);
-                    } else if (ts_peek().type == TOK_IDENT) {
-                        // Verificar si el siguiente token es '(' para detectar llamada a función
+                    } else if (next_token.type == TOK_IDENT) {
                         int next_pos = ts.pos + 1;
-                        if (next_pos < ts.count && ts.tokens[next_pos].type == TOK_LPAREN) {
+                        if (next_pos < ts.count && (ts.tokens[next_pos].type == TOK_LBRACKET || ts.tokens[next_pos].type == TOK_LPAREN)) {
                             value = parse_expression(0);
                         } else {
                             is_cmd = true;
-                            cmd_str = extract_command_string(saved_t.line);
-                            while (ts_peek().type != TOK_NEWLINE && ts_peek().type != TOK_EOF) ts_advance();
+                            int start_pos = ts.pos;
+                            while (ts_peek().type != TOK_NEWLINE && ts_peek().type != TOK_EOF) {
+                                ts_advance();
+                            }
+                            cmd_str = build_command_from_tokens(start_pos, ts.pos);
+                        }
+                    } else {
+                        value = parse_expression(0);
+                    }
+
+                    stmt = node_create(NODE_ASSIGN, saved_t.line);
+                    stmt->data.assign.name = vname;
+                    stmt->data.assign.is_cmd = is_cmd;
+                    stmt->data.assign.cmd_str = cmd_str;
+                    stmt->data.assign.value = value;
+                    stmt->data.assign.vtype = 0;
+                    stmt->data.assign.is_local = false;
+                    stmt->data.assign.is_global = false;
+                    stmt->data.assign.lhs_index = NULL;
+
+                } else if (next_tok.type == TOK_LBRACKET) {
+                    // ASIGNACIÓN CON ÍNDICE
+                    Token lb = ts_advance(); // consumir '['
+                    ASTNode *lhs_index = parse_index_or_slice(lb.line);
+                    if (lhs_index->kind == NODE_SLICE) {
+                        error(lb.line, "No se puede asignar a un slice");
+                    }
+                    char *vname = strdup(saved_t.lexeme);
+                    validate_var_name(vname, saved_t.line);
+                    lhs_index->data.idx.list = node_create(NODE_VAR, saved_t.line);
+                    lhs_index->data.idx.list->data.var.name = strdup(vname);
+
+                    if (!ts_match(TOK_EQ)) error(saved_t.line, "Se esperaba '='");
+
+                    ASTNode *value = NULL;
+                    bool is_cmd = false;
+                    char *cmd_str = NULL;
+
+                    Token next_token = ts_peek();
+                    if (next_token.type == TOK_IDENT && (next_token.lexeme[0] == '$' || next_token.lexeme[0] == '?')) {
+                        value = parse_expression(0);
+                    } else if (next_token.type == TOK_IDENT) {
+                        int next_pos = ts.pos + 1;
+                        if (next_pos < ts.count && (ts.tokens[next_pos].type == TOK_LBRACKET || ts.tokens[next_pos].type == TOK_LPAREN)) {
+                            value = parse_expression(0);
+                        } else {
+                            is_cmd = true;
+                            int start_pos = ts.pos;
+                            while (ts_peek().type != TOK_NEWLINE && ts_peek().type != TOK_EOF) {
+                                ts_advance();
+                            }
+                            cmd_str = build_command_from_tokens(start_pos, ts.pos);
                         }
                     } else {
                         value = parse_expression(0);
@@ -681,129 +801,40 @@ NodeList parse_block(const char *terminator) {
                     stmt->data.assign.is_local = false;
                     stmt->data.assign.is_global = false;
                     stmt->data.assign.lhs_index = lhs_index;
+
                 } else {
-                    ts.pos--;
-
-                    int known = (scope_find_script(current_scope, saved_t.lexeme) != NULL ||
-                    func_lookup(saved_t.lexeme) != NULL);
-                    int next_is_paren_or_bracket = 0;
-                    if (ts.pos + 1 < ts.count) {
-                        TokenType next = ts.tokens[ts.pos + 1].type;
-                        if (next == TOK_LPAREN || next == TOK_LBRACKET)
-                            next_is_paren_or_bracket = 1;
-                    }
-
-                    if (known || next_is_paren_or_bracket) {
-                        int saved = ts.pos;
-                        jmp_buf saved_env; memcpy(&saved_env, &exception_env, sizeof(jmp_buf));
-                        int saved_raised = exception_raised;
-                        exception_raised = 0;
-                        if (!setjmp(exception_env)) {
-                            ASTNode *expr = parse_expression(0);
-                            if (ts_peek().type == TOK_NEWLINE || ts_peek().type == TOK_EOF ||
-                                ts_peek().type == TOK_FI || ts_peek().type == TOK_RBRACE) {
-                                stmt = node_create(NODE_EXPR_STMT, t.line);
-                            stmt->data.expr_stmt.expr = expr;
-                            memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
-                            exception_raised = saved_raised;
-                            goto stmt_done;
-                                }
-                        }
-                        ts.pos = saved;
-                        exception_raised = 0;
-                    }
-
-                    /***** COMANDO SHELL NORMAL (sin ! ni comillas) *****/
-                    char cmd[4096] = {0};
-                    Token first = ts_advance();
-                    strcpy(cmd, first.lexeme);
-                    Token prev_token = first;
-                    while (ts_peek().type != TOK_NEWLINE && ts_peek().type != TOK_EOF) {
-                        Token ct = ts_advance();
-                        bool hay_espacio = false;
-                        if (prev_token.type != TOK_EOF) {
-                            if (ct.start_col > prev_token.end_col) {
-                                hay_espacio = true;
+                    // NO ES ASIGNACIÓN → puede ser expresión o comando shell
+                    if (ts_peek().type == TOK_LPAREN || ts_peek().type == TOK_LBRACKET) {
+                        ts.pos--;
+                        ASTNode *expr = parse_expression(0);
+                        if (ts_peek().type == TOK_NEWLINE || ts_peek().type == TOK_EOF ||
+                            ts_peek().type == TOK_FI || ts_peek().type == TOK_RBRACE) {
+                            stmt = node_create(NODE_EXPR_STMT, t.line);
+                        stmt->data.expr_stmt.expr = expr;
+                        nodelist_add(&block, stmt);
+                        ts_skip_newlines();
+                        continue;
+                            } else {
+                                error(t.line, "Expresión incompleta");
                             }
-                        }
-                        if (hay_espacio) strcat(cmd, " ");
-
-                        if (ct.type == TOK_STRING_LITERAL) {
-                            strcat(cmd, "\"");
-                            strcat(cmd, ct.lexeme);
-                            strcat(cmd, "\"");
-                        } else {
-                            strcat(cmd, ct.lexeme);
-                        }
-                        prev_token = ct;
-                    }
-                    stmt = node_create(NODE_SHELL_CMD, t.line);
-                    stmt->data.shell_cmd.cmd = strdup(cmd);
-                    // Soporte para `or` después de comando shell
-                    while (ts_match(TOK_OR)) {
-                        ASTNode *next_stmt = NULL;
-                        Token next = ts_peek();
-                        if (next.type == TOK_BANG) {
+                    } else {
+                        ts.pos--;
+                        int start_pos = ts.pos;
+                        while (ts_peek().type != TOK_NEWLINE && ts_peek().type != TOK_EOF) {
                             ts_advance();
-                            char cmd2[4096] = {0};
-                            Token prev2 = {TOK_EOF, "", 0, 0, 0};
-                            while (ts_peek().type != TOK_BANG && ts_peek().type != TOK_NEWLINE && ts_peek().type != TOK_EOF) {
-                                Token ct2 = ts_advance();
-                                bool hay_espacio2 = false;
-                                if (prev2.type != TOK_EOF) {
-                                    if (ct2.start_col > prev2.end_col) hay_espacio2 = true;
-                                }
-                                if (hay_espacio2 && cmd2[0] != '\0') strcat(cmd2, " ");
-                                if (ct2.type == TOK_STRING_LITERAL) {
-                                    strcat(cmd2, "\"");
-                                    strcat(cmd2, ct2.lexeme);
-                                    strcat(cmd2, "\"");
-                                } else {
-                                    strcat(cmd2, ct2.lexeme);
-                                }
-                                prev2 = ct2;
-                            }
-                            if (ts_peek().type == TOK_BANG) ts_advance();
-                            next_stmt = node_create(NODE_CMD_STMT, next.line);
-                            next_stmt->data.cmd_stmt.cmd = strdup(cmd2);
-                        } else {
-                            char cmd2[4096] = {0};
-                            Token first2 = ts_advance();
-                            strcpy(cmd2, first2.lexeme);
-                            Token prev2 = first2;
-                            while (ts_peek().type != TOK_NEWLINE && ts_peek().type != TOK_EOF && ts_peek().type != TOK_OR) {
-                                Token ct2 = ts_advance();
-                                bool hay_espacio2 = false;
-                                if (prev2.type != TOK_EOF) {
-                                    if (ct2.start_col > prev2.end_col) hay_espacio2 = true;
-                                }
-                                if (hay_espacio2) strcat(cmd2, " ");
-                                if (ct2.type == TOK_STRING_LITERAL) {
-                                    strcat(cmd2, "\"");
-                                    strcat(cmd2, ct2.lexeme);
-                                    strcat(cmd2, "\"");
-                                } else {
-                                    strcat(cmd2, ct2.lexeme);
-                                }
-                                prev2 = ct2;
-                            }
-                            next_stmt = node_create(NODE_SHELL_CMD, next.line);
-                            next_stmt->data.shell_cmd.cmd = strdup(cmd2);
                         }
-                        ASTNode *try_node = node_create(NODE_TRY, t.line);
-                        try_node->data.try_stmt.try_block = (NodeList){NULL, 0, 0};
-                        nodelist_add(&try_node->data.try_stmt.try_block, stmt);
-                        try_node->data.try_stmt.catch_block = (NodeList){NULL, 0, 0};
-                        nodelist_add(&try_node->data.try_stmt.catch_block, next_stmt);
-                        stmt = try_node;
+                        char *cmd_str = build_command_from_tokens(start_pos, ts.pos);
+                        stmt = node_create(NODE_SHELL_CMD, t.line);
+                        stmt->data.shell_cmd.cmd = cmd_str;
+                        nodelist_add(&block, stmt);
+                        ts_skip_newlines();
+                        continue;
                     }
-                    goto stmt_done;
                 }
             } else {
                 error(t.line, "Sentencia no reconocida '%s'", t.lexeme);
             }
 
-            stmt_done:
             if (stmt) nodelist_add(&block, stmt);
             ts_skip_newlines();
         if (terminator && ts_peek().type == lookup_keyword(terminator)) break;

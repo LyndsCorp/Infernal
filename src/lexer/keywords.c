@@ -47,7 +47,7 @@ TokenType lookup_keyword(const char *lexeme) {
     if (strcmp(lexeme, "true") == 0) return TOK_TRUE;
     if (strcmp(lexeme, "false") == 0) return TOK_FALSE;
 
-    // Scopes para variables (si está vacío, es una variable normal)
+    // Scopes para variables
     if (strcmp(lexeme, "local") == 0) return TOK_LOCAL;
     if (strcmp(lexeme, "global") == 0) return TOK_GLOBAL;
 
@@ -59,5 +59,9 @@ TokenType lookup_keyword(const char *lexeme) {
     // Utilidades
     if (strcmp(lexeme, "flags") == 0) return TOK_FLAG;
     if (strcmp(lexeme, "line") == 0) return TOK_LINE;
+
+    // NUEVO: execute
+    if (strcmp(lexeme, "execute") == 0) return TOK_EXECUTE;
+
     return TOK_IDENT;
 }

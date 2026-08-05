@@ -179,12 +179,97 @@ void tokenize_file(FILE *fp) {
             if (*p == '-') { Token t = {TOK_MINUS, "-", lineno, start_col, start_col + 1}; ts_add(t); p++; continue; }
             if (*p == '*') { Token t = {TOK_STAR, "*", lineno, start_col, start_col + 1}; ts_add(t); p++; continue; }
             if (*p == '%') { Token t = {TOK_PERCENT, "%", lineno, start_col, start_col + 1}; ts_add(t); p++; continue; }
+            if (*p == ':') { Token t = {TOK_COLON, ":", lineno, start_col, start_col + 1}; ts_add(t); p++; continue; }  /* <-- NUEVO */
 
-            if (*p == '/') {
-                char *next = p + 1;
-                if (*next != '\0' && (isalnum(*next) || *next == '_' || *next == '/' || *next == '.' || *next == '-' || *next == '~')) {
+                if (*p == '/') {
+                    char *next = p + 1;
+                    if (*next != '\0' && (isalnum(*next) || *next == '_' || *next == '/' || *next == '.' || *next == '-' || *next == '~')) {
+                        char *start = p;
+                        while (*p && (isalnum(*p) || *p == '_' || *p == '/' || *p == '.' || *p == '-' || *p == '~')) p++;
+                        char buf[256]; int len = p - start;
+                        memcpy(buf, start, len); buf[len] = '\0';
+                        TokenType k = lookup_keyword(buf);
+                        Token t;
+                        t.type = (k != TOK_IDENT) ? k : TOK_IDENT;
+                        t.lexeme = strdup(buf);
+                        t.line = lineno;
+                        t.start_col = start_col;
+                        t.end_col = (int)(p - line);
+                        ts_add(t);
+                        continue;
+                    } else {
+                        Token t = {TOK_SLASH, "/", lineno, start_col, start_col + 1};
+                        ts_add(t);
+                        p++;
+                        continue;
+                    }
+                }
+
+                if (*p == '=') { Token t = {TOK_EQ, "=", lineno, start_col, start_col + 1}; ts_add(t); p++; continue; }
+
+                if (*p == '!') {
+                    Token t = {TOK_BANG, "!", lineno, start_col, start_col + 1};
+                    ts_add(t);
+                    p++;
+                    continue;
+                }
+
+                if (*p == '@') {
+                    Token t = {TOK_AT, "@", lineno, start_col, start_col + 1};
+                    ts_add(t);
+                    p++;
+                    continue;
+                }
+
+                if (*p == '\'' || *p == '"') {
+                    char quote = *p++;
+                    char buf[4096]; int bi = 0;
+                    while (*p && *p != quote && *p != '\n') {
+                        if (*p == '\\' && *(p+1)) p++;
+                        buf[bi++] = *p++;
+                    }
+                    buf[bi] = '\0';
+                    if (*p == quote) {
+                        p++;
+                    } else {
+                        error(lineno, "Cadena de texto sin cerrar: %c%s", quote, buf);
+                    }
+                    Token t = {TOK_STRING_LITERAL, strdup(buf), lineno, start_col, (int)(p - line)};
+                    ts_add(t);
+                    continue;
+                }
+
+                if (isdigit(*p) || (*p == '.' && isdigit(*(p+1)))) {
                     char *start = p;
-                    while (*p && (isalnum(*p) || *p == '_' || *p == '/' || *p == '.' || *p == '-' || *p == '~')) p++;
+                    while (isdigit(*p)) p++;
+                    if (*p == '.' && isdigit(*(p+1))) {
+                        p++;
+                        while (isdigit(*p)) p++;
+                    }
+                    char buf[128]; int len = p - start;
+                    memcpy(buf, start, len); buf[len] = '\0';
+                    Token t = {TOK_NUMBER, strdup(buf), lineno, start_col, (int)(p - line)};
+                    ts_add(t);
+                    continue;
+                }
+
+                // --- MODIFICACIÓN: permitir tanto '$' como '?' como prefijo de identificador ---
+                if ((*p == '$' || *p == '?') && (isalpha(*(p+1)) || *(p+1) == '_')) {
+                    char *start = p;
+                    p++;
+                    while (isalnum(*p) || *p == '_') p++;
+                    int len = p - start;
+                    char buf[256];
+                    memcpy(buf, start, len);
+                    buf[len] = '\0';
+                    Token t = {TOK_IDENT, strdup(buf), lineno, start_col, (int)(p - line)};
+                    ts_add(t);
+                    continue;
+                }
+
+                if (isalpha(*p) || *p == '_' || *p == '.' || *p == '~') {
+                    char *start = p;
+                    while (isalnum(*p) || *p == '_' || *p == '/' || *p == '.' || *p == '-' || *p == '~') p++;
                     char buf[256]; int len = p - start;
                     memcpy(buf, start, len); buf[len] = '\0';
                     TokenType k = lookup_keyword(buf);
@@ -196,91 +281,8 @@ void tokenize_file(FILE *fp) {
                     t.end_col = (int)(p - line);
                     ts_add(t);
                     continue;
-                } else {
-                    Token t = {TOK_SLASH, "/", lineno, start_col, start_col + 1};
-                    ts_add(t);
-                    p++;
-                    continue;
                 }
-            }
-
-            if (*p == '=') { Token t = {TOK_EQ, "=", lineno, start_col, start_col + 1}; ts_add(t); p++; continue; }
-
-            if (*p == '!') {
-                Token t = {TOK_BANG, "!", lineno, start_col, start_col + 1};
-                ts_add(t);
                 p++;
-                continue;
-            }
-
-            if (*p == '@') {
-                Token t = {TOK_AT, "@", lineno, start_col, start_col + 1};
-                ts_add(t);
-                p++;
-                continue;
-            }
-
-            if (*p == '\'' || *p == '"') {
-                char quote = *p++;
-                char buf[4096]; int bi = 0;
-                while (*p && *p != quote && *p != '\n') {
-                    if (*p == '\\' && *(p+1)) p++;
-                    buf[bi++] = *p++;
-                }
-                buf[bi] = '\0';
-                if (*p == quote) {
-                    p++;
-                } else {
-                    error(lineno, "Cadena de texto sin cerrar: %c%s", quote, buf);
-                }
-                Token t = {TOK_STRING_LITERAL, strdup(buf), lineno, start_col, (int)(p - line)};
-                ts_add(t);
-                continue;
-            }
-
-            if (isdigit(*p) || (*p == '.' && isdigit(*(p+1)))) {
-                char *start = p;
-                while (isdigit(*p)) p++;
-                if (*p == '.' && isdigit(*(p+1))) {
-                    p++;
-                    while (isdigit(*p)) p++;
-                }
-                char buf[128]; int len = p - start;
-                memcpy(buf, start, len); buf[len] = '\0';
-                Token t = {TOK_NUMBER, strdup(buf), lineno, start_col, (int)(p - line)};
-                ts_add(t);
-                continue;
-            }
-
-            if (*p == '$' && (isalpha(*(p+1)) || *(p+1) == '_')) {
-                char *start = p;
-                p++;
-                while (isalnum(*p) || *p == '_') p++;
-                int len = p - start;
-                char buf[256];
-                memcpy(buf, start, len);
-                buf[len] = '\0';
-                Token t = {TOK_IDENT, strdup(buf), lineno, start_col, (int)(p - line)};
-                ts_add(t);
-                continue;
-            }
-
-            if (isalpha(*p) || *p == '_' || *p == '.' || *p == '~') {
-                char *start = p;
-                while (isalnum(*p) || *p == '_' || *p == '/' || *p == '.' || *p == '-' || *p == '~') p++;
-                char buf[256]; int len = p - start;
-                memcpy(buf, start, len); buf[len] = '\0';
-                TokenType k = lookup_keyword(buf);
-                Token t;
-                t.type = (k != TOK_IDENT) ? k : TOK_IDENT;
-                t.lexeme = strdup(buf);
-                t.line = lineno;
-                t.start_col = start_col;
-                t.end_col = (int)(p - line);
-                ts_add(t);
-                continue;
-            }
-            p++;
         }
         Token t = {TOK_NEWLINE, "\n", lineno, 0, 0};
         ts_add(t);

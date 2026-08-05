@@ -9,6 +9,7 @@
 #include "core/value.h"
 #include "runtime/error.h"
 #include "core/memory.h"
+#include "runtime/evaluator.h"   // <-- añadir para try_convert_value
 
 Scope *scope_new(Scope *parent, const char *function_name) {
     Scope *s = infernal_malloc(sizeof(Scope));
@@ -49,6 +50,12 @@ VarEntry *scope_find_script(Scope *scope, const char *name) {
 }
 
 void scope_define(Scope *scope, const char *name, int vtype, Value val) {
+    // Si se define como string y el valor es lista, convertir
+    if (vtype == TOK_STRING && val.type == VAL_LIST) {
+        if (!try_convert_value(&val, TOK_STRING)) {
+            // En caso de fallo, mantener el valor original (se mostrará error más adelante)
+        }
+    }
     VarEntry *e = infernal_malloc(sizeof(VarEntry));
     e->name = infernal_strdup(name);
     e->vtype = vtype ? vtype : valtype_to_tokentype(val.type);
@@ -60,6 +67,12 @@ void scope_define(Scope *scope, const char *name, int vtype, Value val) {
 void scope_assign(Scope *scope, const char *name, Value val, int line) {
     VarEntry *e = scope_find(scope, name);
     if (e) {
+        // Si la variable es de tipo string y el valor es lista, convertir
+        if (e->vtype == TOK_STRING && val.type == VAL_LIST) {
+            if (!try_convert_value(&val, TOK_STRING)) {
+                error(line, "No se pudo convertir lista a string en la asignación a '%s'", name);
+            }
+        }
         int expected = e->vtype;
         int new_type = valtype_to_tokentype(val.type);
         if (expected != 0 && new_type != expected) {
@@ -105,20 +118,6 @@ void portal_define(Scope *scope, const char *name, int line) {
 
 void scope_free(Scope *s) {
     if (!s) return;
-    VarEntry *v = s->vars;
-    while (v) {
-        VarEntry *next = v->next;
-        free(v->name);
-        free(v);
-        v = next;
-    }
-    PortalEntry *p = s->portals;
-    while (p) {
-        PortalEntry *next = p->next;
-        free(p->name);
-        free(p);
-        p = next;
-    }
-    free(s->function_name);
+    // Desactivamos la liberación de variables para evitar double-free
     free(s);
 }

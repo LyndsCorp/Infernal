@@ -1,0 +1,26 @@
+#!../infernal
+
+# script minimo, no sirve como shell UI real
+
+user = whoami
+host = hostname
+
+signo = "$"
+
+if user == "root" then
+    signo = "#"
+fi
+
+### comentado para make test
+while true then
+    comando = input(color("green") + user + color("orange") + "@" + color("blue") + host + color("reset") + signo + ": ")
+
+    if comando == "exit" then
+        exit(0) #o break, pero en la 1.14 no funciona break
+    else
+        bash -c $comando #ejecuta el comando con Bash
+    fi
+fi
+###
+print(color("green") + user + color("orange") + "@" + color("blue") + host + color("reset") + signo + ": ")
+

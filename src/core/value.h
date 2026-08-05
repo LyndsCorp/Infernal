@@ -1,5 +1,5 @@
 /*
- * Infernal: el lenguaje de programación. Copyright (C) 2026, GPL v3+ License, Lynds Corp., Aros Legendarios, David Baña Szymaniak.
+ * Infernal: el lenguaje de programación. Copyright (C) 2026, GPL v3+ License.
  * Código fuente de Infernal: core/value.h
 */
 
@@ -19,5 +19,8 @@ Value val_list_copy(Value *src);
 int   valtype_to_tokentype(int vtype);
 Value val_reference(const char *list_name, int index);
 Value val_ptr(void *ptr);
+
+/* ─── Copia profunda segura ────────────────────────────────── */
+Value copy_value_secure(Value src);
 
 #endif

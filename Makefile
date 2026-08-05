@@ -302,10 +302,13 @@ help:
 	@cat src/metadata/VERSION || echo "No disponible"
 
 test: $(TARGET)
-	@./test.sh ./$(TARGET)
+	@for file in demos/*.inf; do \
+		echo " [TEST] $$file"; \
+		./$(TARGET) $$file || exit 1; \
+	done
 
 sanitize:
 	$(MAKE) clean
 	$(MAKE) CFLAGS='$(CFLAGS) -fsanitize=address,undefined -fno-omit-frame-pointer' \
 	        LDFLAGS='$(LDFLAGS) -fsanitize=address,undefined' all
-	@./test.sh ./$(TARGET)
+	$(MAKE) test

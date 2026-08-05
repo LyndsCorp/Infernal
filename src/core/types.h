@@ -1,7 +1,7 @@
 /*
  * Infernal: el lenguaje de programación. Copyright (C) 2026, GPL v3+ License, Lynds Corp., Aros Legendarios, David Baña Szymaniak.
  * Código fuente de Infernal: core/types.h
- */
+*/
 
 #ifndef CORE_TYPES_H
 #define CORE_TYPES_H
@@ -32,7 +32,9 @@ typedef enum {
     TOK_FLAG,
     TOK_BANG,
     TOK_AT,
-    TOK_LINE
+    TOK_LINE,
+    TOK_COLON,
+    TOK_EXECUTE          /* <-- NUEVO: execute /ruta/script.inf [args...] */
 } TokenType;
 
 /* ─── Token ──────────────────────────────────────────────── */
@@ -40,8 +42,8 @@ typedef struct {
     TokenType type;
     char *lexeme;
     int line;
-    int start_col;   // columna donde comienza (0‑based, relativa a la línea)
-    int end_col;     // columna donde termina (excluyente)
+    int start_col;
+    int end_col;
 } Token;
 
 /* ─── AST nodes ──────────────────────────────────────────── */
@@ -59,6 +61,8 @@ typedef struct {
     Token *body_tokens;
     int body_count;
     bool catch_all;
+    bool is_empty;
+    bool is_global;      /* si la variable se define en ámbito superglobal */
 } FlagSpec;
 
 /* ─── Value types ────────────────────────────────────────── */
@@ -111,7 +115,9 @@ struct ASTNode {
         NODE_IF, NODE_WHILE, NODE_FOR, NODE_FUNC_DEF, NODE_RETURN,
         NODE_BREAK, NODE_CONTINUE, NODE_REPEAT, NODE_IMPORT, NODE_TRY,
         NODE_VAR, NODE_LITERAL, NODE_BINOP, NODE_CALL, NODE_INDEX,
-        NODE_FLAGS, NODE_LIST, NODE_FOR_IN, NODE_PORTAL
+        NODE_FLAGS, NODE_LIST, NODE_FOR_IN, NODE_PORTAL,
+        NODE_SLICE,
+        NODE_EXECUTE     /* <-- NUEVO: execute */
     } kind;
     union {
         struct { NodeList stmts; } prog;
@@ -140,6 +146,18 @@ struct ASTNode {
                 char *portal_name;
             } repeat;
             struct { char *name; bool is_local; } portal;
+            struct {
+                ASTNode *list;
+                int mode;
+                int start;
+                int end;
+            } slice;
+            /* ─── execute ────────────────────────────────────────── */
+            struct {
+                ASTNode *path_expr;   /* expresión que evalúa a la ruta */
+                char **args;
+                int argc;
+            } execute;
     } data;
 };
 
