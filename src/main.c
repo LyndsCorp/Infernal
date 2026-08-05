@@ -60,7 +60,7 @@ int main(int argc, char **argv) {
         return 0;
     }
 
-    // ─── Procesar argumentos: --shell ──────────────────────────
+    // ─── Procesar argumentos: --shell y script ──────────────
     char *script_file = NULL;
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--shell") == 0) {
@@ -77,8 +77,10 @@ int main(int argc, char **argv) {
                 return 0;
             }
         }
+        // El primer argumento que NO empieza con '-' se toma como script
         if (argv[i][0] != '-') {
             script_file = argv[i];
+            break;
         }
     }
 
@@ -87,6 +89,7 @@ int main(int argc, char **argv) {
         return 1;
     }
 
+    // Guardamos todos los argumentos para que el script los vea (incluyendo flags)
     script_argc = argc;
     script_argv = argv;
 
