@@ -6,11 +6,25 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
 #include "string.h"
 #include "core/value.h"
 #include "runtime/error.h"
 #include "runtime/globals.h"
 #include "vm/vm.h"
+
+/* --------------------------------------------------------------------------
+ *  lower(str) : convierte la cadena a minúsculas
+ *  -------------------------------------------------------------------------- */
+static Value builtin_lower(int argc, Value *args) {
+    if (argc != 1) error(0, "lower() espera exactamente 1 argumento");
+    if (args[0].type != VAL_STRING) error(0, "lower() espera un string.");
+    char *s = strdup(args[0].data.sval);
+    for (char *p = s; *p; p++) *p = tolower((unsigned char)*p);
+    Value res = val_string(s);
+    free(s);
+    return res;
+}
 
 /* --------------------------------------------------------------------------
  *  head(str, n)  : devuelve los primeros n caracteres de str
@@ -92,6 +106,9 @@ static Value builtin_tail(int argc, Value *args) {
 void register_string_builtins(void) {
     func_register_builtin("head", builtin_head);
     func_register_builtin("tail", builtin_tail);
+    func_register_builtin("lower", builtin_lower);
+
     vm_register_builtin("head", builtin_head);
     vm_register_builtin("tail", builtin_tail);
+    vm_register_builtin("lower", builtin_lower);
 }
