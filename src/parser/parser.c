@@ -20,6 +20,20 @@
 #include "vm/compiler.h"
 #include "developer/debug.h"
 
+/* ─── Función auxiliar para eliminar comillas de un string ── */
+static char *strip_quotes(const char *s) {
+    if (!s) return NULL;
+    size_t len = strlen(s);
+    if (len >= 2 && (s[0] == '"' || s[0] == '\'') && s[0] == s[len - 1]) {
+        char *result = malloc(len - 1);
+        if (!result) return strdup(s);  // fallback
+        memcpy(result, s + 1, len - 2);
+        result[len - 2] = '\0';
+        return result;
+    }
+    return strdup(s);
+}
+
 static void validate_var_name(const char *name, int line) {
     const char invalid[] = "@[](){}";
     for (const char *p = name; *p; p++)
@@ -312,17 +326,29 @@ NodeList parse_block(const char *terminator) {
             continue;
         }
 
-        /* ─── Execute ────────────────────────────────────────────────── */
+        /* ─── execute ────────────────────────────────────────────────── */
+        /* ─── execute ────────────────────────────────────────────────── */
         if (t.type == TOK_EXECUTE) {
             ts_advance();
-            Token path_tok = ts_peek();
-            if (path_tok.type != TOK_STRING_LITERAL && path_tok.type != TOK_IDENT) {
-                error(t.line, "Se esperaba una ruta de script (string o identificador) después de 'execute'");
+            // Parsear la ruta como una expresión (puede ser $variable, concatenación, etc.)
+            ASTNode *path_expr = parse_expression(0);
+            if (!path_expr) {
+                error(t.line, "Se esperaba una ruta de script después de 'execute'");
             }
-            ts_advance();
-            char *path = strdup(path_tok.lexeme);
+            // Recolectar argumentos hasta el final de la línea
+            int argc = 0;
+            char **args = NULL;
+            while (ts_peek().type != TOK_NEWLINE && ts_peek().type != TOK_EOF) {
+                Token tok = ts_advance();
+                // Si es un identificador o string, guardar como argumento (se expandirá después)
+                char *arg = (tok.type == TOK_STRING_LITERAL) ? strip_quotes(tok.lexeme) : strdup(tok.lexeme);
+                args = realloc(args, (argc + 1) * sizeof(char*));
+                args[argc++] = arg;
+            }
             stmt = node_create(NODE_EXECUTE, t.line);
-            stmt->data.execute.path = path;
+            stmt->data.execute.path_expr = path_expr;   // <-- nuevo campo
+            stmt->data.execute.args = args;
+            stmt->data.execute.argc = argc;
             nodelist_add(&block, stmt);
             ts_skip_newlines();
             continue;
@@ -621,7 +647,7 @@ NodeList parse_block(const char *terminator) {
                 value = parse_expression(0);
             }
 
-            stmt = node_create(NODE_ASSIGN, t.line);  // <-- CORREGIDO: usa t.line
+            stmt = node_create(NODE_ASSIGN, t.line);
             stmt->data.assign.name = vname;
             stmt->data.assign.is_cmd = is_cmd;
             stmt->data.assign.cmd_str = cmd_str;
@@ -674,7 +700,7 @@ NodeList parse_block(const char *terminator) {
                 value = parse_expression(0);
             }
 
-            stmt = node_create(NODE_ASSIGN, t.line);  // <-- CORREGIDO: usa t.line
+            stmt = node_create(NODE_ASSIGN, t.line);
             stmt->data.assign.name = vname;
             stmt->data.assign.is_cmd = is_cmd;
             stmt->data.assign.cmd_str = cmd_str;
@@ -719,7 +745,7 @@ NodeList parse_block(const char *terminator) {
                         value = parse_expression(0);
                     }
 
-                    stmt = node_create(NODE_ASSIGN, saved_t.line);  // <-- CORREGIDO
+                    stmt = node_create(NODE_ASSIGN, saved_t.line);
                     stmt->data.assign.name = vname;
                     stmt->data.assign.is_cmd = is_cmd;
                     stmt->data.assign.cmd_str = cmd_str;
@@ -766,7 +792,7 @@ NodeList parse_block(const char *terminator) {
                         value = parse_expression(0);
                     }
 
-                    stmt = node_create(NODE_ASSIGN, saved_t.line);  // <-- CORREGIDO
+                    stmt = node_create(NODE_ASSIGN, saved_t.line);
                     stmt->data.assign.name = vname;
                     stmt->data.assign.is_cmd = is_cmd;
                     stmt->data.assign.cmd_str = cmd_str;

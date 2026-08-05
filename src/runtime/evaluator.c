@@ -1080,33 +1080,79 @@ void exec_block_from(NodeList *block, int start_index) {
             }
             /* ─── EXECUTE ────────────────────────────────────────────────── */
             case NODE_EXECUTE: {
-                // Expandir la ruta (sustituye $variable por su valor)
-                char *expanded_path = expand_command(stmt->data.execute.path);
+                // 1. Evaluar la expresión de la ruta
+                Value path_val = eval_expr(stmt->data.execute.path_expr);
+                if (path_val.type != VAL_STRING) {
+                    error(stmt->line, "La ruta del script debe ser una cadena");
+                }
+                char *raw_path = path_val.data.sval;
+                char *expanded_path = expand_command(raw_path);
+                free(raw_path);
                 if (!expanded_path) {
                     error(stmt->line, "Error al expandir la ruta del script");
                 }
+
+                // 2. Expandir argumentos
+                int expanded_argc = stmt->data.execute.argc;
+                char **expanded_args = NULL;
+                if (expanded_argc > 0) {
+                    expanded_args = malloc(expanded_argc * sizeof(char*));
+                    for (int i = 0; i < expanded_argc; i++) {
+                        expanded_args[i] = expand_command(stmt->data.execute.args[i]);
+                        if (!expanded_args[i]) expanded_args[i] = strdup("");
+                    }
+                }
+
+                // 3. Guardar estado actual
+                int saved_argc = script_argc;
+                char **saved_argv = script_argv;
+                int saved_flags_arg_index = flags_arg_index;
+
+                // 4. Construir nuevo argv (índice 0 = ruta, índice 1.. = argumentos)
+                char **new_argv = malloc((expanded_argc + 2) * sizeof(char*));
+                new_argv[0] = expanded_path;
+                for (int i = 0; i < expanded_argc; i++) {
+                    new_argv[i + 1] = expanded_args[i];
+                }
+                new_argv[expanded_argc + 1] = NULL;
+
+                script_argc = expanded_argc + 1;
+                script_argv = new_argv;
+                flags_arg_index = 1;   /* <-- NUEVO: reiniciar el índice para el script hijo */
+
+                // 5. Abrir y ejecutar el script hijo
                 FILE *fp = fopen(expanded_path, "r");
                 if (!fp) {
                     error(stmt->line, "No se pudo abrir el script '%s'", expanded_path);
                 }
-                // Guardar el token stream actual
+
                 TokenStream saved_ts = ts;
                 ts_init();
                 tokenize_file(fp);
                 fclose(fp);
-                // Parsear el script completo (hasta EOF)
+
                 NodeList script_block = parse_block(NULL);
-                // Restaurar el token stream original
                 ts = saved_ts;
-                // Crear un ámbito hijo para el script (las variables locales no afectan al padre)
+
                 Scope *child_scope = scope_new(current_scope, NULL);
                 Scope *old_scope = current_scope;
                 current_scope = child_scope;
-                // Ejecutar el script hijo
+
                 exec_block(&script_block);
-                // Restaurar el ámbito
+
                 current_scope = old_scope;
+
+                // 6. Restaurar estado original
+                script_argc = saved_argc;
+                script_argv = saved_argv;
+                flags_arg_index = saved_flags_arg_index;   /* <-- NUEVO: restaurar */
+
+                // 7. Liberar memoria
                 free(expanded_path);
+                for (int i = 0; i < expanded_argc; i++) free(expanded_args[i]);
+                free(expanded_args);
+                free(new_argv);
+
                 break;
             }
             case NODE_FLAGS: {

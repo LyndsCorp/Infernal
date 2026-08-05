@@ -34,7 +34,7 @@ typedef enum {
     TOK_AT,
     TOK_LINE,
     TOK_COLON,
-    TOK_EXECUTE          /* <-- NUEVO */
+    TOK_EXECUTE          /* <-- NUEVO: execute /ruta/script.inf [args...] */
 } TokenType;
 
 /* ─── Token ──────────────────────────────────────────────── */
@@ -62,7 +62,7 @@ typedef struct {
     int body_count;
     bool catch_all;
     bool is_empty;
-    bool is_global;
+    bool is_global;      /* si la variable se define en ámbito superglobal */
 } FlagSpec;
 
 /* ─── Value types ────────────────────────────────────────── */
@@ -117,7 +117,7 @@ struct ASTNode {
         NODE_VAR, NODE_LITERAL, NODE_BINOP, NODE_CALL, NODE_INDEX,
         NODE_FLAGS, NODE_LIST, NODE_FOR_IN, NODE_PORTAL,
         NODE_SLICE,
-        NODE_EXECUTE     /* <-- NUEVO */
+        NODE_EXECUTE     /* <-- NUEVO: execute */
     } kind;
     union {
         struct { NodeList stmts; } prog;
@@ -152,7 +152,12 @@ struct ASTNode {
                 int start;
                 int end;
             } slice;
-            struct { char *path; } execute;   /* <-- NUEVO */
+            /* ─── execute ────────────────────────────────────────── */
+            struct {
+                ASTNode *path_expr;   /* expresión que evalúa a la ruta */
+                char **args;
+                int argc;
+            } execute;
     } data;
 };
 
