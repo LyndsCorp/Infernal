@@ -17,7 +17,7 @@
 #include "vm/vm.h"
 
 /* ======================================================================
- *  Ayudantes UTF‑8 (versión mejorada)
+ *  Ayudantes UTF‑8
  * ====================================================================== */
 
 /* cuenta los puntos de código (caracteres) de una cadena UTF‑8 */
@@ -45,13 +45,6 @@ static const char* utf8_prev(const char *str, const char *p) {
     p--;
     while (p > str && (*(unsigned char*)p & 0xC0) == 0x80) p--;
     return p;
-}
-
-/* longitud en bytes de un carácter UTF‑8 */
-static size_t utf8_char_bytes(const char *p) {
-    const char *start = p;
-    utf8_next(p);
-    return (size_t)(p - start);
 }
 
 /* Estructura auxiliar para manejar segmentos de caracteres */
@@ -314,31 +307,34 @@ static Value builtin_replacebytes(int argc, Value *args) {
     return res;
 }
 
-/* ─── reverse (caracteres) ─── */
+/* ─── reverse (caracteres) usando utf8_to_segments ─── */
 static Value builtin_reverse(int argc, Value *args) {
     if (argc != 1) error(0, "reverse() espera exactamente 1 argumento");
     if (args[0].type != VAL_STRING) error(0, "reverse() espera un string.");
 
     const char *src = args[0].data.sval;
-    size_t len_bytes = strlen(src);
-    size_t nchars = utf8_len(src);
-    char *rev = (char*)malloc(len_bytes + 1);
-    if (!rev) error(0, "memoria insuficiente en reverse");
+    int seg_count;
+    CharSegment *segs = utf8_to_segments(src, &seg_count);
+    if (!segs) error(0, "memoria insuficiente en reverse");
 
-    const char *p = src + len_bytes;
-    char *dst = rev;
-    size_t copied = 0;
-    while (nchars--) {
-        p = utf8_prev(src, p);
-        size_t char_bytes = utf8_char_bytes(p);
-        memcpy(dst, p, char_bytes);
-        dst += char_bytes;
-        copied += char_bytes;
+    size_t total_len = 0;
+    for (int i = 0; i < seg_count; i++) {
+        total_len += segs[i].len;
     }
-    rev[copied] = '\0';
+
+    char *rev = malloc(total_len + 1);
+    if (!rev) { free(segs); error(0, "memoria insuficiente en reverse"); }
+
+    char *dst = rev;
+    for (int i = seg_count - 1; i >= 0; i--) {
+        memcpy(dst, segs[i].start, segs[i].len);
+        dst += segs[i].len;
+    }
+    *dst = '\0';
 
     Value res = val_string(rev);
     free(rev);
+    free(segs);
     return res;
 }
 
@@ -367,7 +363,7 @@ static Value builtin_join(int argc, Value *args) {
     if (args[1].type != VAL_STRING) error(0, "join() espera un string como segundo argumento");
 
     int n = args[0].data.list.count;
-    const char *sep = args[1].data.sval ? args[1].data.sval : "";  /* seguridad */
+    const char *sep = args[1].data.sval ? args[1].data.sval : "";
     size_t sep_len = strlen(sep);
 
     size_t total_len = 0;
