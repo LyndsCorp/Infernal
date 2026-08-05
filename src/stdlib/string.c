@@ -40,11 +40,47 @@ static Value builtin_upper(int argc, Value *args) {
 }
 
 /* --------------------------------------------------------------------------
+ *  length(str) : devuelve la cantidad de caracteres de la cadena
+ *  -------------------------------------------------------------------------- */
+static Value builtin_length(int argc, Value *args) {
+    if (argc != 1) error(0, "length() espera exactamente 1 argumento");
+    if (args[0].type != VAL_STRING) error(0, "length() espera un string.");
+    size_t len = strlen(args[0].data.sval);
+    return val_int((int)len);  // asumimos que la longitud cabe en int
+}
+
+/* --------------------------------------------------------------------------
+ *  count(string, str) : cuenta las ocurrencias no solapadas de str en string
+ *  -------------------------------------------------------------------------- */
+static Value builtin_count(int argc, Value *args) {
+    if (argc != 2) error(0, "count() espera exactamente 2 argumentos");
+    if (args[0].type != VAL_STRING) error(0, "count() espera un string como primer argumento");
+    if (args[1].type != VAL_STRING) error(0, "count() espera un string como segundo argumento");
+
+    const char *haystack = args[0].data.sval;
+    const char *needle   = args[1].data.sval;
+    size_t needle_len = strlen(needle);
+
+    if (needle_len == 0) {
+        // cadena vacía: por convención devolvemos 0
+        return val_int(0);
+    }
+
+    int count = 0;
+    const char *p = haystack;
+    while ((p = strstr(p, needle)) != NULL) {
+        count++;
+        p += needle_len;  // avanzamos sin solapamiento
+    }
+    return val_int(count);
+}
+
+/* --------------------------------------------------------------------------
  *  head(str, n)  : devuelve los primeros n caracteres de str
  *  head(str, sub): devuelve true si str comienza con sub
  *  -------------------------------------------------------------------------- */
 static Value builtin_head(int argc, Value *args) {
-    if (argc < 2) error(0, "head requiere dos argumentos");
+    if (argc != 2) error(0, "head requiere dos argumentos");
     if (args[0].type != VAL_STRING) error(0, "head espera un string como primer argumento");
 
     const char *s = args[0].data.sval;
@@ -56,7 +92,7 @@ static Value builtin_head(int argc, Value *args) {
         if (n > len) n = len;
         char *buf = (char*)malloc(n + 1);
         if (!buf) error(0, "memoria insuficiente en head");
-        strncpy(buf, s, n);
+        memcpy(buf, s, n);
         buf[n] = '\0';
         Value res = val_string(buf);
         free(buf);
@@ -79,7 +115,7 @@ static Value builtin_head(int argc, Value *args) {
  *  tail(str, sub): devuelve true si str termina con sub
  *  -------------------------------------------------------------------------- */
 static Value builtin_tail(int argc, Value *args) {
-    if (argc < 2) error(0, "tail requiere dos argumentos");
+    if (argc != 2) error(0, "tail requiere dos argumentos");
     if (args[0].type != VAL_STRING) error(0, "tail espera un string como primer argumento");
 
     const char *s = args[0].data.sval;
@@ -92,7 +128,7 @@ static Value builtin_tail(int argc, Value *args) {
         int start = len - n;
         char *buf = (char*)malloc(n + 1);
         if (!buf) error(0, "memoria insuficiente en tail");
-        strncpy(buf, s + start, n);
+        memcpy(buf, s + start, n);
         buf[n] = '\0';
         Value res = val_string(buf);
         free(buf);
@@ -168,6 +204,8 @@ void register_string_builtins(void) {
     func_register_builtin("tail", builtin_tail);
     func_register_builtin("lower", builtin_lower);
     func_register_builtin("upper", builtin_upper);
+    func_register_builtin("length", builtin_length);
+    func_register_builtin("count", builtin_count);
     func_register_builtin("starts", builtin_starts);
     func_register_builtin("ends", builtin_ends);
     func_register_builtin("has", builtin_has);
@@ -176,6 +214,8 @@ void register_string_builtins(void) {
     vm_register_builtin("tail", builtin_tail);
     vm_register_builtin("lower", builtin_lower);
     vm_register_builtin("upper", builtin_upper);
+    vm_register_builtin("length", builtin_length);
+    vm_register_builtin("count", builtin_count);
     vm_register_builtin("starts", builtin_starts);
     vm_register_builtin("ends", builtin_ends);
     vm_register_builtin("has", builtin_has);
