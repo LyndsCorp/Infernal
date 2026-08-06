@@ -117,6 +117,29 @@ static Value builtin_upper(int argc, Value *args) {
     return res;
 }
 
+static Value builtin_capitalize(int argc, Value *args) {
+    if (argc != 1) error(0, "capitalize() espera exactamente 1 argumento");
+    if (args[0].type != VAL_STRING) error(0, "capitalize() espera un string.");
+
+    const char *s = args[0].data.sval;
+    if (!s || *s == '\0') return val_string("");
+
+    char *result = strdup(s);
+    if (!result) error(0, "memoria insuficiente en capitalize");
+
+    // Convertir la primera letra a mayúscula (ASCII)
+    result[0] = toupper((unsigned char)result[0]);
+
+    // Convertir el resto a minúsculas
+    for (char *p = result + 1; *p; p++) {
+        *p = tolower((unsigned char)*p);
+    }
+
+    Value res = val_string(result);
+    free(result);
+    return res;
+}
+
 static Value builtin_countbytes(int argc, Value *args) {
     if (argc != 1) error(0, "countbytes() espera exactamente 1 argumento");
     if (args[0].type != VAL_STRING) error(0, "countbytes() espera un string.");
@@ -631,6 +654,7 @@ void register_string_builtins(void) {
     func_register_builtin("starts", builtin_starts);
     func_register_builtin("ends", builtin_ends);
     func_register_builtin("has", builtin_has);
+    func_register_builtin("capitalize", builtin_capitalize);
 
     vm_register_builtin("head", builtin_head);
     vm_register_builtin("headbytes", builtin_headbytes);
@@ -652,4 +676,5 @@ void register_string_builtins(void) {
     vm_register_builtin("starts", builtin_starts);
     vm_register_builtin("ends", builtin_ends);
     vm_register_builtin("has", builtin_has);
+    vm_register_builtin("capitalize", builtin_capitalize);
 }
