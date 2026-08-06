@@ -452,8 +452,10 @@ Value eval_expr(ASTNode *expr) {
             if (*name == '\0')
                 error(expr->line, "Nombre de variable vacío");
             VarEntry *e = scope_find(current_scope, name);
-            if (!e)
-                error(expr->line, "Variable no definida: %s", name);
+            if (!e) {
+                // Variable no definida → se trata como false en contexto booleano
+                return val_make_null();
+            }
             return copy_value_secure(e->value);
         }
         case NODE_LIST: {
