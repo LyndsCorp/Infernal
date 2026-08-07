@@ -10,8 +10,8 @@
 typedef struct {
     const char *name;
     const unsigned char *data;
-    size_t *size_ptr;
-    int compressed;   // 1 = gzip comprimido, 0 = datos crudos
+    unsigned int *size_ptr;
+    int compressed;
 } EmbeddedModule;
 
 extern EmbeddedModule embedded_modules[];
