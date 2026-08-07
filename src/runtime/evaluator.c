@@ -449,13 +449,20 @@ Value eval_expr(ASTNode *expr) {
         case NODE_VAR: {
             const char *name = expr->data.var.name;
             if (name[0] == '$' || name[0] == '?') name++;
-            if (*name == '\0')
-                error(expr->line, "Nombre de variable vacío");
-            VarEntry *e = scope_find(current_scope, name);
-            if (!e) {
-                // Variable no definida → se trata como false en contexto booleano
-                return val_make_null();
+            // Si el nombre contiene '/' y no existe, error con sugerencia
+            if (strchr(name, '/') != NULL) {
+                VarEntry *e = scope_find(current_scope, name);
+                if (!e) {
+                    error(expr->line,
+                          "La variable '%s' no existe. Si intentabas concatenar una variable con una cadena, "
+                          "usa el operador '+', por ejemplo: $%s + '/ruta' (el literal va entre comillas). "
+                          "La barra '/' directa solo es válida en comandos shell, no en nombres de variable.",
+                          name, name);
+                }
             }
+            VarEntry *e = scope_find(current_scope, name);
+            if (!e)
+                error(expr->line, "Variable no definida: %s", name);
             return copy_value_secure(e->value);
         }
         case NODE_LIST: {
@@ -1084,6 +1091,16 @@ void exec_block_from(NodeList *block, int start_index) {
             case NODE_EXECUTE: {
                 // 1. Evaluar la expresión de la ruta
                 Value path_val = eval_expr(stmt->data.execute.path_expr);
+                // Detectar si es un NODE_VAR con barra para dar mensaje específico
+                if (stmt->data.execute.path_expr && stmt->data.execute.path_expr->kind == NODE_VAR) {
+                    const char *var_name = stmt->data.execute.path_expr->data.var.name;
+                    if (strchr(var_name, '/') != NULL) {
+                        error(stmt->line,
+                              "Uso incorrecto de variable con barra: '%s'. Si intentabas concatenar, usa '+': "
+                              "$%s + '/resto'. La barra '/' directa solo es válida en comandos shell, no en execute.",
+                              var_name, var_name);
+                    }
+                }
                 if (path_val.type != VAL_STRING) {
                     error(stmt->line, "La ruta del script debe ser una cadena");
                 }
@@ -1110,7 +1127,7 @@ void exec_block_from(NodeList *block, int start_index) {
                 char **saved_argv = script_argv;
                 int saved_flags_arg_index = flags_arg_index;
 
-                // 4. Construir nuevo argv (índice 0 = ruta, índice 1.. = argumentos)
+                // 4. Construir nuevo argv
                 char **new_argv = malloc((expanded_argc + 2) * sizeof(char*));
                 new_argv[0] = expanded_path;
                 for (int i = 0; i < expanded_argc; i++) {
@@ -1120,7 +1137,7 @@ void exec_block_from(NodeList *block, int start_index) {
 
                 script_argc = expanded_argc + 1;
                 script_argv = new_argv;
-                flags_arg_index = 1;   /* <-- NUEVO: reiniciar el índice para el script hijo */
+                flags_arg_index = 1;
 
                 // 5. Abrir y ejecutar el script hijo
                 FILE *fp = fopen(expanded_path, "r");
@@ -1147,7 +1164,7 @@ void exec_block_from(NodeList *block, int start_index) {
                 // 6. Restaurar estado original
                 script_argc = saved_argc;
                 script_argv = saved_argv;
-                flags_arg_index = saved_flags_arg_index;   /* <-- NUEVO: restaurar */
+                flags_arg_index = saved_flags_arg_index;
 
                 // 7. Liberar memoria
                 free(expanded_path);
