@@ -449,20 +449,28 @@ Value eval_expr(ASTNode *expr) {
         case NODE_VAR: {
             const char *name = expr->data.var.name;
             if (name[0] == '$' || name[0] == '?') name++;
-            // Si el nombre contiene '/' y no existe, error con sugerencia
+            if (*name == '\0')
+                error(expr->line, "Nombre de variable vacío");
+
+            // Si el nombre contiene '/', forzar error si no existe (para detectar concatenación incorrecta)
             if (strchr(name, '/') != NULL) {
                 VarEntry *e = scope_find(current_scope, name);
                 if (!e) {
                     error(expr->line,
                           "La variable '%s' no existe. Si intentabas concatenar una variable con una cadena, "
-                          "usa el operador '+', por ejemplo: $%s + '/ruta' (el literal va entre comillas). "
-                          "La barra '/' directa solo es válida en comandos shell, no en nombres de variable.",
+                          "usa el operador '+', por ejemplo: $%s + '/ruta'. La barra '/' directa solo es válida "
+                          "en comandos shell, no en nombres de variable.",
                           name, name);
                 }
+                return copy_value_secure(e->value);
             }
+
+            // Para variables normales (sin '/'), comportamiento tolerante
             VarEntry *e = scope_find(current_scope, name);
-            if (!e)
-                error(expr->line, "Variable no definida: %s", name);
+            if (!e) {
+                // Variable no definida → se trata como false en contexto booleano
+                return val_make_null();
+            }
             return copy_value_secure(e->value);
         }
         case NODE_LIST: {
