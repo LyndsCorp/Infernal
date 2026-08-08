@@ -9,6 +9,7 @@
 #include "system.h"
 #include "string.h"
 
+//AQUI SE AÑADEN LOS STDLIB
 void register_all_builtins(void) {
     register_output_builtins();
     register_io_builtins();
