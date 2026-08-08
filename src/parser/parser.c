@@ -34,6 +34,21 @@ static char *strip_quotes(const char *s) {
     return strdup(s);
 }
 
+/* ─── Función auxiliar para extraer el comando literal desde la línea ── */
+static char *extract_literal_command(int line) {
+    char *raw = extract_command_string(line);
+    if (!raw) return strdup("");
+
+    // Reemplazar "??" por "$$" (solicitado por el usuario)
+    char *p = raw;
+    while ((p = strstr(p, "??")) != NULL) {
+        p[0] = '$';
+        p[1] = '$';
+        p += 2;
+    }
+    return raw;
+}
+
 static void validate_var_name(const char *name, int line) {
     const char invalid[] = "@[](){}";
     for (const char *p = name; *p; p++)
@@ -327,26 +342,22 @@ NodeList parse_block(const char *terminator) {
         }
 
         /* ─── execute ────────────────────────────────────────────────── */
-        /* ─── execute ────────────────────────────────────────────────── */
         if (t.type == TOK_EXECUTE) {
             ts_advance();
-            // Parsear la ruta como una expresión (puede ser $variable, concatenación, etc.)
             ASTNode *path_expr = parse_expression(0);
             if (!path_expr) {
                 error(t.line, "Se esperaba una ruta de script después de 'execute'");
             }
-            // Recolectar argumentos hasta el final de la línea
             int argc = 0;
             char **args = NULL;
             while (ts_peek().type != TOK_NEWLINE && ts_peek().type != TOK_EOF) {
                 Token tok = ts_advance();
-                // Si es un identificador o string, guardar como argumento (se expandirá después)
                 char *arg = (tok.type == TOK_STRING_LITERAL) ? strip_quotes(tok.lexeme) : strdup(tok.lexeme);
                 args = realloc(args, (argc + 1) * sizeof(char*));
                 args[argc++] = arg;
             }
             stmt = node_create(NODE_EXECUTE, t.line);
-            stmt->data.execute.path_expr = path_expr;   // <-- nuevo campo
+            stmt->data.execute.path_expr = path_expr;
             stmt->data.execute.args = args;
             stmt->data.execute.argc = argc;
             nodelist_add(&block, stmt);
@@ -637,11 +648,10 @@ NodeList parse_block(const char *terminator) {
                     value = parse_expression(0);
                 } else {
                     is_cmd = true;
-                    int start_pos = ts.pos;
+                    cmd_str = extract_literal_command(t.line);
                     while (ts_peek().type != TOK_NEWLINE && ts_peek().type != TOK_EOF) {
                         ts_advance();
                     }
-                    cmd_str = build_command_from_tokens(start_pos, ts.pos);
                 }
             } else {
                 value = parse_expression(0);
@@ -690,11 +700,10 @@ NodeList parse_block(const char *terminator) {
                     value = parse_expression(0);
                 } else {
                     is_cmd = true;
-                    int start_pos = ts.pos;
+                    cmd_str = extract_literal_command(t.line);
                     while (ts_peek().type != TOK_NEWLINE && ts_peek().type != TOK_EOF) {
                         ts_advance();
                     }
-                    cmd_str = build_command_from_tokens(start_pos, ts.pos);
                 }
             } else {
                 value = parse_expression(0);
@@ -735,11 +744,10 @@ NodeList parse_block(const char *terminator) {
                             value = parse_expression(0);
                         } else {
                             is_cmd = true;
-                            int start_pos = ts.pos;
+                            cmd_str = extract_literal_command(saved_t.line);
                             while (ts_peek().type != TOK_NEWLINE && ts_peek().type != TOK_EOF) {
                                 ts_advance();
                             }
-                            cmd_str = build_command_from_tokens(start_pos, ts.pos);
                         }
                     } else {
                         value = parse_expression(0);
@@ -782,11 +790,10 @@ NodeList parse_block(const char *terminator) {
                             value = parse_expression(0);
                         } else {
                             is_cmd = true;
-                            int start_pos = ts.pos;
+                            cmd_str = extract_literal_command(saved_t.line);
                             while (ts_peek().type != TOK_NEWLINE && ts_peek().type != TOK_EOF) {
                                 ts_advance();
                             }
-                            cmd_str = build_command_from_tokens(start_pos, ts.pos);
                         }
                     } else {
                         value = parse_expression(0);
