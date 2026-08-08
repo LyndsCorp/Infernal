@@ -2,7 +2,7 @@
  * Infernal: el lenguaje de programación.
  * Copyright (C) 2026, Lynds Corp., David Baña Szymaniak, GPL v3+ License.
  * Código fuente de Infernal: vm/compiler.c
-*/
+ */
 
 #include <stdlib.h>
 #include <string.h>
@@ -185,14 +185,12 @@ static void compile_expr(Compiler *c, ASTNode *expr) {
             break;
                 case NODE_VAR: {
                     const char *name = expr->data.var.name;
-                    // Si empieza con '$', forzar evaluación en el intérprete (para que el evaluador maneje la copia)
                     if (name[0] == '$') {
                         int const_idx = add_constant(c, val_ptr(expr));
                         emit(c->chunk, OP_INTERPRET_NODE, const_idx);
-                        c->chunk->code[c->chunk->code_count - 1].operand2 = 1; // modo expresión
+                        c->chunk->code[c->chunk->code_count - 1].operand2 = 1;
                         break;
                     }
-                    // Para '?' o sin prefijo, comportamiento normal
                     const char *clean_name = (name[0] == '?') ? name + 1 : name;
                     int gidx = vm_find_global_index(clean_name);
                     if (gidx >= 0) {
@@ -204,7 +202,6 @@ static void compile_expr(Compiler *c, ASTNode *expr) {
                         emit(c->chunk, OP_LOAD_VAR, slot);
                         break;
                     }
-                    // Fallback: interpretar el nodo en tiempo de ejecución
                     int const_idx = add_constant(c, val_ptr(expr));
                     emit(c->chunk, OP_INTERPRET_NODE, const_idx);
                     c->chunk->code[c->chunk->code_count - 1].operand2 = 1;
@@ -356,17 +353,20 @@ static void compile_stmt(Compiler *c, ASTNode *stmt) {
                     emit(c->chunk, OP_STORE_VAR, slot);
                 }
             } else {
-                int gidx = vm_find_global_index(name);
-                if (gidx < 0) {
-                    gidx = vm_register_global(name, GLOBAL_SCRIPT, vtype);
-                } else if (vtype != 0) {
-                    vm_global_types[gidx] = vtype;
-                }
+                // Variable global (ámbito del script)
+                // IMPORTANTE: Para comandos, NO registrar en vm_globals en tiempo de compilación.
+                // La variable se registrará en tiempo de ejecución dentro de OP_INTERPRET_NODE.
                 if (stmt->data.assign.is_cmd) {
                     int const_node = add_constant(c, val_ptr(stmt));
                     emit(c->chunk, OP_INTERPRET_NODE, const_node);
                     c->chunk->code[c->chunk->code_count - 1].operand2 = 0;
                 } else {
+                    int gidx = vm_find_global_index(name);
+                    if (gidx < 0) {
+                        gidx = vm_register_global(name, GLOBAL_SCRIPT, vtype);
+                    } else if (vtype != 0) {
+                        vm_global_types[gidx] = vtype;
+                    }
                     compile_expr(c, stmt->data.assign.value);
                     emit(c->chunk, OP_STORE_GLOBAL, gidx);
                     c->chunk->code[c->chunk->code_count - 1].operand2 = GLOBAL_SCRIPT;

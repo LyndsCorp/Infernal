@@ -39,7 +39,6 @@ static char *extract_literal_command(int line) {
     char *raw = extract_command_string(line);
     if (!raw) return strdup("");
 
-    // Reemplazar "??" por "$$" (solicitado por el usuario)
     char *p = raw;
     while ((p = strstr(p, "??")) != NULL) {
         p[0] = '$';
@@ -639,16 +638,24 @@ NodeList parse_block(const char *terminator) {
             bool is_cmd = false;
             char *cmd_str = NULL;
 
-            // Detectar si el lado derecho es un comando o una expresión
             Token next_token = ts_peek();
-            if (next_token.type == TOK_IDENT) {
-                // Mirar el token siguiente al identificador
+
+            // Detección mejorada: si el token después de '=' es un identificador simple (no $ ni ?)
+            if (next_token.type == TOK_IDENT && next_token.lexeme[0] != '$' && next_token.lexeme[0] != '?') {
                 int next_pos = ts.pos + 1;
-                if (next_pos < ts.count && (ts.tokens[next_pos].type == TOK_LPAREN || ts.tokens[next_pos].type == TOK_LBRACKET)) {
-                    // Es una expresión (llamada a función o acceso a índice)
-                    value = parse_expression(0);
+                if (next_pos < ts.count) {
+                    Token next_next = ts.tokens[next_pos];
+                    if (next_next.type == TOK_LPAREN || next_next.type == TOK_LBRACKET) {
+                        value = parse_expression(0);
+                    } else {
+                        is_cmd = true;
+                        cmd_str = extract_literal_command(t.line);
+                        while (ts_peek().type != TOK_NEWLINE && ts_peek().type != TOK_EOF) {
+                            ts_advance();
+                        }
+                        value = NULL;
+                    }
                 } else {
-                    // Es un comando (identificador seguido de otros tokens sin paréntesis)
                     is_cmd = true;
                     cmd_str = extract_literal_command(t.line);
                     while (ts_peek().type != TOK_NEWLINE && ts_peek().type != TOK_EOF) {
@@ -657,7 +664,6 @@ NodeList parse_block(const char *terminator) {
                     value = NULL;
                 }
             } else {
-                // No empieza con identificador → es una expresión (literal, paréntesis, etc.)
                 value = parse_expression(0);
             }
 
@@ -696,10 +702,21 @@ NodeList parse_block(const char *terminator) {
             char *cmd_str = NULL;
 
             Token next_token = ts_peek();
-            if (next_token.type == TOK_IDENT) {
+
+            if (next_token.type == TOK_IDENT && next_token.lexeme[0] != '$' && next_token.lexeme[0] != '?') {
                 int next_pos = ts.pos + 1;
-                if (next_pos < ts.count && (ts.tokens[next_pos].type == TOK_LPAREN || ts.tokens[next_pos].type == TOK_LBRACKET)) {
-                    value = parse_expression(0);
+                if (next_pos < ts.count) {
+                    Token next_next = ts.tokens[next_pos];
+                    if (next_next.type == TOK_LPAREN || next_next.type == TOK_LBRACKET) {
+                        value = parse_expression(0);
+                    } else {
+                        is_cmd = true;
+                        cmd_str = extract_literal_command(t.line);
+                        while (ts_peek().type != TOK_NEWLINE && ts_peek().type != TOK_EOF) {
+                            ts_advance();
+                        }
+                        value = NULL;
+                    }
                 } else {
                     is_cmd = true;
                     cmd_str = extract_literal_command(t.line);
@@ -738,10 +755,21 @@ NodeList parse_block(const char *terminator) {
                     char *cmd_str = NULL;
 
                     Token next_token = ts_peek();
-                    if (next_token.type == TOK_IDENT) {
+
+                    if (next_token.type == TOK_IDENT && next_token.lexeme[0] != '$' && next_token.lexeme[0] != '?') {
                         int next_pos = ts.pos + 1;
-                        if (next_pos < ts.count && (ts.tokens[next_pos].type == TOK_LPAREN || ts.tokens[next_pos].type == TOK_LBRACKET)) {
-                            value = parse_expression(0);
+                        if (next_pos < ts.count) {
+                            Token next_next = ts.tokens[next_pos];
+                            if (next_next.type == TOK_LPAREN || next_next.type == TOK_LBRACKET) {
+                                value = parse_expression(0);
+                            } else {
+                                is_cmd = true;
+                                cmd_str = extract_literal_command(saved_t.line);
+                                while (ts_peek().type != TOK_NEWLINE && ts_peek().type != TOK_EOF) {
+                                    ts_advance();
+                                }
+                                value = NULL;
+                            }
                         } else {
                             is_cmd = true;
                             cmd_str = extract_literal_command(saved_t.line);
@@ -782,10 +810,21 @@ NodeList parse_block(const char *terminator) {
                     char *cmd_str = NULL;
 
                     Token next_token = ts_peek();
-                    if (next_token.type == TOK_IDENT) {
+
+                    if (next_token.type == TOK_IDENT && next_token.lexeme[0] != '$' && next_token.lexeme[0] != '?') {
                         int next_pos = ts.pos + 1;
-                        if (next_pos < ts.count && (ts.tokens[next_pos].type == TOK_LPAREN || ts.tokens[next_pos].type == TOK_LBRACKET)) {
-                            value = parse_expression(0);
+                        if (next_pos < ts.count) {
+                            Token next_next = ts.tokens[next_pos];
+                            if (next_next.type == TOK_LPAREN || next_next.type == TOK_LBRACKET) {
+                                value = parse_expression(0);
+                            } else {
+                                is_cmd = true;
+                                cmd_str = extract_literal_command(saved_t.line);
+                                while (ts_peek().type != TOK_NEWLINE && ts_peek().type != TOK_EOF) {
+                                    ts_advance();
+                                }
+                                value = NULL;
+                            }
                         } else {
                             is_cmd = true;
                             cmd_str = extract_literal_command(saved_t.line);

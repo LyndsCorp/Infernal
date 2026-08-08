@@ -2,7 +2,7 @@
  * Infernal: el lenguaje de programación.
  * Copyright (C) 2026, Lynds Corp., David Baña Szymaniak, GPL v3+ License.
  * Código fuente de Infernal: vm/vm.c
-*/
+ */
 
 #include "vm.h"
 #include "core/value.h"
@@ -183,6 +183,7 @@ static Value vm_convert_value(Value v, int target_tok_type) {
 #endif
 
 extern Scope *global_scope;
+extern Scope *super_global_scope;
 
 /* ─── Ejecución de bytecode ────────────────────────────────────── */
 Value vm_run(Chunk *chunk) {
@@ -242,14 +243,12 @@ Value vm_run(Chunk *chunk) {
                 int slot = ip->operand;
                 if (slot < chunk->local_count && chunk->local_types[slot] != 0) {
                     int target_type = chunk->local_types[slot];
-                    // Si el target es string y el valor es lista, convertir
                     if (target_type == TOK_STRING && val.type == VAL_LIST) {
                         if (!try_convert_value(&val, TOK_STRING)) {
                             error(0, "No se pudo convertir lista a string en asignación a local '%s'",
                                   chunk->local_names[slot] ? chunk->local_names[slot] : "?");
                         }
                     } else {
-                        // Conversión general para otros tipos
                         val = vm_convert_value(val, target_type);
                     }
                 }
@@ -274,7 +273,6 @@ Value vm_run(Chunk *chunk) {
                     if (v.type == VAL_NULL) {
                         error(0, "Variable global no definida: %s", vm_global_names[ip->operand]);
                     }
-                    // ─── Copia profunda para evitar punteros colgantes ──
                     push(copy_value_secure(v));
                 } else {
                     error(0, "Acceso a global inválido");
@@ -299,7 +297,6 @@ Value vm_run(Chunk *chunk) {
                             val = vm_convert_value(val, target_type);
                         }
                     }
-                    // Ahora copia segura y almacena
                     vm_globals[idx] = copy_value_secure(val);
                     const char *gname = vm_global_entries[idx].name;
                     if (gname) {
@@ -666,22 +663,22 @@ Value vm_run(Chunk *chunk) {
                     }
                 }
 
-                // Sincronizar super_global_scope con vm_globals
-                for (VarEntry *var = super_global_scope->vars; var; var = var->next) {
+                // Sincronizar global_scope completo con vm_globals (para variables definidas directamente)
+                for (VarEntry *var = global_scope->vars; var; var = var->next) {
                     int gidx = vm_find_global_index(var->name);
                     if (gidx < 0) {
-                        gidx = vm_register_global(var->name, GLOBAL_SUPER, var->vtype);
+                        gidx = vm_register_global(var->name, GLOBAL_SCRIPT, var->vtype);
                     }
                     if (gidx >= 0) {
                         vm_globals[gidx] = copy_value_secure(var->value);
                     }
                 }
 
-                // También sincronizar global_scope con vm_globals (por si acaso)
-                for (VarEntry *var = global_scope->vars; var; var = var->next) {
+                // Sincronizar super_global_scope con vm_globals
+                for (VarEntry *var = super_global_scope->vars; var; var = var->next) {
                     int gidx = vm_find_global_index(var->name);
                     if (gidx < 0) {
-                        gidx = vm_register_global(var->name, GLOBAL_SCRIPT, var->vtype);
+                        gidx = vm_register_global(var->name, GLOBAL_SUPER, var->vtype);
                     }
                     if (gidx >= 0) {
                         vm_globals[gidx] = copy_value_secure(var->value);
