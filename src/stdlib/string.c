@@ -477,6 +477,82 @@ static Value builtin_ltrim(int argc, Value *args) {
     return res;
 }
 
+/* ─── trimcenter (normaliza solo espacios internos, respeta bordes) ─── */
+static Value builtin_trimcenter(int argc, Value *args) {
+    if (argc != 1) error(0, "trimcenter() espera exactamente 1 argumento");
+    if (args[0].type != VAL_STRING) error(0, "trimcenter() espera un string.");
+
+    const char *src = args[0].data.sval;
+    size_t len = strlen(src);
+
+    // Localizar el primer y último carácter no blanco
+    const char *first = NULL;
+    const char *last  = NULL;
+    for (const char *p = src; *p; ++p) {
+        if (!isspace((unsigned char)*p)) {
+            if (!first) first = p;
+            last = p;
+        }
+    }
+
+    // Si no hay ningún carácter no blanco, devolver la cadena original
+    if (!first) {
+        return val_string(src);
+    }
+
+    // Longitudes de los bordes que se conservan intactos
+    size_t leading_len  = first - src;
+    size_t trailing_len = (src + len) - (last + 1);
+
+    // Calcular longitud de la parte interior colapsada
+    size_t interior_len = 0;
+    bool in_space = false;
+    for (const char *p = first; p <= last; ++p) {
+        if (isspace((unsigned char)*p)) {
+            if (!in_space) {
+                interior_len++;
+                in_space = true;
+            }
+        } else {
+            interior_len++;
+            in_space = false;
+        }
+    }
+
+    size_t total_len = leading_len + interior_len + trailing_len;
+    char *result = malloc(total_len + 1);
+    if (!result) error(0, "memoria insuficiente en trimcenter");
+
+    char *dst = result;
+
+    // 1. Copiar espacios iniciales
+    memcpy(dst, src, leading_len);
+    dst += leading_len;
+
+    // 2. Copiar interior colapsando espacios
+    in_space = false;
+    for (const char *p = first; p <= last; ++p) {
+        if (isspace((unsigned char)*p)) {
+            if (!in_space) {
+                *dst++ = ' ';
+                in_space = true;
+            }
+        } else {
+            *dst++ = *p;
+            in_space = false;
+        }
+    }
+
+    // 3. Copiar espacios finales
+    memcpy(dst, last + 1, trailing_len);
+    dst += trailing_len;
+    *dst = '\0';
+
+    Value res = val_string(result);
+    free(result);
+    return res;
+}
+
 /* ─── head ─── */
 static Value builtin_head(int argc, Value *args) {
     if (argc != 2) error(0, "head requiere dos argumentos");
@@ -651,6 +727,7 @@ void register_string_builtins(void) {
     func_register_builtin("trim", builtin_trim);
     func_register_builtin("rtrim", builtin_rtrim);
     func_register_builtin("ltrim", builtin_ltrim);
+    func_register_builtin("trimcenter", builtin_trimcenter);
     func_register_builtin("starts", builtin_starts);
     func_register_builtin("ends", builtin_ends);
     func_register_builtin("has", builtin_has);
@@ -673,6 +750,7 @@ void register_string_builtins(void) {
     vm_register_builtin("trim", builtin_trim);
     vm_register_builtin("rtrim", builtin_rtrim);
     vm_register_builtin("ltrim", builtin_ltrim);
+    vm_register_builtin("trimcenter", builtin_trimcenter);
     vm_register_builtin("starts", builtin_starts);
     vm_register_builtin("ends", builtin_ends);
     vm_register_builtin("has", builtin_has);

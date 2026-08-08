@@ -1,7 +1,7 @@
 /*
  * Infernal: el lenguaje de programación. Copyright (C) 2026, GPL v3+ License.
  * Código fuente de Infernal: stdlib/builtins.c
- */
+*/
 
 #include "builtins.h"
 #include "output.h"
