@@ -1,7 +1,7 @@
 /*
  * Infernal: el lenguaje de programación. Copyright (C) 2026, GPL v3+ License, Lynds Corp., Aros Legendarios, David Baña Szymaniak.
  * Código fuente de Infernal: parser/parser.c
-*/
+ */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -26,7 +26,7 @@ static char *strip_quotes(const char *s) {
     size_t len = strlen(s);
     if (len >= 2 && (s[0] == '"' || s[0] == '\'') && s[0] == s[len - 1]) {
         char *result = malloc(len - 1);
-        if (!result) return strdup(s);  // fallback
+        if (!result) return strdup(s);
         memcpy(result, s + 1, len - 2);
         result[len - 2] = '\0';
         return result;
@@ -34,7 +34,7 @@ static char *strip_quotes(const char *s) {
     return strdup(s);
 }
 
-/* ─── Función auxiliar para extraer el comando literal desde la línea ── */
+/* ─── Extraer el comando literal desde la línea, reemplazando ?? por $$ ── */
 static char *extract_literal_command(int line) {
     char *raw = extract_command_string(line);
     if (!raw) return strdup("");
@@ -639,21 +639,25 @@ NodeList parse_block(const char *terminator) {
             bool is_cmd = false;
             char *cmd_str = NULL;
 
+            // Detectar si el lado derecho es un comando o una expresión
             Token next_token = ts_peek();
-            if (next_token.type == TOK_IDENT && (next_token.lexeme[0] == '$' || next_token.lexeme[0] == '?')) {
-                value = parse_expression(0);
-            } else if (next_token.type == TOK_IDENT) {
+            if (next_token.type == TOK_IDENT) {
+                // Mirar el token siguiente al identificador
                 int next_pos = ts.pos + 1;
-                if (next_pos < ts.count && (ts.tokens[next_pos].type == TOK_LBRACKET || ts.tokens[next_pos].type == TOK_LPAREN)) {
+                if (next_pos < ts.count && (ts.tokens[next_pos].type == TOK_LPAREN || ts.tokens[next_pos].type == TOK_LBRACKET)) {
+                    // Es una expresión (llamada a función o acceso a índice)
                     value = parse_expression(0);
                 } else {
+                    // Es un comando (identificador seguido de otros tokens sin paréntesis)
                     is_cmd = true;
                     cmd_str = extract_literal_command(t.line);
                     while (ts_peek().type != TOK_NEWLINE && ts_peek().type != TOK_EOF) {
                         ts_advance();
                     }
+                    value = NULL;
                 }
             } else {
+                // No empieza con identificador → es una expresión (literal, paréntesis, etc.)
                 value = parse_expression(0);
             }
 
@@ -692,11 +696,9 @@ NodeList parse_block(const char *terminator) {
             char *cmd_str = NULL;
 
             Token next_token = ts_peek();
-            if (next_token.type == TOK_IDENT && (next_token.lexeme[0] == '$' || next_token.lexeme[0] == '?')) {
-                value = parse_expression(0);
-            } else if (next_token.type == TOK_IDENT) {
+            if (next_token.type == TOK_IDENT) {
                 int next_pos = ts.pos + 1;
-                if (next_pos < ts.count && (ts.tokens[next_pos].type == TOK_LBRACKET || ts.tokens[next_pos].type == TOK_LPAREN)) {
+                if (next_pos < ts.count && (ts.tokens[next_pos].type == TOK_LPAREN || ts.tokens[next_pos].type == TOK_LBRACKET)) {
                     value = parse_expression(0);
                 } else {
                     is_cmd = true;
@@ -704,6 +706,7 @@ NodeList parse_block(const char *terminator) {
                     while (ts_peek().type != TOK_NEWLINE && ts_peek().type != TOK_EOF) {
                         ts_advance();
                     }
+                    value = NULL;
                 }
             } else {
                 value = parse_expression(0);
@@ -721,12 +724,11 @@ NodeList parse_block(const char *terminator) {
 
             } else if (t.type == TOK_IDENT) {
                 Token saved_t = t;
-                ts_advance(); // consume identificador
+                ts_advance();
 
                 Token next_tok = ts_peek();
 
                 if (next_tok.type == TOK_EQ) {
-                    // ASIGNACIÓN SIMPLE
                     ts_advance(); // consumir '='
                     char *vname = strdup(saved_t.lexeme);
                     validate_var_name(vname, saved_t.line);
@@ -736,11 +738,9 @@ NodeList parse_block(const char *terminator) {
                     char *cmd_str = NULL;
 
                     Token next_token = ts_peek();
-                    if (next_token.type == TOK_IDENT && (next_token.lexeme[0] == '$' || next_token.lexeme[0] == '?')) {
-                        value = parse_expression(0);
-                    } else if (next_token.type == TOK_IDENT) {
+                    if (next_token.type == TOK_IDENT) {
                         int next_pos = ts.pos + 1;
-                        if (next_pos < ts.count && (ts.tokens[next_pos].type == TOK_LBRACKET || ts.tokens[next_pos].type == TOK_LPAREN)) {
+                        if (next_pos < ts.count && (ts.tokens[next_pos].type == TOK_LPAREN || ts.tokens[next_pos].type == TOK_LBRACKET)) {
                             value = parse_expression(0);
                         } else {
                             is_cmd = true;
@@ -748,6 +748,7 @@ NodeList parse_block(const char *terminator) {
                             while (ts_peek().type != TOK_NEWLINE && ts_peek().type != TOK_EOF) {
                                 ts_advance();
                             }
+                            value = NULL;
                         }
                     } else {
                         value = parse_expression(0);
@@ -764,8 +765,7 @@ NodeList parse_block(const char *terminator) {
                     stmt->data.assign.lhs_index = NULL;
 
                 } else if (next_tok.type == TOK_LBRACKET) {
-                    // ASIGNACIÓN CON ÍNDICE
-                    Token lb = ts_advance(); // consumir '['
+                    Token lb = ts_advance();
                     ASTNode *lhs_index = parse_index_or_slice(lb.line);
                     if (lhs_index->kind == NODE_SLICE) {
                         error(lb.line, "No se puede asignar a un slice");
@@ -782,11 +782,9 @@ NodeList parse_block(const char *terminator) {
                     char *cmd_str = NULL;
 
                     Token next_token = ts_peek();
-                    if (next_token.type == TOK_IDENT && (next_token.lexeme[0] == '$' || next_token.lexeme[0] == '?')) {
-                        value = parse_expression(0);
-                    } else if (next_token.type == TOK_IDENT) {
+                    if (next_token.type == TOK_IDENT) {
                         int next_pos = ts.pos + 1;
-                        if (next_pos < ts.count && (ts.tokens[next_pos].type == TOK_LBRACKET || ts.tokens[next_pos].type == TOK_LPAREN)) {
+                        if (next_pos < ts.count && (ts.tokens[next_pos].type == TOK_LPAREN || ts.tokens[next_pos].type == TOK_LBRACKET)) {
                             value = parse_expression(0);
                         } else {
                             is_cmd = true;
@@ -794,6 +792,7 @@ NodeList parse_block(const char *terminator) {
                             while (ts_peek().type != TOK_NEWLINE && ts_peek().type != TOK_EOF) {
                                 ts_advance();
                             }
+                            value = NULL;
                         }
                     } else {
                         value = parse_expression(0);

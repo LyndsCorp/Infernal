@@ -1,8 +1,10 @@
-#!/bin/infernal
+#!../infernal
 
 # Configuración
 color_resultados = color("blue")
 #-------------
+
+NoEsLynds = false
 
 kernel = uname
 kernel_version = uname -r
@@ -16,10 +18,22 @@ user_id = id -u
 tiempo_encendido = uptime -p
 fecha = date
 
-infernal_shell = ps -p ?? -o comm= # NO VA, DEBERÍA DE TRADUCIR LOS 2 "??" LITERALMENTE EN "$$".
+infernal_shell = ps -p ?? -o comm=
 shell = basename ?SHELL
 
-distro_name = grep ^NAME= /etc/os-release | cut -d '"' -f 2 # NO VA PORQUE TIENE COMILLAS ASÍ.
+distro_name = grep ^NAME= /etc/os-release | cut -d '"' -f 2
+try
+    distro_lynds_version = grep '^LYNDS_VERSION_FULL=' /etc/os-release | cut -d '=' -f 2 | awk '{print $1}'
+    distro_lynds_codename = grep '^LYNDS_CODENAME=' /etc/os-release | cut -d '=' -f 2 | awk '{print $1}'
+catch
+    NoEsLynds = true
+fi #linea 30
+distro_based_raw = grep '^ID_LIKE=' /etc/os-release | cut -d '=' -f 2 | awk '{print $1}'
+distro_based = capitalize(distro_based_raw)
+distro_compatible_raw = grep '^VERSION_CODENAME=' /etc/os-release | cut -d '=' -f 2 | awk '{print $1}'
+distro_compatible = capitalize(distro_compatible_raw)
+distro_version_id = grep ^VERSION_ID= /etc/os-release | cut -d '"' -f 2
+distro_version = grep ^VERSION= /etc/os-release | cut -d '"' -f 2
 
 echo # Salto de linea
 print(color("green") + "INFORMACIÓN SOBRE TU SISTEMA OPERATIVO")
@@ -43,3 +57,13 @@ print("El shell que tienes configurado en Infernal se llama " + color(color_resu
 print("El shell que tienes como shell de login en tu sistema operativo es " + color(color_resultados) + shell)
 echo
 print("Tu sistema operativo se llama " + color(color_resultados) + distro_name)
+print("La versión de tu sistema operativo es " + color(color_resultados) + distro_version)
+print("El ID de la versión de tu sistema operativo es " + color(color_resultados) + distro_version_id)
+echo
+if NoEsLynds == false then
+    print("¡Tu sistema operativo es de " + color("green") + "Lynds Corp." + color("reset") + "! Y su versión es la " + color(color_resultados) + distro_lynds_version)
+    print("Como tu sistema operativo es de " + color("green") + "Lynds Corp.," + color("reset") + " tiene su propio codename, pero mantiene el de Debian por compatibilidad de aplicaciones. Este codename es " + color(color_resultados) + distro_lynds_codename)
+    echo
+fi
+print("Tu sistema operativo es compatible con los paquetes de " + color(color_resultados) + distro_compatible)
+echo

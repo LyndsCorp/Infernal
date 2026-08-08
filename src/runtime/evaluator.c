@@ -1,7 +1,7 @@
 /*
  * Infernal: el lenguaje de programación. Copyright (C) 2026, GPL v3+ License.
  * Código fuente de Infernal: runtime/evaluator.c
-*/
+ */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -148,8 +148,8 @@ bool try_convert_value(Value *val, int target_tok_type) {
 }
 
 void exec_flag_spec(FlagSpec *spec) {
-    if (spec->body_count == 0) return;   /* <-- NUEVO: si no hay cuerpo, no hacer nada */
-        TokenStream saved_ts = ts;
+    if (spec->body_count == 0) return;
+    TokenStream saved_ts = ts;
     ts.tokens = spec->body_tokens;
     ts.count = spec->body_count;
     ts.pos = 0;
@@ -452,7 +452,6 @@ Value eval_expr(ASTNode *expr) {
             if (*name == '\0')
                 error(expr->line, "Nombre de variable vacío");
 
-            // Si el nombre contiene '/', forzar error si no existe (para detectar concatenación incorrecta)
             if (strchr(name, '/') != NULL) {
                 VarEntry *e = scope_find(current_scope, name);
                 if (!e) {
@@ -465,10 +464,8 @@ Value eval_expr(ASTNode *expr) {
                 return copy_value_secure(e->value);
             }
 
-            // Para variables normales (sin '/'), comportamiento tolerante
             VarEntry *e = scope_find(current_scope, name);
             if (!e) {
-                // Variable no definida → se trata como false en contexto booleano
                 return val_make_null();
             }
             return copy_value_secure(e->value);
@@ -821,13 +818,13 @@ void exec_block_from(NodeList *block, int start_index) {
             }
             case NODE_SHELL_CMD: {
                 char *expanded = expand_command(stmt->data.shell_cmd.cmd);
-                int ret = system(expanded);
+                int ret = run_shell_command(expanded);
                 if (ret != 0) error(stmt->line, "falló: %s", stmt->data.shell_cmd.cmd);
                 free(expanded);
                 break;
             }
             case NODE_ASSIGN: {
-                DEBUG_INFO("ASIGNACION: nombre='%s', value->kind=%d", stmt->data.assign.name, stmt->data.assign.value->kind);
+                DEBUG_INFO("ASIGNACION: nombre='%s', is_cmd=%d", stmt->data.assign.name, stmt->data.assign.is_cmd);
                 Value val;
                 if (stmt->data.assign.is_cmd) {
                     char *cmd = stmt->data.assign.cmd_str;
@@ -1095,11 +1092,8 @@ void exec_block_from(NodeList *block, int start_index) {
                 if (control_flow == CF_REPEAT_LINE) return;
                 break;
             }
-            /* ─── EXECUTE ────────────────────────────────────────────────── */
             case NODE_EXECUTE: {
-                // 1. Evaluar la expresión de la ruta
                 Value path_val = eval_expr(stmt->data.execute.path_expr);
-                // Detectar si es un NODE_VAR con barra para dar mensaje específico
                 if (stmt->data.execute.path_expr && stmt->data.execute.path_expr->kind == NODE_VAR) {
                     const char *var_name = stmt->data.execute.path_expr->data.var.name;
                     if (strchr(var_name, '/') != NULL) {
@@ -1119,7 +1113,6 @@ void exec_block_from(NodeList *block, int start_index) {
                     error(stmt->line, "Error al expandir la ruta del script");
                 }
 
-                // 2. Expandir argumentos
                 int expanded_argc = stmt->data.execute.argc;
                 char **expanded_args = NULL;
                 if (expanded_argc > 0) {
@@ -1130,12 +1123,10 @@ void exec_block_from(NodeList *block, int start_index) {
                     }
                 }
 
-                // 3. Guardar estado actual
                 int saved_argc = script_argc;
                 char **saved_argv = script_argv;
                 int saved_flags_arg_index = flags_arg_index;
 
-                // 4. Construir nuevo argv
                 char **new_argv = malloc((expanded_argc + 2) * sizeof(char*));
                 new_argv[0] = expanded_path;
                 for (int i = 0; i < expanded_argc; i++) {
@@ -1147,7 +1138,6 @@ void exec_block_from(NodeList *block, int start_index) {
                 script_argv = new_argv;
                 flags_arg_index = 1;
 
-                // 5. Abrir y ejecutar el script hijo
                 FILE *fp = fopen(expanded_path, "r");
                 if (!fp) {
                     error(stmt->line, "No se pudo abrir el script '%s'", expanded_path);
@@ -1169,12 +1159,10 @@ void exec_block_from(NodeList *block, int start_index) {
 
                 current_scope = old_scope;
 
-                // 6. Restaurar estado original
                 script_argc = saved_argc;
                 script_argv = saved_argv;
                 flags_arg_index = saved_flags_arg_index;
 
-                // 7. Liberar memoria
                 free(expanded_path);
                 for (int i = 0; i < expanded_argc; i++) free(expanded_args[i]);
                 free(expanded_args);
@@ -1251,7 +1239,6 @@ void exec_block_from(NodeList *block, int start_index) {
                             }
                     }
                 } else {
-                    /* ─── Modo 0 (flags con nombre) ─── */
                     for (int a = 2; a < script_argc; a++) {
                         char *arg = script_argv[a];
                         char *arg_dup = strdup(arg);
