@@ -1,0 +1,34 @@
+#FILE: BASE_DATOS_UTF-8.txt
+En src/textdata.txt por ejemplo, se encuentra una base de datos algo asi:
+```
+BLOCK: lower-upper
+ñ-Ñ
+ç-Ç
+
+BLOCK: emojis
+🤣-U+1F923-ROLLING ON THE FLOOR LAUGHING
+💕-U+1F495-TWO HEARTS
+🗿-U+1F5FF-MOYAI
+
+BLOCK: all-letters
+a-A-b-B-c-C-は
+
+BLOCK: all-number
+1-2-3-4-5-6-7-8-9-0
+
+BLOCK...
+```
+Algo así sería con todos los datos de Unicode y UTF-8.
+El compilador combierte esa lista en binaria/optimizada y se embebe en el intérprete si config/add-utf8-and-unicode-database.bool define si se embebe o no. Si es false, todas las funciones de trabajar con UTF-8 o Unicode se pasan a una función genérica y las que dependen de la base de datos, no se incluyen en el intérprete.
+La función genérica es
+``` C
+static const char* utf8_next(const char *p) {
+    unsigned char c = (unsigned char)*p;
+    if (c < 0x80) return p + 1;
+    if ((c & 0xE0) == 0xC0) return p + 2;
+    if ((c & 0xF0) == 0xE0) return p + 3;
+    if ((c & 0xF8) == 0xF0) return p + 4;
+    return p + 1;  /* fallback, no debería ocurrir */
+}
+```
+en src/stdlib/string.c
