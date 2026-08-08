@@ -1,0 +1,12 @@
+#FILE: OPTIMIZAR_COMANDOS_SHELL.txt
+Ahora mismo si haces que el shell de Infernal sea Bash o Dash, va a ir lentísimo.
+Imagínate que en Bash haces:
+``` Bash
+var=$(bash -c 'ls')
+```
+En vez de:
+``` Bash
+var=$(ls)
+```
+El primero va a ir mucho más lento porque tiene que arrancar un proceso nuevo de Bash en vez de utilizar el que ya funciona.
+Entonces propongo que Infernal para ejecutar comandos no haga `infernal_shell -c 'comando', sino que arranque un proceso del shell en segundo plano y lo utilice para ejecutar los comandos.

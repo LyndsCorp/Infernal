@@ -1,0 +1,29 @@
+#FILE: COMANDOS_LIBRES.txt
+``` Infernal
+infernal_shell = ps -p ?? -o comm= # NO VA, DEBERÍA DE TRADUCIR LOS 2 "??" LITERALMENTE EN "$$".
+```
+
+Será porque termina por "="? Infernal debería detectar todo eso como un comando, ya que ps no es ni un bool ni nada, es un comando. Lo único que debería tocar Infernal allí es la expansión de comandos con $
+También:
+``` Terminal
+user@lyndsos:~$ echo $$
+16112
+user@lyndsos:~$ dash -c echo $$
+
+user@lyndsos:~$ dash -c "echo $$"
+16112
+user@lyndsos:~$ dash -c echo $$
+```
+Tiene algo que ver con cómo Infernal ejecuta los comandos de shell.
+En el primer ejemplo, muestra el PID del Bash actual.
+En el segundo ejemplo, Dash recibe: -c echo\n16112 por la expansión de Bash.
+En el tercer ejemplo, lo mismo pero sin el salto de línea.
+Conclusión: he investigado un poco, y he encontrado que Infernal debería ejecutar los comandos con `SHELL -c 'comando'` en vez de `SHELL -c "comando"` ya que con comillas dobles, Bash expande el `$$` pero con comilla sola no.
+
+
+También hay otro bug que si el comando utiliza comillas, se rompe.
+``` Infernal
+distro_name = grep ^NAME= /etc/os-release | cut -d '"' -f 2 # NO VA PORQUE TIENE COMILLAS ASÍ.
+```
+Infernal debería que al detectar que no comienza la definición con comillas, saber que lo que se está definiendo es un comando de shell entonces las comillas y todo eso se deja igual, solo se hacen cosas con los $
+Es decir, que esas comillas no se expandan automáticamente y que se pasen al shell tal cual.
