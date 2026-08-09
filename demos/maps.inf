@@ -1,5 +1,4 @@
 #!../infernal
-
 # ============================================================
 # TEST COMPLETO DE MAP
 # ============================================================
@@ -285,7 +284,8 @@ print("--- delete() ---")
 print("Antes:")
 print(stats)
 
-delete(stats, "mana")
+# REASIGNAR el resultado de delete
+stats = delete(stats, "mana")
 
 print("Después:")
 print(stats)
@@ -305,7 +305,7 @@ fi
 print("")
 print("--- delete() inexistente ---")
 
-delete(stats, "no_existe")
+stats = delete(stats, "no_existe")
 
 if size(stats) == 3 then
     print("OK: delete() inexistente no modifica el mapa")
@@ -318,7 +318,7 @@ fi
 print("")
 print("--- Segundo delete() ---")
 
-delete(stats, "fuerza")
+stats = delete(stats, "fuerza")
 
 if has(stats, "fuerza") == false then
     print("OK: fuerza eliminada")
@@ -335,9 +335,9 @@ fi
 print("")
 print("--- Mapa vacío ---")
 
-# CORRECCIÓN: crear un mapa vacío mediante un par temporal y eliminarlo
+# Crear un mapa con un par temporal y luego eliminarlo
 empty = ["tmp" = ""]
-delete(empty, "tmp")
+empty = delete(empty, "tmp")   # REASIGNAR para que quede vacío
 
 print("Mapa vacío:")
 print(empty)
@@ -404,7 +404,7 @@ fi
 print("")
 print("--- Vaciar mapa ---")
 
-delete(empty, "hello")
+empty = delete(empty, "hello")   # REASIGNAR
 
 if size(empty) == 0 then
     print("OK: mapa vacío")
