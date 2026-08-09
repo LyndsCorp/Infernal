@@ -1,3 +1,0 @@
-#!../infernal
-host = hostname #lo ejecuta como comando de shell
-print(host)
