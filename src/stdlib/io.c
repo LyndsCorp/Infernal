@@ -11,7 +11,7 @@
 #include "runtime/globals.h"
 #include "runtime/error.h"
 #include "vm/vm.h"
-#include "stdlib/output.h"   /* print_value y register_output_builtins */
+#include "stdlib/output.h"   /* print_value global */
 
 /* ─── printAllVars mejorado ────────────────────────────────── */
 static Value builtin_printAllVars(int argc, Value *args) {
@@ -19,7 +19,6 @@ static Value builtin_printAllVars(int argc, Value *args) {
 
     printf("Variables accesibles:\n");
 
-    // 1. Ámbito superglobal (compartido entre scripts)
     if (super_global_scope && super_global_scope->vars) {
         printf("  Ámbito superglobal (compartido entre scripts):\n");
         for (VarEntry *e = super_global_scope->vars; e; e = e->next) {
@@ -38,7 +37,6 @@ static Value builtin_printAllVars(int argc, Value *args) {
         }
     }
 
-    // 2. Ámbito del script (global_scope) y ámbitos locales
     Scope *s = current_scope;
     int total_vars = 0;
 
@@ -116,7 +114,7 @@ static Value builtin_input(int argc, Value *args) {
     return val_string(buffer);
 }
 
-/* ─── Registro de funciones ────────────────────────────────── */
+/* ─── Registro ────────────────────────────────────────────────── */
 void register_io_builtins(void) {
     func_register_builtin("printAllVars", builtin_printAllVars);
     func_register_builtin("vartype", builtin_vartype);
