@@ -6,6 +6,12 @@
 #ifndef STDLIB_OUTPUT_H
 #define STDLIB_OUTPUT_H
 
+#include "core/value.h"   /* para Value */
+
+// Función global de impresión de valores
+void print_value(Value v);
+
+// Registro de builtins de salida
 void register_output_builtins(void);
 
 #endif

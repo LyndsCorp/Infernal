@@ -30,8 +30,8 @@ static const struct {
     {NULL, NULL}
 };
 
-/* ─── Función auxiliar para imprimir un valor (global) ────── */
-void print_value(Value v) {    /* QUITADO 'static' */
+/* ─── Función global de impresión (sin static) ────────────── */
+void print_value(Value v) {
     switch (v.type) {
         case VAL_INT:    printf("%d", v.data.ival); break;
         case VAL_FLOAT:  printf("%g", v.data.fval); break;
@@ -59,33 +59,21 @@ void print_value(Value v) {    /* QUITADO 'static' */
     }
 }
 
-/* ─── color() : devuelve el código ANSI para el color ──────── */
+/* ─── color() ─── */
 static Value builtin_color(int argc, Value *args) {
-    if (argc < 1) {
-        return val_string("\033[0m");
-    }
-
+    if (argc < 1) return val_string("\033[0m");
     Value arg = args[0];
-    if (arg.type != VAL_STRING) {
-        return val_string("\033[0m");
-    }
-
+    if (arg.type != VAL_STRING) return val_string("\033[0m");
     const char *input = arg.data.sval;
-
     for (int i = 0; color_map[i].name != NULL; i++) {
-        if (strcasecmp(input, color_map[i].name) == 0) {
+        if (strcasecmp(input, color_map[i].name) == 0)
             return val_string(color_map[i].code);
-        }
     }
-
-    if (strncmp(input, "\033", 1) == 0) {
-        return val_string(input);
-    }
-
+    if (strncmp(input, "\033", 1) == 0) return val_string(input);
     return val_string("\033[0m");
 }
 
-/* ─── print(): imprime argumentos y siempre resetea al final ── */
+/* ─── print() ─── */
 static Value builtin_print(int argc, Value *args) {
     for (int i = 0; i < argc; i++) {
         if (i > 0) printf(" ");
@@ -96,7 +84,7 @@ static Value builtin_print(int argc, Value *args) {
     return val_make_null();
 }
 
-/* ─── Funciones warn, error, success ────────────────────────── */
+/* ─── warn, error, success ─── */
 static Value builtin_warn(int argc, Value *args) {
     printf("\033[33m");
     for (int i = 0; i < argc; i++) {
@@ -130,7 +118,7 @@ static Value builtin_success(int argc, Value *args) {
     return val_make_null();
 }
 
-/* ─── Registro de funciones ──────────────────────────────────── */
+/* ─── Registro ─── */
 void register_output_builtins(void) {
     func_register_builtin("print", builtin_print);
     func_register_builtin("warn", builtin_warn);

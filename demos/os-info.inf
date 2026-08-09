@@ -1,7 +1,7 @@
 #!../infernal
 
 # Configuración
-color_resultados = color("blue")
+color_resultados = "blue"
 #-------------
 
 NoEsLynds = false
