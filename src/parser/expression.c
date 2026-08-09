@@ -1,7 +1,7 @@
 /*
  * Infernal: el lenguaje de programación. Copyright (C) 2026, GPL v3+ License, Lynds Corp., Aros Legendarios, David Baña Szymaniak.
  * Código fuente de Infernal: parser/expression.c
-*/
+ */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -116,6 +116,40 @@ ASTNode *parse_index_or_slice(int line) {
         if (!ts_match(TOK_RBRACKET)) error(line, "Se esperaba ']'");
         node = node_create(NODE_INDEX, line);
         node->data.idx.index = idx;
+    }
+    return node;
+}
+
+/* ─── parse_map_literal: lee un literal de mapa ────────────── */
+static ASTNode *parse_map_literal(int line) {
+    ASTNode *node = node_create(NODE_MAP, line);
+    node->data.map.pairs = NULL;
+    node->data.map.pair_count = 0;
+
+    ts_skip_newlines();
+    if (ts_peek().type == TOK_RBRACKET) {
+        ts_advance();
+        return node;  // mapa vacío
+    }
+
+    do {
+        ts_skip_newlines();
+        // Clave: puede ser identificador (se convierte a string) o string literal
+        ASTNode *key = parse_expression(0);
+        if (!ts_match(TOK_EQ)) {
+            error(line, "Se esperaba '=' en par clave-valor de mapa");
+        }
+        ASTNode *value = parse_expression(0);
+        node->data.map.pairs = realloc(node->data.map.pairs,
+                                       (node->data.map.pair_count + 1) * sizeof(*node->data.map.pairs));
+        node->data.map.pairs[node->data.map.pair_count].key = key;
+        node->data.map.pairs[node->data.map.pair_count].value = value;
+        node->data.map.pair_count++;
+        ts_skip_newlines();
+    } while (ts_match(TOK_COMMA));
+
+    if (!ts_match(TOK_RBRACKET)) {
+        error(line, "Se esperaba ']' al final del mapa");
     }
     return node;
 }
@@ -236,21 +270,38 @@ ASTNode *parse_primary() {
     if (t.type == TOK_LBRACKET) {
         ts_advance();
         ts_skip_newlines();
-        ASTNode *n = node_create(NODE_LIST, t.line);
-        n->data.list_lit.items = NULL;
-        n->data.list_lit.count = 0;
-        if (!ts_match(TOK_RBRACKET)) {
-            do {
-                ts_skip_newlines();
-                n->data.list_lit.items = realloc(n->data.list_lit.items,
-                                                 (n->data.list_lit.count + 1) * sizeof(ASTNode*));
-                n->data.list_lit.items[n->data.list_lit.count++] = parse_expression(0);
-                ts_skip_newlines();
-            } while (ts_match(TOK_COMMA));
-            ts_skip_newlines();
-            if (!ts_match(TOK_RBRACKET)) error(t.line, "Se esperaba ']'");
+
+        // Detectar si es mapa o lista: miramos el primer elemento y si hay '='
+        int saved_pos = ts.pos;
+        int is_map = 0;
+        // Intentar parsear una expresión, si después hay '=' -> mapa
+        ASTNode *test_expr = parse_expression(0);
+        if (ts_peek().type == TOK_EQ) {
+            is_map = 1;
         }
-        return n;
+        // Restaurar posición
+        ts.pos = saved_pos;
+
+        if (is_map) {
+            return parse_map_literal(t.line);
+        } else {
+            // Parsear lista normal
+            ASTNode *n = node_create(NODE_LIST, t.line);
+            n->data.list_lit.items = NULL;
+            n->data.list_lit.count = 0;
+            if (!ts_match(TOK_RBRACKET)) {
+                do {
+                    ts_skip_newlines();
+                    n->data.list_lit.items = realloc(n->data.list_lit.items,
+                                                     (n->data.list_lit.count + 1) * sizeof(ASTNode*));
+                    n->data.list_lit.items[n->data.list_lit.count++] = parse_expression(0);
+                    ts_skip_newlines();
+                } while (ts_match(TOK_COMMA));
+                ts_skip_newlines();
+                if (!ts_match(TOK_RBRACKET)) error(t.line, "Se esperaba ']'");
+            }
+            return n;
+        }
     }
     if (t.type == TOK_LBRACE) {
         ts_advance();

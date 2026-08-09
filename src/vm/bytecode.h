@@ -2,7 +2,7 @@
  * Infernal: el lenguaje de programación.
  * Copyright (C) 2026, Lynds Corp., David Baña Szymaniak, GPL v3+ License.
  * Código fuente de Infernal: vm/bytecode.h
-*/
+ */
 
 #ifndef VM_BYTECODE_H
 #define VM_BYTECODE_H
@@ -35,7 +35,9 @@ typedef enum {
     OP_CMD_ASSIGN,
     OP_INTERPRET_NODE,
     OP_REPEAT_LINE,
-    OP_LIST_INSERT   // <-- NUEVO
+    OP_LIST_INSERT,
+    OP_NEW_MAP,
+    OP_MAP_SET
 } OpCode;
 
 typedef struct {
@@ -49,7 +51,7 @@ typedef struct Chunk {
     int const_count, const_cap;
 
     char **local_names;
-    int *local_types;   // tipo de cada local (TOK_INT, TOK_LIST, etc.) 0 = sin tipo fijo
+    int *local_types;
     int local_count;
 
     Instruction *code;

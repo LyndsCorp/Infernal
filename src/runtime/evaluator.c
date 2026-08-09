@@ -1,7 +1,7 @@
 /*
  * Infernal: el lenguaje de programación. Copyright (C) 2026, GPL v3+ License.
  * Código fuente de Infernal: runtime/evaluator.c
-*/
+ */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -27,6 +27,7 @@ static bool val_is_truthy(Value v) {
         case VAL_FLOAT:  return v.data.fval != 0.0;
         case VAL_STRING: return v.data.sval != NULL && strlen(v.data.sval) > 0;
         case VAL_LIST:   return v.data.list.count > 0;
+        case VAL_MAP:    return v.data.map->count > 0;   /* <-- AÑADIDO */
         default:         return false;
     }
 }
@@ -38,6 +39,7 @@ static const char *type_name(int tok_type) {
         case TOK_BOOL:   return "bool";
         case TOK_STRING: return "string";
         case TOK_LIST:   return "list";
+        case TOK_MAP:    return "map";    /* <-- AÑADIDO */
         default:         return "desconocido";
     }
 }
@@ -199,6 +201,14 @@ static int get_node_line(ASTNode *node) {
         case NODE_LIST:
             for (int i = 0; i < node->data.list_lit.count; i++) {
                 int l = get_node_line(node->data.list_lit.items[i]);
+                if (l) return l;
+            }
+            break;
+        case NODE_MAP:
+            for (int i = 0; i < node->data.map.pair_count; i++) {
+                int l = get_node_line(node->data.map.pairs[i].key);
+                if (l) return l;
+                l = get_node_line(node->data.map.pairs[i].value);
                 if (l) return l;
             }
             break;
@@ -477,6 +487,18 @@ Value eval_expr(ASTNode *expr) {
             }
             return list;
         }
+        case NODE_MAP: {
+            Value map = val_map_empty();
+            for (int i = 0; i < expr->data.map.pair_count; i++) {
+                Value key = eval_expr(expr->data.map.pairs[i].key);
+                Value val = eval_expr(expr->data.map.pairs[i].value);
+                if (key.type != VAL_STRING) {
+                    error(expr->line, "La clave de un mapa debe ser string (obtenido tipo %d)", key.type);
+                }
+                val_map_set(&map, key.data.sval, val);
+            }
+            return map;
+        }
         case NODE_SLICE: {
             if (expr->data.slice.list == NULL) {
                 error(current_eval_line, "NODE_SLICE: campo 'list' es NULL");
@@ -548,6 +570,11 @@ Value eval_expr(ASTNode *expr) {
                     error(line, "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
                 char character[2] = {base.data.sval[position - 1], '\0'};
                 result = val_string(character);
+            } else if (base.type == VAL_MAP) {
+                if (idx.type != VAL_STRING) {
+                    error(line, "La clave de un mapa debe ser string");
+                }
+                result = val_map_get(base, idx.data.sval);
             } else {
                 error(line, "No se puede indexar este tipo de valor");
             }
@@ -905,14 +932,21 @@ void exec_block_from(NodeList *block, int start_index) {
                 } else {
                     if (stmt->data.assign.lhs_index) {
                         VarEntry *var = scope_find(current_scope, stmt->data.assign.name);
-                        if (!var || var->value.type != VAL_LIST)
-                            error(stmt->line, "Se esperaba una lista en '%s'", stmt->data.assign.name);
-                        Value idx_val = eval_expr(stmt->data.assign.lhs_index);
-                        if (idx_val.type != VAL_INT) error(stmt->line, "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
-                        int idx = idx_val.data.ival;
-                        if (idx < 1 || idx > var->value.data.list.count) error(stmt->line, "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
-                        Value new_val = eval_expr(stmt->data.assign.value);
-                        var->value.data.list.items[idx - 1] = copy_value_secure(new_val);
+                        if (!var) error(stmt->line, "Variable no definida: %s", stmt->data.assign.name);
+                        Value idx_val = eval_expr(stmt->data.assign.lhs_index->data.idx.index);
+                        if (var->value.type == VAL_LIST) {
+                            if (idx_val.type != VAL_INT) error(stmt->line, "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
+                            int idx = idx_val.data.ival;
+                            if (idx < 1 || idx > var->value.data.list.count) error(stmt->line, "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
+                            Value new_val = eval_expr(stmt->data.assign.value);
+                            var->value.data.list.items[idx - 1] = copy_value_secure(new_val);
+                        } else if (var->value.type == VAL_MAP) {
+                            if (idx_val.type != VAL_STRING) error(stmt->line, "Clave de mapa debe ser string");
+                            Value new_val = eval_expr(stmt->data.assign.value);
+                            val_map_set(&var->value, idx_val.data.sval, new_val);
+                        } else {
+                            error(stmt->line, "No se puede indexar este tipo de variable");
+                        }
                         break;
                     }
                     val = eval_expr(stmt->data.assign.value);

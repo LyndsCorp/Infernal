@@ -2,7 +2,7 @@
  * Infernal: el lenguaje de programación.
  * Copyright (C) 2026, Lynds Corp., David Baña Szymaniak, GPL v3+ License.
  * Código fuente de Infernal: vm/vm.c
-*/
+ */
 
 #include "vm.h"
 #include "core/value.h"
@@ -33,7 +33,7 @@ static inline Value peek(int dist) { return *(sp - 1 - dist); }
 /* ─── Globales de la VM ───────────────────────────────────────── */
 typedef struct {
     char *name;
-    int scope_type;   // GLOBAL_SCRIPT o GLOBAL_SUPER
+    int scope_type;
 } GlobalEntry;
 
 #define GLOBAL_SCRIPT 0
@@ -209,7 +209,8 @@ Value vm_run(Chunk *chunk) {
         &&OP_INDEX, &&OP_INDEX_ASSIGN,
         &&OP_EMBEDDED_CMD, &&OP_SHELL_CMD, &&OP_FLAGS,
         &&OP_CMD_ASSIGN, &&OP_INTERPRET_NODE,
-        &&OP_LIST_INSERT
+        &&OP_LIST_INSERT,
+        &&OP_NEW_MAP, &&OP_MAP_SET
     };
     #define DISPATCH() goto *dispatch_table[ip->op]
     goto *dispatch_table[ip->op];
@@ -501,6 +502,19 @@ Value vm_run(Chunk *chunk) {
                 DISPATCH();
             }
 
+            OP_NEW_MAP:   push(val_map_empty()); ip++; DISPATCH();   /* <-- NUEVO */
+            OP_MAP_SET: {                                          /* <-- NUEVO */
+                Value val = pop();
+                Value key = pop();
+                Value map = peek(0);  // el mapa debe estar en la pila
+                if (map.type != VAL_MAP) error(0, "OP_MAP_SET sobre un no-mapa");
+                if (key.type != VAL_STRING) error(0, "La clave de un mapa debe ser string");
+                val_map_set(&map, key.data.sval, val);
+                // la pila queda con el mapa actualizado
+                ip++;
+                DISPATCH();
+            }
+
             OP_INDEX: {
                 Value idx = pop();
                 Value base = pop();
@@ -516,13 +530,17 @@ Value vm_run(Chunk *chunk) {
                     if (i < 1 || (size_t)i > len) error(current_eval_line, "Índice de string fuera de rango");
                     char c[2] = {base.data.sval[i-1], 0};
                     push(val_string(c));
+                } else if (base.type == VAL_MAP) {   /* <-- NUEVO: soporte para mapas */
+                    if (idx.type != VAL_STRING) error(current_eval_line, "La clave de un mapa debe ser string");
+                    Value result = val_map_get(base, idx.data.sval);
+                    push(result);
                 } else
                     error(current_eval_line, "Indexación no soportada");
                 ip++;
                 DISPATCH();
             }
             OP_INDEX_ASSIGN:
-            error(0, "Asignación con índice no implementada en VM");
+            error(0, "Asignación con índice no implementada en VM (usar OP_INTERPRET_NODE)");
             ip++;
             DISPATCH();
 

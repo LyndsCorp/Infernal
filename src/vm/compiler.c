@@ -19,7 +19,7 @@
 /* ─── Estructura para portales durante la compilación ── */
 typedef struct CompilePortalEntry {
     char *name;
-    int offset;        // índice de instrucción donde comienza el portal (-1 si aún no compilado)
+    int offset;
 } CompilePortalEntry;
 
 typedef struct {
@@ -29,7 +29,7 @@ typedef struct {
     int local_count;
     bool in_function;
     bool top_level;
-    CompilePortalEntry *portals;   // tabla de portales recolectados
+    CompilePortalEntry *portals;
     int portal_count;
 } Compiler;
 
@@ -149,6 +149,12 @@ static void collect_portals_rec(ASTNode *node, Compiler *c) {
             for (int i = 0; i < node->data.list_lit.count; i++)
                 collect_portals_rec(node->data.list_lit.items[i], c);
         break;
+        case NODE_MAP:   /* <-- NUEVO: recolectar en pares */
+            for (int i = 0; i < node->data.map.pair_count; i++) {
+                collect_portals_rec(node->data.map.pairs[i].key, c);
+                collect_portals_rec(node->data.map.pairs[i].value, c);
+            }
+            break;
         case NODE_CALL:
             for (int i = 0; i < node->data.call.argc; i++)
                 collect_portals_rec(node->data.call.args[i], c);
@@ -289,10 +295,19 @@ static void compile_expr(Compiler *c, ASTNode *expr) {
                                             emit(c->chunk, OP_LIST_APPEND, 0);
                                         }
                                         break;
+                                    case NODE_MAP:   /* <-- NUEVO: compilar mapa */
+                                        emit(c->chunk, OP_NEW_MAP, 0);
+                                        for (int i = 0; i < expr->data.map.pair_count; i++) {
+                                            compile_expr(c, expr->data.map.pairs[i].key);
+                                            compile_expr(c, expr->data.map.pairs[i].value);
+                                            emit(c->chunk, OP_MAP_SET, 0);
+                                        }
+                                        break;
                                     case NODE_INDEX: {
-                                        int const_idx = add_constant(c, val_ptr(expr));
-                                        emit(c->chunk, OP_INTERPRET_NODE, const_idx);
-                                        c->chunk->code[c->chunk->code_count - 1].operand2 = 1;
+                                        // Compilar la base y el índice para OP_INDEX
+                                        compile_expr(c, expr->data.idx.list);
+                                        compile_expr(c, expr->data.idx.index);
+                                        emit(c->chunk, OP_INDEX, 0);
                                         break;
                                     }
                                     case NODE_SLICE: {
@@ -324,6 +339,16 @@ static void compile_stmt(Compiler *c, ASTNode *stmt) {
             const char *name = stmt->data.assign.name;
             int vtype = stmt->data.assign.vtype;
 
+            if (stmt->data.assign.lhs_index) {
+                // Asignación con índice (lista o mapa)
+                // Compilamos la variable base, el índice y el valor, y emitimos OP_INTERPRET_NODE
+                // porque la VM actual no tiene OP_INDEX_ASSIGN.
+                int const_idx = add_constant(c, val_ptr(stmt));
+                emit(c->chunk, OP_INTERPRET_NODE, const_idx);
+                c->chunk->code[c->chunk->code_count - 1].operand2 = 0;
+                break;
+            }
+
             if (stmt->data.assign.is_global) {
                 int gidx = vm_find_global_index(name);
                 if (gidx < 0) {
@@ -354,8 +379,6 @@ static void compile_stmt(Compiler *c, ASTNode *stmt) {
                 }
             } else {
                 // Variable global (ámbito del script)
-                // IMPORTANTE: Para comandos, NO registrar en vm_globals en tiempo de compilación.
-                // La variable se registrará en tiempo de ejecución dentro de OP_INTERPRET_NODE.
                 if (stmt->data.assign.is_cmd) {
                     int const_node = add_constant(c, val_ptr(stmt));
                     emit(c->chunk, OP_INTERPRET_NODE, const_node);
