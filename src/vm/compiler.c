@@ -2,7 +2,7 @@
  * Infernal: el lenguaje de programación.
  * Copyright (C) 2026, Lynds Corp., David Baña Szymaniak, GPL v3+ License.
  * Código fuente de Infernal: vm/compiler.c
-*/
+ */
 
 #include <stdlib.h>
 #include <string.h>
@@ -19,7 +19,7 @@
 /* ─── Estructura para portales durante la compilación ── */
 typedef struct CompilePortalEntry {
     char *name;
-    int offset;
+    int offset;        // índice de instrucción donde comienza el portal (-1 si aún no compilado)
 } CompilePortalEntry;
 
 typedef struct {
@@ -29,7 +29,7 @@ typedef struct {
     int local_count;
     bool in_function;
     bool top_level;
-    CompilePortalEntry *portals;
+    CompilePortalEntry *portals;   // tabla de portales recolectados
     int portal_count;
 } Compiler;
 
@@ -149,7 +149,8 @@ static void collect_portals_rec(ASTNode *node, Compiler *c) {
             for (int i = 0; i < node->data.list_lit.count; i++)
                 collect_portals_rec(node->data.list_lit.items[i], c);
         break;
-        case NODE_MAP:   /* <-- NUEVO: recolectar en pares */
+        /* ─── MAPA: solo recorrer pares, sin emitir ─── */
+        case NODE_MAP:
             for (int i = 0; i < node->data.map.pair_count; i++) {
                 collect_portals_rec(node->data.map.pairs[i].key, c);
                 collect_portals_rec(node->data.map.pairs[i].value, c);
@@ -295,16 +296,14 @@ static void compile_expr(Compiler *c, ASTNode *expr) {
                                             emit(c->chunk, OP_LIST_APPEND, 0);
                                         }
                                         break;
-                                    case NODE_MAP:   /* <-- NUEVO: compilar mapa */
-                                        emit(c->chunk, OP_NEW_MAP, 0);
-                                        for (int i = 0; i < expr->data.map.pair_count; i++) {
-                                            compile_expr(c, expr->data.map.pairs[i].key);
-                                            compile_expr(c, expr->data.map.pairs[i].value);
-                                            emit(c->chunk, OP_MAP_SET, 0);
-                                        }
+                                    case NODE_MAP: {
+                                        /* Delegamos la construcción del mapa al evaluador */
+                                        int const_idx = add_constant(c, val_ptr(expr));
+                                        emit(c->chunk, OP_INTERPRET_NODE, const_idx);
+                                        c->chunk->code[c->chunk->code_count - 1].operand2 = 1;
                                         break;
+                                    }
                                     case NODE_INDEX: {
-                                        // Compilar la base y el índice para OP_INDEX
                                         compile_expr(c, expr->data.idx.list);
                                         compile_expr(c, expr->data.idx.index);
                                         emit(c->chunk, OP_INDEX, 0);
@@ -340,9 +339,6 @@ static void compile_stmt(Compiler *c, ASTNode *stmt) {
             int vtype = stmt->data.assign.vtype;
 
             if (stmt->data.assign.lhs_index) {
-                // Asignación con índice (lista o mapa)
-                // Compilamos la variable base, el índice y el valor, y emitimos OP_INTERPRET_NODE
-                // porque la VM actual no tiene OP_INDEX_ASSIGN.
                 int const_idx = add_constant(c, val_ptr(stmt));
                 emit(c->chunk, OP_INTERPRET_NODE, const_idx);
                 c->chunk->code[c->chunk->code_count - 1].operand2 = 0;
@@ -378,7 +374,6 @@ static void compile_stmt(Compiler *c, ASTNode *stmt) {
                     emit(c->chunk, OP_STORE_VAR, slot);
                 }
             } else {
-                // Variable global (ámbito del script)
                 if (stmt->data.assign.is_cmd) {
                     int const_node = add_constant(c, val_ptr(stmt));
                     emit(c->chunk, OP_INTERPRET_NODE, const_node);
