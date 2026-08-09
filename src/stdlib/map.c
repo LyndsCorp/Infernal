@@ -38,21 +38,6 @@ static Value builtin_values(int argc, Value *args) {
     return list;
 }
 
-/* ─── has() ──────────────────────────────────────────────────── */
-static Value builtin_has(int argc, Value *args) {
-    if (argc != 2) error(0, "has() espera exactamente 2 argumentos");
-    if (args[0].type != VAL_MAP) error(0, "has() espera un mapa como primer argumento");
-    if (args[1].type != VAL_STRING) error(0, "has() espera una cadena como segundo argumento");
-
-    MapData *md = args[0].data.map;
-    const char *key = args[1].data.sval;
-    for (int i = 0; i < md->count; i++) {
-        if (strcmp(md->pairs[i].key, key) == 0)
-            return val_bool(true);
-    }
-    return val_bool(false);
-}
-
 /* ─── delete() ──────────────────────────────────────────────── */
 static Value builtin_delete(int argc, Value *args) {
     if (argc != 2) error(0, "delete() espera exactamente 2 argumentos");
@@ -98,13 +83,11 @@ static Value builtin_size(int argc, Value *args) {
 void register_map_builtins(void) {
     func_register_builtin("keys", builtin_keys);
     func_register_builtin("values", builtin_values);
-    func_register_builtin("has", builtin_has);
     func_register_builtin("delete", builtin_delete);
     func_register_builtin("size", builtin_size);
 
     vm_register_builtin("keys", builtin_keys);
     vm_register_builtin("values", builtin_values);
-    vm_register_builtin("has", builtin_has);
     vm_register_builtin("delete", builtin_delete);
     vm_register_builtin("size", builtin_size);
 }

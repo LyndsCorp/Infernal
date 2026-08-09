@@ -48,7 +48,6 @@ void val_list_append(Value *list, Value item) {
     list->data.list.items[list->data.list.count++] = item;
 }
 
-/* ─── Copia profunda de un valor ────────────────────────── */
 Value copy_value_secure(Value src) {
     if (src.type == VAL_STRING) {
         return val_string(src.data.sval);
@@ -59,8 +58,7 @@ Value copy_value_secure(Value src) {
         }
         return new_list;
     } else if (src.type == VAL_MAP) {
-        /* Copia superficial: compartir el mismo MapData */
-        return src;
+        return val_map_copy(&src);
     } else {
         return src;
     }
@@ -70,6 +68,7 @@ Value val_list_copy(Value *src) {
     return copy_value_secure(*src);
 }
 
+/* ─── CORREGIDO: incluye VAL_MAP ─── */
 int valtype_to_tokentype(int vtype) {
     switch (vtype) {
         case VAL_INT:    return TOK_INT;
@@ -114,17 +113,14 @@ void val_map_set(Value *map, const char *key, Value value) {
         error(0, "val_map_set: el valor no es un mapa");
     }
     MapData *md = map->data.map;
-    // Buscar clave existente
     for (int i = 0; i < md->count; i++) {
         if (strcmp(md->pairs[i].key, key) == 0) {
-            // Reemplazar valor
             if (md->pairs[i].value.type == VAL_STRING)
                 free(md->pairs[i].value.data.sval);
             md->pairs[i].value = copy_value_secure(value);
             return;
         }
     }
-    // Añadir nuevo par
     if (md->count >= md->cap) {
         md->cap = md->cap == 0 ? 4 : md->cap * 2;
         md->pairs = infernal_realloc(md->pairs, md->cap * sizeof(MapPair));
@@ -165,7 +161,6 @@ void val_map_delete(Value *map, const char *key) {
             free(md->pairs[i].key);
             if (md->pairs[i].value.type == VAL_STRING)
                 free(md->pairs[i].value.data.sval);
-            // Desplazar
             for (int j = i; j < md->count - 1; j++) {
                 md->pairs[j] = md->pairs[j + 1];
             }
