@@ -3,7 +3,7 @@
  * Copyright (C) 2026, Lynds Corp., David Baña Szymaniak, GPL v3+ License.
  * Proyecto: Aros Legendarios
  * Código fuente de Infernal: stdlib/output.c
-*/
+ */
 
 #include <stdio.h>
 #include <string.h>
@@ -45,6 +45,16 @@ static void print_value(Value v) {
             }
             printf("]");
             break;
+        case VAL_MAP:   /* <-- NUEVO */
+            printf("[");
+            MapData *md = v.data.map;
+            for (int i = 0; i < md->count; i++) {
+                if (i > 0) printf(", ");
+                printf("\"%s\" = ", md->pairs[i].key);
+                print_value(md->pairs[i].value);
+            }
+            printf("]");
+            break;
         default: printf("?");
     }
 }
@@ -52,31 +62,26 @@ static void print_value(Value v) {
 /* ─── color() : devuelve el código ANSI para el color ──────── */
 static Value builtin_color(int argc, Value *args) {
     if (argc < 1) {
-        // Sin argumentos: devolver reset
         return val_string("\033[0m");
     }
 
     Value arg = args[0];
     if (arg.type != VAL_STRING) {
-        // Si no es string, devolver reset
         return val_string("\033[0m");
     }
 
     const char *input = arg.data.sval;
 
-    // 1) Buscar en el mapa de colores predefinidos (insensible a mayúsculas)
     for (int i = 0; color_map[i].name != NULL; i++) {
         if (strcasecmp(input, color_map[i].name) == 0) {
             return val_string(color_map[i].code);
         }
     }
 
-    // 2) Si comienza con "\033", usarlo directamente (ANSI code)
     if (strncmp(input, "\033", 1) == 0) {
         return val_string(input);
     }
 
-    // 3) Si no se reconoce, devolver reset
     return val_string("\033[0m");
 }
 
@@ -86,17 +91,14 @@ static Value builtin_print(int argc, Value *args) {
         if (i > 0) printf(" ");
         print_value(args[i]);
     }
-    // Siempre resetear al final para no dejar color en la terminal
     printf("\033[0m\n");
     fflush(stdout);
     return val_make_null();
 }
 
 /* ─── Funciones warn, error, success ────────────────────────── */
-/* Ahora imprimen directamente, sin espacio delante del primer argumento */
-
 static Value builtin_warn(int argc, Value *args) {
-    printf("\033[33m");                 // amarillo
+    printf("\033[33m");
     for (int i = 0; i < argc; i++) {
         if (i > 0) printf(" ");
         print_value(args[i]);
@@ -107,7 +109,7 @@ static Value builtin_warn(int argc, Value *args) {
 }
 
 static Value builtin_error(int argc, Value *args) {
-    printf("\033[31m");                 // rojo
+    printf("\033[31m");
     for (int i = 0; i < argc; i++) {
         if (i > 0) printf(" ");
         print_value(args[i]);
@@ -118,7 +120,7 @@ static Value builtin_error(int argc, Value *args) {
 }
 
 static Value builtin_success(int argc, Value *args) {
-    printf("\033[32m");                 // verde
+    printf("\033[32m");
     for (int i = 0; i < argc; i++) {
         if (i > 0) printf(" ");
         print_value(args[i]);

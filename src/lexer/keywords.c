@@ -42,6 +42,7 @@ TokenType lookup_keyword(const char *lexeme) {
     if (strcmp(lexeme, "bool") == 0) return TOK_BOOL;
     if (strcmp(lexeme, "string") == 0) return TOK_STRING;
     if (strcmp(lexeme, "list") == 0) return TOK_LIST;
+    if (strcmp(lexeme, "map") == 0) return TOK_MAP;
 
     // Booleanos
     if (strcmp(lexeme, "true") == 0) return TOK_TRUE;

@@ -1,7 +1,7 @@
 /*
  * Infernal: el lenguaje de programación. Copyright (C) 2026, GPL v3+ License, Lynds Corp., Aros Legendarios, David Baña Szymaniak.
  * Código fuente de Infernal: core/types.h
-*/
+ */
 
 #ifndef CORE_TYPES_H
 #define CORE_TYPES_H
@@ -34,7 +34,8 @@ typedef enum {
     TOK_AT,
     TOK_LINE,
     TOK_COLON,
-    TOK_EXECUTE          /* <-- NUEVO: execute /ruta/script.inf [args...] */
+    TOK_EXECUTE,
+    TOK_MAP          /* <-- palabra clave "map" */
 } TokenType;
 
 /* ─── Token ──────────────────────────────────────────────── */
@@ -62,7 +63,7 @@ typedef struct {
     int body_count;
     bool catch_all;
     bool is_empty;
-    bool is_global;      /* si la variable se define en ámbito superglobal */
+    bool is_global;
 } FlagSpec;
 
 /* ─── Value types ────────────────────────────────────────── */
@@ -74,8 +75,13 @@ typedef struct {
 #define VAL_LIST      5
 #define VAL_REFERENCE 6
 #define VAL_PTR       7
+#define VAL_MAP       8   /* <-- NUEVO: tipo mapa */
+
+/* ─── Estructura opaca para datos de mapa ────────────────── */
+typedef struct MapData MapData;
 
 typedef struct Value Value;
+
 struct Value {
     int type;
     union {
@@ -92,12 +98,13 @@ struct Value {
             int index;
         } ref;
         void *ptr;
+        MapData *map;   /* <-- puntero a datos del mapa */
     } data;
 };
 
 typedef Value (*BuiltinFunc)(int argc, Value *args);
 
-/* ─── Función objeto (con código compilado) ───────────────── */
+/* ─── Función objeto ──────────────────────────────────────── */
 typedef struct FuncObject {
     enum { FUNC_USER, FUNC_BUILTIN } kind;
     union {
@@ -117,7 +124,8 @@ struct ASTNode {
         NODE_VAR, NODE_LITERAL, NODE_BINOP, NODE_CALL, NODE_INDEX,
         NODE_FLAGS, NODE_LIST, NODE_FOR_IN, NODE_PORTAL,
         NODE_SLICE,
-        NODE_EXECUTE     /* <-- NUEVO: execute */
+        NODE_EXECUTE,
+        NODE_MAP     /* <-- literal de mapa */
     } kind;
     union {
         struct { NodeList stmts; } prog;
@@ -141,23 +149,15 @@ struct ASTNode {
             struct { int mode; FlagSpec *specs; int spec_count; } flags;
             struct { ASTNode **items; int count; } list_lit;
             struct { char *var; ASTNode *list_expr; NodeList body; } for_in;
-            struct {
-                ASTNode *line_expr;
-                char *portal_name;
-            } repeat;
+            struct { ASTNode *line_expr; char *portal_name; } repeat;
             struct { char *name; bool is_local; } portal;
+            struct { ASTNode *list; int mode; int start; int end; } slice;
+            struct { ASTNode *path_expr; char **args; int argc; } execute;
+            /* ─── MAPA ────────────────────────────────────────────── */
             struct {
-                ASTNode *list;
-                int mode;
-                int start;
-                int end;
-            } slice;
-            /* ─── execute ────────────────────────────────────────── */
-            struct {
-                ASTNode *path_expr;   /* expresión que evalúa a la ruta */
-                char **args;
-                int argc;
-            } execute;
+                struct { ASTNode *key; ASTNode *value; } *pairs;
+                int pair_count;
+            } map;
     } data;
 };
 
