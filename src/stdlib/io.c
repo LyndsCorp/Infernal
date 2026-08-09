@@ -11,26 +11,7 @@
 #include "runtime/globals.h"
 #include "runtime/error.h"
 #include "vm/vm.h"
-
-/* ─── Función auxiliar para imprimir un valor ──────────────── */
-static void print_value(Value v) {
-    switch (v.type) {
-        case VAL_INT:    printf("%d", v.data.ival); break;
-        case VAL_FLOAT:  printf("%g", v.data.fval); break;
-        case VAL_BOOL:   printf("%s", v.data.bval ? "true" : "false"); break;
-        case VAL_STRING: printf("\"%s\"", v.data.sval); break;
-        case VAL_LIST: {
-            printf("[");
-            for (int j = 0; j < v.data.list.count; j++) {
-                if (j > 0) printf(", ");
-                print_value(v.data.list.items[j]);
-            }
-            printf("]");
-            break;
-        }
-        default: printf("null");
-    }
-}
+#include "stdlib/output.h"   /* para la declaración de print_value (global) */
 
 /* ─── printAllVars mejorado ────────────────────────────────── */
 static Value builtin_printAllVars(int argc, Value *args) {
@@ -49,7 +30,8 @@ static Value builtin_printAllVars(int argc, Value *args) {
                 (e->vtype == TOK_FLOAT) ? "float" :
                 (e->vtype == TOK_BOOL) ? "bool" :
                 (e->vtype == TOK_STRING) ? "string" :
-                (e->vtype == TOK_LIST) ? "list" : "?";
+                (e->vtype == TOK_LIST) ? "list" :
+                (e->vtype == TOK_MAP) ? "map" : "?";
                 printf(" (%s)", tname);
             }
             printf("\n");
@@ -61,13 +43,11 @@ static Value builtin_printAllVars(int argc, Value *args) {
     int total_vars = 0;
 
     while (s) {
-        // No mostrar el superglobal de nuevo si ya se mostró
         if (s == super_global_scope) {
             s = s->parent;
             continue;
         }
         if (s->vars) {
-            // Determinar el nombre del ámbito
             if (s == global_scope) {
                 printf("  Ámbito del script:\n");
             } else if (s->function_name) {
@@ -84,7 +64,8 @@ static Value builtin_printAllVars(int argc, Value *args) {
                     (e->vtype == TOK_FLOAT) ? "float" :
                     (e->vtype == TOK_BOOL) ? "bool" :
                     (e->vtype == TOK_STRING) ? "string" :
-                    (e->vtype == TOK_LIST) ? "list" : "?";
+                    (e->vtype == TOK_LIST) ? "list" :
+                    (e->vtype == TOK_MAP) ? "map" : "?";
                     printf(" (%s)", tname);
                 }
                 printf("\n");
@@ -100,6 +81,7 @@ static Value builtin_printAllVars(int argc, Value *args) {
     return val_make_null();
 }
 
+/* ─── vartype() – ahora reconoce VAL_MAP ───────────────────── */
 static Value builtin_vartype(int argc, Value *args) {
     if (argc < 1) error(0, "vartype requiere un argumento");
     Value arg = args[0];
@@ -110,12 +92,14 @@ static Value builtin_vartype(int argc, Value *args) {
         case VAL_BOOL:   t = "bool";   break;
         case VAL_STRING: t = "string"; break;
         case VAL_LIST:   t = "list";   break;
+        case VAL_MAP:    t = "map";    break;
         case VAL_NULL:   t = "null";   break;
         default:         t = "unknown";
     }
     return val_string(t);
 }
 
+/* ─── input() ────────────────────────────────────────────────── */
 static Value builtin_input(int argc, Value *args) {
     if (argc >= 1 && args[0].type == VAL_STRING) {
         printf("%s", args[0].data.sval);
@@ -132,6 +116,7 @@ static Value builtin_input(int argc, Value *args) {
     return val_string(buffer);
 }
 
+/* ─── Registro de funciones ────────────────────────────────── */
 void register_io_builtins(void) {
     func_register_builtin("printAllVars", builtin_printAllVars);
     func_register_builtin("vartype", builtin_vartype);

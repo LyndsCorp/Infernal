@@ -3,7 +3,7 @@
  * Copyright (C) 2026, Lynds Corp., David Baña Szymaniak, GPL v3+ License.
  * Proyecto: Aros Legendarios
  * Código fuente de Infernal: stdlib/output.c
- */
+*/
 
 #include <stdio.h>
 #include <string.h>
@@ -30,8 +30,8 @@ static const struct {
     {NULL, NULL}
 };
 
-/* ─── Función auxiliar para imprimir un valor ──────────────── */
-static void print_value(Value v) {
+/* ─── Función auxiliar para imprimir un valor (global) ────── */
+void print_value(Value v) {    /* QUITADO 'static' */
     switch (v.type) {
         case VAL_INT:    printf("%d", v.data.ival); break;
         case VAL_FLOAT:  printf("%g", v.data.fval); break;
@@ -45,7 +45,7 @@ static void print_value(Value v) {
             }
             printf("]");
             break;
-        case VAL_MAP:   /* <-- NUEVO */
+        case VAL_MAP:
             printf("[");
             MapData *md = v.data.map;
             for (int i = 0; i < md->count; i++) {
