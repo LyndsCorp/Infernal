@@ -271,13 +271,18 @@ ASTNode *parse_primary() {
         ts_advance();
         ts_skip_newlines();
 
-        // Detectar si es mapa o lista: miramos el primer elemento y si hay '='
+        /* --- Detectar si es mapa o lista --- */
         int saved_pos = ts.pos;
         int is_map = 0;
-        // Intentar parsear una expresión, si después hay '=' -> mapa
-        ASTNode *test_expr = parse_expression(0);
-        if (ts_peek().type == TOK_EQ) {
-            is_map = 1;
+
+        // Si el primer token después de '[' es un IDENT o STRING_LITERAL
+        Token first = ts_peek();
+        if (first.type == TOK_IDENT || first.type == TOK_STRING_LITERAL) {
+            ts_advance();  // consumir la clave
+            // Si el siguiente token es '=' -> mapa
+            if (ts_peek().type == TOK_EQ) {
+                is_map = 1;
+            }
         }
         // Restaurar posición
         ts.pos = saved_pos;
@@ -285,7 +290,7 @@ ASTNode *parse_primary() {
         if (is_map) {
             return parse_map_literal(t.line);
         } else {
-            // Parsear lista normal
+            /* --- Parsear lista normal --- */
             ASTNode *n = node_create(NODE_LIST, t.line);
             n->data.list_lit.items = NULL;
             n->data.list_lit.count = 0;

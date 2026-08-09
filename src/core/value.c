@@ -59,7 +59,8 @@ Value copy_value_secure(Value src) {
         }
         return new_list;
     } else if (src.type == VAL_MAP) {
-        return val_map_copy(&src);
+        /* Copia superficial: compartir el mismo MapData */
+        return src;
     } else {
         return src;
     }
