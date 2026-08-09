@@ -11,7 +11,7 @@
 #include "runtime/globals.h"
 #include "runtime/error.h"
 #include "vm/vm.h"
-#include "stdlib/output.h"   /* para la declaración de print_value (global) */
+#include "stdlib/output.h"   /* print_value y register_output_builtins */
 
 /* ─── printAllVars mejorado ────────────────────────────────── */
 static Value builtin_printAllVars(int argc, Value *args) {
