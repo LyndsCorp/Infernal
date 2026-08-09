@@ -1,0 +1,424 @@
+# ============================================================
+# TEST COMPLETO DE MAP
+# ============================================================
+
+print("=== TEST COMPLETO MAP ===")
+
+# ------------------------------------------------------------
+# 1. CREACIÓN
+# ------------------------------------------------------------
+
+print("")
+print("--- Creación ---")
+
+stats = [
+    "username" = "Monojo",
+    "vida" = 800,
+    "fuerza" = 600
+]
+
+print("Mapa creado:")
+print(stats)
+
+# ------------------------------------------------------------
+# 2. size()
+# ------------------------------------------------------------
+
+print("")
+print("--- size() ---")
+
+print("Tamaño:")
+print(size(stats))
+
+if size(stats) == 3 then
+    print("OK: size() = 3")
+fi
+
+# ------------------------------------------------------------
+# 3. keys()
+# ------------------------------------------------------------
+
+print("")
+print("--- keys() ---")
+
+keys_list = keys(stats)
+
+print("Claves:")
+print(keys_list)
+
+if length(keys_list) == 3 then
+    print("OK: keys() devuelve 3 claves")
+fi
+
+# ------------------------------------------------------------
+# 4. values()
+# ------------------------------------------------------------
+
+print("")
+print("--- values() ---")
+
+values_list = values(stats)
+
+print("Valores:")
+print(values_list)
+
+if length(values_list) == 3 then
+    print("OK: values() devuelve 3 valores")
+fi
+
+# ------------------------------------------------------------
+# 5. ACCESO
+# ------------------------------------------------------------
+
+print("")
+print("--- Acceso ---")
+
+print("username:")
+print($stats["username"])
+
+print("vida:")
+print($stats["vida"])
+
+print("fuerza:")
+print($stats["fuerza"])
+
+if $stats["username"] == "Monojo" then
+    print("OK: username")
+fi
+
+if $stats["vida"] == 800 then
+    print("OK: vida")
+fi
+
+if $stats["fuerza"] == 600 then
+    print("OK: fuerza")
+fi
+
+# ------------------------------------------------------------
+# 6. has()
+# ------------------------------------------------------------
+
+print("")
+print("--- has() ---")
+
+if has(stats, "username") == true then
+    print("OK: username existe")
+fi
+
+if has(stats, "vida") == true then
+    print("OK: vida existe")
+fi
+
+if has(stats, "fuerza") == true then
+    print("OK: fuerza existe")
+fi
+
+if has(stats, "mana") == false then
+    print("OK: mana no existe")
+fi
+
+# ------------------------------------------------------------
+# 7. MODIFICAR VALOR
+# ------------------------------------------------------------
+
+print("")
+print("--- Modificación ---")
+
+stats["vida"] = 1000
+
+print("Nueva vida:")
+print($stats["vida"])
+
+if $stats["vida"] == 1000 then
+    print("OK: vida modificada")
+fi
+
+# ------------------------------------------------------------
+# 8. AÑADIR CLAVE
+# ------------------------------------------------------------
+
+print("")
+print("--- Añadir clave ---")
+
+stats["mana"] = 500
+
+print("Mana:")
+print($stats["mana"])
+
+print("Nuevo tamaño:")
+print(size(stats))
+
+if has(stats, "mana") == true then
+    print("OK: mana añadido")
+fi
+
+if size(stats) == 4 then
+    print("OK: size() = 4")
+fi
+
+# ------------------------------------------------------------
+# 9. MODIFICAR CLAVE EXISTENTE
+# ------------------------------------------------------------
+
+print("")
+print("--- Modificar clave existente ---")
+
+stats["fuerza"] = 900
+
+print("Nueva fuerza:")
+print($stats["fuerza"])
+
+if $stats["fuerza"] == 900 then
+    print("OK: fuerza modificada")
+fi
+
+# ------------------------------------------------------------
+# 10. TIPOS DIFERENTES
+# ------------------------------------------------------------
+
+print("")
+print("--- Diferentes tipos ---")
+
+mixed = [
+    "texto" = "Hola",
+    "entero" = 123,
+    "decimal" = 3.14,
+    "verdadero" = true,
+    "falso" = false
+]
+
+print("Mapa mixto:")
+print(mixed)
+
+print($mixed["texto"])
+print($mixed["entero"])
+print($mixed["decimal"])
+print($mixed["verdadero"])
+print($mixed["falso"])
+
+if $mixed["texto"] == "Hola" then
+    print("OK: string")
+fi
+
+if $mixed["entero"] == 123 then
+    print("OK: int")
+fi
+
+if $mixed["decimal"] == 3.14 then
+    print("OK: float")
+fi
+
+if $mixed["verdadero"] == true then
+    print("OK: bool true")
+fi
+
+if $mixed["falso"] == false then
+    print("OK: bool false")
+fi
+
+# ------------------------------------------------------------
+# 11. LISTA DENTRO DE MAP
+# ------------------------------------------------------------
+
+print("")
+print("--- Lista dentro de mapa ---")
+
+inventory = [
+    "items" = ["espada", "pocion", "escudo"],
+    "oro" = 1500
+]
+
+print("Inventario:")
+print(inventory)
+
+print("Items:")
+print($inventory["items"])
+
+print("Oro:")
+print($inventory["oro"])
+
+if length($inventory["items"]) == 3 then
+    print("OK: lista dentro del mapa")
+fi
+
+if $inventory["oro"] == 1500 then
+    print("OK: valor del mapa")
+fi
+
+# ------------------------------------------------------------
+# 12. MAPA DENTRO DE MAPA
+# ------------------------------------------------------------
+
+print("")
+print("--- Mapa anidado ---")
+
+player = [
+    "nombre" = "Monojo",
+    "stats" = [
+        "vida" = 100,
+        "fuerza" = 50
+    ]
+]
+
+print("Jugador:")
+print(player)
+
+print("Nombre:")
+print($player["nombre"])
+
+print("Stats:")
+print($player["stats"])
+
+if $player["nombre"] == "Monojo" then
+    print("OK: mapa exterior")
+fi
+
+# ------------------------------------------------------------
+# 13. DELETE
+# ------------------------------------------------------------
+
+print("")
+print("--- delete() ---")
+
+print("Antes:")
+print(stats)
+
+delete(stats, "mana")
+
+print("Después:")
+print(stats)
+
+if has(stats, "mana") == false then
+    print("OK: mana eliminado")
+fi
+
+if size(stats) == 3 then
+    print("OK: size() = 3 después de delete")
+fi
+
+# ------------------------------------------------------------
+# 14. DELETE DE CLAVE INEXISTENTE
+# ------------------------------------------------------------
+
+print("")
+print("--- delete() inexistente ---")
+
+delete(stats, "no_existe")
+
+if size(stats) == 3 then
+    print("OK: delete() inexistente no modifica el mapa")
+fi
+
+# ------------------------------------------------------------
+# 15. ELIMINAR OTRA CLAVE
+# ------------------------------------------------------------
+
+print("")
+print("--- Segundo delete() ---")
+
+delete(stats, "fuerza")
+
+if has(stats, "fuerza") == false then
+    print("OK: fuerza eliminada")
+fi
+
+if size(stats) == 2 then
+    print("OK: size() = 2")
+fi
+
+# ------------------------------------------------------------
+# 16. MAPA VACÍO
+# ------------------------------------------------------------
+
+print("")
+print("--- Mapa vacío ---")
+
+# CORRECCIÓN: crear un mapa vacío mediante un par temporal y eliminarlo
+empty = ["tmp" = ""]
+delete(empty, "tmp")
+
+print("Mapa vacío:")
+print(empty)
+
+if size(empty) == 0 then
+    print("OK: mapa vacío")
+fi
+
+if has(empty, "algo") == false then
+    print("OK: no contiene claves")
+fi
+
+# ------------------------------------------------------------
+# 17. AÑADIR A MAPA VACÍO
+# ------------------------------------------------------------
+
+print("")
+print("--- Añadir al mapa vacío ---")
+
+empty["hello"] = "world"
+
+print(empty)
+
+if size(empty) == 1 then
+    print("OK: elemento añadido")
+fi
+
+if has(empty, "hello") == true then
+    print("OK: clave encontrada")
+fi
+
+if $empty["hello"] == "world" then
+    print("OK: valor correcto")
+fi
+
+# ------------------------------------------------------------
+# 18. KEYS Y VALUES DESPUÉS DE MODIFICAR
+# ------------------------------------------------------------
+
+print("")
+print("--- keys()/values() después de modificar ---")
+
+final_keys = keys(empty)
+final_values = values(empty)
+
+print("Keys:")
+print(final_keys)
+
+print("Values:")
+print(final_values)
+
+if length(final_keys) == 1 then
+    print("OK: keys() actualizado")
+fi
+
+if length(final_values) == 1 then
+    print("OK: values() actualizado")
+fi
+
+# ------------------------------------------------------------
+# 19. VACIAR MAPA
+# ------------------------------------------------------------
+
+print("")
+print("--- Vaciar mapa ---")
+
+delete(empty, "hello")
+
+if size(empty) == 0 then
+    print("OK: mapa vacío")
+fi
+
+if has(empty, "hello") == false then
+    print("OK: clave eliminada")
+fi
+
+# ------------------------------------------------------------
+# FINAL
+# ------------------------------------------------------------
+
+printAllVars()
+
+print("")
+print("================================")
+print("      TEST MAP FINALIZADO       ")
+print("================================")
