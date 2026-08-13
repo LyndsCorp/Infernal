@@ -10,6 +10,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
 #include "bytes.h"
 #include "core/value.h"
 #include "runtime/error.h"
@@ -146,19 +147,31 @@ static Value builtin_reversebytes(int argc, Value *args) {
     return res;
 }
 
+/* --- lengthbytes --- */
+static Value builtin_lengthbytes(int argc, Value *args) {
+    if (argc != 1) error(current_eval_line, "lengthbytes() espera exactamente 1 argumento");
+    if (args[0].type != VAL_STRING) error(current_eval_line, "lengthbytes() espera un string.");
+    size_t len = strlen(args[0].data.sval);
+    return val_int((int)len);
+}
+
+
 /* ================================================
  *  Registro de funciones
  * ================================================ */
+
 void register_bytes_builtins(void) {
     func_register_builtin("countbytes", builtin_countbytes);
     func_register_builtin("headbytes", builtin_headbytes);
     func_register_builtin("tailbytes", builtin_tailbytes);
     func_register_builtin("replacebytes", builtin_replacebytes);
     func_register_builtin("reversebytes", builtin_reversebytes);
+    func_register_builtin("lengthbytes", builtin_lengthbytes);
 
     vm_register_builtin("countbytes", builtin_countbytes);
     vm_register_builtin("headbytes", builtin_headbytes);
     vm_register_builtin("tailbytes", builtin_tailbytes);
     vm_register_builtin("replacebytes", builtin_replacebytes);
     vm_register_builtin("reversebytes", builtin_reversebytes);
+    vm_register_builtin("lengthbytes", builtin_lengthbytes);
 }
