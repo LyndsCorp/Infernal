@@ -21,7 +21,7 @@
 #include "command.h"
 #include "runtime/scope.h"
 #include "runtime/globals.h"
-#include "stdlib/embedded.h"
+#include "embedded/embedded.h"
 #include "vm/vm.h"
 #include "developer/debug.h"
 

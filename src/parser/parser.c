@@ -16,7 +16,7 @@
 #include "runtime/scope.h"
 #include "runtime/globals.h"
 #include "runtime/error.h"
-#include "stdlib/embedded.h"
+#include "embedded/embedded.h"
 #include "vm/compiler.h"
 #include "developer/debug.h"
 
