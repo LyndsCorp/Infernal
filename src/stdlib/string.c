@@ -19,9 +19,11 @@
 #include "runtime/globals.h"
 #include "vm/vm.h"
 
+
 /* ================================================
  *  Ayudantes UTF‑8
  * ================================================ */
+
 /* --- calcular cuantos caracteres UTF-8 hay --- */
 static size_t utf8_len(const char *s) {
     size_t n = 0;
@@ -85,6 +87,7 @@ static bool seg_equal(const CharSegment *a, const CharSegment *b) {
     if (a->len != b->len) return false;
     return memcmp(a->start, b->start, a->len) == 0;
 }
+
 
 /* ================================================
  *  Funciones de la biblioteca
@@ -522,9 +525,11 @@ static Value builtin_ends(int argc, Value *args) {
     return val_bool(strcmp(s + slen - suflen, suffix) == 0);
 }
 
+
 /* ================================================
  *  Registro de funciones
  * ================================================ */
+
 void register_string_builtins(void) {
     func_register_builtin("head", builtin_head);
     func_register_builtin("tail", builtin_tail);
