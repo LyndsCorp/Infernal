@@ -17,6 +17,11 @@
 #include "runtime/globals.h"
 #include "vm/vm.h"
 
+
+/* ================================================
+ *  Funciones de la biblioteca
+ * ================================================ */
+
 /* --- countbytes --- */
 static Value builtin_countbytes(int argc, Value *args) {
     if (argc != 1) error(current_eval_line, "countbytes() espera exactamente 1 argumento");

@@ -304,6 +304,14 @@ static Value builtin_join(int argc, Value *args) {
     return res;
 }
 
+/* --- length --- */
+static Value builtin_length(int argc, Value *args) {
+    if (argc != 1) error(current_eval_line, "length() espera exactamente 1 argumento");
+    if (args[0].type != VAL_STRING) error(current_eval_line, "length() espera un string.");
+    size_t n = utf8_len(args[0].data.sval);
+    return val_int((int)n);
+}
+
 /* --- trim helpers --- */
 static char* do_trim(const char *str, int left, int right) {
     const char *start = str;
@@ -324,6 +332,7 @@ static char* do_trim(const char *str, int left, int right) {
     return trimmed;
 }
 
+/* --- trim --- */
 static Value builtin_trim(int argc, Value *args) {
     if (argc != 1) error(current_eval_line, "trim() espera exactamente 1 argumento");
     if (args[0].type != VAL_STRING) error(current_eval_line, "trim() espera un string.");
@@ -546,6 +555,7 @@ void register_string_builtins(void) {
     func_register_builtin("starts", builtin_starts);
     func_register_builtin("ends", builtin_ends);
     func_register_builtin("capitalize", builtin_capitalize);
+    func_register_builtin("length", builtin_length);
 
     vm_register_builtin("head", builtin_head);
     vm_register_builtin("tail", builtin_tail);
@@ -562,4 +572,5 @@ void register_string_builtins(void) {
     vm_register_builtin("starts", builtin_starts);
     vm_register_builtin("ends", builtin_ends);
     vm_register_builtin("capitalize", builtin_capitalize);
+    vm_register_builtin("length", builtin_length);
 }

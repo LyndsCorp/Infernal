@@ -18,39 +18,8 @@
 
 
 /* ================================================
- *  Ayudantes
+ *  Funciones de la biblioteca
  * ================================================ */
-
-/* --- calcular cuantos caracteres UTF-8 hay --- */
-static size_t utf8_len(const char *s) {
-    size_t n = 0;
-    while (*s) {
-        if ((*(unsigned char*)s & 0xC0) != 0x80) n++;
-        s++;
-    }
-    return n;
-}
-
-/* ================================================
- *  Registro de funciones
- * ================================================ */
-
-/* --- length --- */
-static Value builtin_length(int argc, Value *args) {
-    if (argc != 1) error(current_eval_line, "length() espera exactamente 1 argumento");
-
-    Value v = args[0];
-    if (v.type == VAL_STRING) {
-        return val_int((int)utf8_len(v.data.sval));
-    } else if (v.type == VAL_LIST) {
-        return val_int(v.data.list.count);
-    } else if (v.type == VAL_MAP) {
-        return val_int(v.data.map->count);
-    } else {
-        error(current_eval_line, "length() espera string, lista o mapa");
-    }
-    return val_make_null();
-}
 
 /* --- has --- */
 static Value builtin_has(int argc, Value *args) {
@@ -118,15 +87,15 @@ static Value builtin_size(int argc, Value *args) {
     return val_make_null();
 }
 
+
 /* ================================================
  *  Registro de funciones
  * ================================================ */
+
 void register_neutral_builtins(void) {
-    func_register_builtin("length", builtin_length);
     func_register_builtin("has", builtin_has);
     func_register_builtin("size", builtin_size);
 
-    vm_register_builtin("length", builtin_length);
     vm_register_builtin("has", builtin_has);
     vm_register_builtin("size", builtin_size);
 }
