@@ -1,6 +1,7 @@
 /*
- * Infernal: el lenguaje de programación.
- * Copyright (C) 2026, Lynds Corp., David Baña Szymaniak, GPL v3+ License.
+ * Infernal: el intérprete de Aro Infernal.
+ * Copyright (C) 2026, Lynds Corp., David Baña Szymaniak
+ * Licencia GPL v3 o posterior
  * Código fuente de Infernal: vm/vm.c
 */
 
@@ -13,7 +14,6 @@
 #include "runtime/evaluator.h"
 #include "core/ast.h"
 #include "lexer/lexer.h"
-#include "runtime/evaluator.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -30,7 +30,7 @@ static inline void push(Value v) { *sp++ = v; }
 static inline Value pop(void)  { return *--sp; }
 static inline Value peek(int dist) { return *(sp - 1 - dist); }
 
-/* ─── Globales de la VM ───────────────────────────────────────── */
+/* --- Globales de la VM ------------------------------------- */
 typedef struct {
     char *name;
     int scope_type;
@@ -58,7 +58,7 @@ typedef struct {
 static UserFunction user_functions[256];
 static int user_function_count = 0;
 
-/* ─── Registro de globales ────────────────────────────────────── */
+/* --- Registro de globales ------------------------------------- */
 int vm_register_global(const char *name, int scope_type, int vtype) {
     if (vm_global_count >= MAX_GLOBALS) return -1;
     vm_global_entries[vm_global_count].name = strdup(name);
@@ -77,7 +77,7 @@ int vm_find_global_index(const char *name) {
     return -1;
 }
 
-/* ─── Registro de builtins ────────────────────────────────────── */
+/* --- Registro de builtins ------------------------------------- */
 int vm_register_builtin(const char *name, VmBuiltin func) {
     if (vm_builtin_count >= 256) return -1;
     builtin_names[builtin_names_count].name = name;
@@ -94,7 +94,7 @@ int vm_find_builtin_index(const char *name) {
     return -1;
 }
 
-/* ─── Registro de funciones de usuario ───────────────────────── */
+/* --- Registro de funciones de usuario --------------------- */
 int vm_register_user_function(const char *name, Chunk *code) {
     if (user_function_count >= 256) return -1;
     user_functions[user_function_count].name = strdup(name);
@@ -108,7 +108,7 @@ Chunk *vm_get_user_function(int index) {
 }
 
 static int call_builtin(int index, int arg_count) {
-    if (index >= vm_builtin_count) error(0, "Índice de builtin inválido");
+    if (index >= vm_builtin_count) error(current_eval_line, "Índice de builtin inválido");
     Value *args = sp - arg_count;
     Value ret = vm_builtins[index](arg_count, args);
     sp -= arg_count;
@@ -120,7 +120,7 @@ static char *expand_command_vm(Chunk *chunk, Value *locals, const char *cmd) {
     return expand_command_with_locals(cmd, chunk->local_names, locals, chunk->local_count);
 }
 
-/* ─── Función de conversión de tipos para la VM ────────────── */
+/* --- Función de conversión de tipos para la VM --------------- */
 static Value vm_convert_value(Value v, int target_tok_type) {
     if (target_tok_type == 0) return v;
 
@@ -185,7 +185,7 @@ static Value vm_convert_value(Value v, int target_tok_type) {
 extern Scope *global_scope;
 extern Scope *super_global_scope;
 
-/* ─── Ejecución de bytecode ────────────────────────────────────── */
+/* --- Ejecución de bytecode ------------------------------------- */
 Value vm_run(Chunk *chunk) {
     if (!chunk || chunk->code_count == 0) return val_make_null();
 
@@ -230,7 +230,7 @@ Value vm_run(Chunk *chunk) {
             OP_LOAD_VAR: {
                 Value v = locals[ip->operand];
                 if (v.type == VAL_NULL) {
-                    error(0, "Variable local no definida");
+                    error(current_eval_line, "Variable local no definida");
                 }
                 if (v.type == VAL_STRING) {
                     v = val_string(v.data.sval);
@@ -246,7 +246,7 @@ Value vm_run(Chunk *chunk) {
                     int target_type = chunk->local_types[slot];
                     if (target_type == TOK_STRING && val.type == VAL_LIST) {
                         if (!try_convert_value(&val, TOK_STRING)) {
-                            error(0, "No se pudo convertir lista a string en asignación a local '%s'",
+                            error(current_eval_line, "No se pudo convertir lista a string en asignación a local '%s'",
                                   chunk->local_names[slot] ? chunk->local_names[slot] : "?");
                         }
                     } else {
@@ -272,11 +272,11 @@ Value vm_run(Chunk *chunk) {
                 if (ip->operand < vm_global_count) {
                     Value v = vm_globals[ip->operand];
                     if (v.type == VAL_NULL) {
-                        error(0, "Variable global no definida: %s", vm_global_names[ip->operand]);
+                        error(current_eval_line, "Variable global no definida: %s", vm_global_names[ip->operand]);
                     }
                     push(copy_value_secure(v));
                 } else {
-                    error(0, "Acceso a global inválido");
+                    error(current_eval_line, "Acceso a global inválido");
                 }
                 ip++;
                 DISPATCH();
@@ -291,7 +291,7 @@ Value vm_run(Chunk *chunk) {
                         int target_type = vm_global_types[idx];
                         if (target_type == TOK_STRING && val.type == VAL_LIST) {
                             if (!try_convert_value(&val, TOK_STRING)) {
-                                error(0, "No se pudo convertir lista a string en asignación a global '%s'",
+                                error(current_eval_line, "No se pudo convertir lista a string en asignación a global '%s'",
                                       vm_global_names[idx] ? vm_global_names[idx] : "?");
                             }
                         } else {
@@ -311,7 +311,7 @@ Value vm_run(Chunk *chunk) {
                         }
                     }
                 } else {
-                    error(0, "Global inválido");
+                    error(current_eval_line, "Global inválido");
                 }
                 ip++;
                 DISPATCH();
@@ -353,23 +353,23 @@ Value vm_run(Chunk *chunk) {
                 Value b = pop(), a = pop();
                 double av = (a.type==VAL_INT) ? a.data.ival : a.data.fval;
                 double bv = (b.type==VAL_INT) ? b.data.ival : b.data.fval;
-                if (bv == 0) error(0, "División por cero");
+                if (bv == 0) error(current_eval_line, "División por cero");
                 push(val_float(av / bv));
                 ip++; DISPATCH();
             }
             OP_MOD: {
                 Value b = pop(), a = pop();
                 if (a.type == VAL_INT && b.type == VAL_INT) {
-                    if (b.data.ival == 0) error(0, "Módulo por cero");
+                    if (b.data.ival == 0) error(current_eval_line, "Módulo por cero");
                     push(val_int(a.data.ival % b.data.ival));
-                } else error(0, "Módulo sólo para enteros");
+                } else error(current_eval_line, "Módulo sólo para enteros");
                 ip++; DISPATCH();
             }
             OP_NEG: {
                 Value v = pop();
                 if (v.type == VAL_INT) push(val_int(-v.data.ival));
                 else if (v.type == VAL_FLOAT) push(val_float(-v.data.fval));
-                else error(0, "Negación no aplicable");
+                else error(current_eval_line, "Negación no aplicable");
                 ip++; DISPATCH();
             }
 
@@ -456,7 +456,7 @@ Value vm_run(Chunk *chunk) {
             OP_CALL_BUILTIN: {
                 int builtin_idx = ip->operand;
                 int arg_count = ip->operand2;
-                if (!call_builtin(builtin_idx, arg_count)) error(0, "Error en builtin");
+                if (!call_builtin(builtin_idx, arg_count)) error(current_eval_line, "Error en builtin");
                 ip++;
                 DISPATCH();
             }
@@ -466,7 +466,7 @@ Value vm_run(Chunk *chunk) {
                 int arg_count = ip->operand2;
                 (void)arg_count;
                 Chunk *func_code = vm_get_user_function(func_index);
-                if (!func_code) error(0, "Función de usuario no encontrada");
+                if (!func_code) error(current_eval_line, "Función de usuario no encontrada");
                 Instruction *saved_ip = ip;
                 Value result = vm_run(func_code);
                 push(result);
@@ -508,10 +508,10 @@ Value vm_run(Chunk *chunk) {
                 Value key = pop();
                 Value map = peek(0);  // el mapa debe estar en la pila
                 if (map.type != VAL_MAP) {
-                    error(0, "OP_MAP_SET sobre un no-mapa (tipo=%d)", map.type);
+                    error(current_eval_line, "Se esperaba un mapa", map.type);
                 }
                 if (key.type != VAL_STRING) {
-                    error(0, "La clave de un mapa debe ser string");
+                    error(current_eval_line, "La clave de un mapa debe ser string");
                 }
                 val_map_set(&map, key.data.sval, val);
                 // el mapa en la pila queda actualizado
@@ -544,7 +544,7 @@ Value vm_run(Chunk *chunk) {
                 DISPATCH();
             }
             OP_INDEX_ASSIGN:
-            error(0, "Asignación con índice no implementada en VM (usar OP_INTERPRET_NODE)");
+            error(current_eval_line, "Asignación con índice no implementada en VM (usar OP_INTERPRET_NODE)");
             ip++;
             DISPATCH();
 
@@ -553,7 +553,7 @@ Value vm_run(Chunk *chunk) {
                 const char *cmd = cmd_val.data.sval;
                 char *expanded = expand_command_vm(chunk, locals, cmd);
                 int ret = execute_embedded(expanded);
-                if (ret == -1) error(0, "Comando embebido falló");
+                if (ret == -1) error(current_eval_line, "Comando embebido falló");
                 free(expanded);
                 ip++;
                 DISPATCH();
@@ -563,13 +563,13 @@ Value vm_run(Chunk *chunk) {
                 const char *cmd = cmd_val.data.sval;
                 char *expanded = expand_command_vm(chunk, locals, cmd);
                 int ret = run_shell_command(expanded);
-                if (ret != 0) error(0, "Comando shell falló (código %d)", ret);
+                if (ret != 0) error(current_eval_line, "Comando shell falló (código %d)", ret);
                 free(expanded);
                 ip++;
                 DISPATCH();
             }
             OP_FLAGS:
-            error(0, "flags no soportados en VM");
+            error(current_eval_line, "flags no soportados en VM");
             ip++;
             DISPATCH();
 
@@ -591,7 +591,7 @@ Value vm_run(Chunk *chunk) {
                 }
                 free(expanded);
 
-                if (!fp) error(0, "Error al ejecutar comando: %s", cmd);
+                if (!fp) error(current_eval_line, "Error al ejecutar comando: %s", cmd);
                 char buf[4096];
                 char *out = strdup("");
                 while (fgets(buf, sizeof(buf), fp)) {
@@ -599,7 +599,7 @@ Value vm_run(Chunk *chunk) {
                     strcat(out, buf);
                 }
                 int status = pclose(fp);
-                if (status != 0) error(0, "Comando falló: %s", cmd);
+                if (status != 0) error(current_eval_line, "Comando falló: %s", cmd);
 
                 if (temp_path) {
                     unlink(temp_path);
@@ -713,13 +713,12 @@ Value vm_run(Chunk *chunk) {
                 DISPATCH();
             }
 
-            /* ─── NUEVO OPCODE PARA INSERCIÓN EN LISTA ─── */
             OP_LIST_INSERT: {
                 Value idx = pop();
                 Value elem = pop();
                 Value list = pop();
                 if (list.type != VAL_LIST) {
-                    error(0, "Se esperaba una lista para la operación de inserción");
+                    error(current_eval_line, "Se esperaba una lista para la operación de inserción");
                 }
                 int pos = (idx.type == VAL_INT) ? idx.data.ival : 1;
                 if (pos < 1 || pos > list.data.list.count + 1) {
