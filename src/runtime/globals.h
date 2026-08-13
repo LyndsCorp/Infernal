@@ -10,19 +10,19 @@
 #include "runtime/scope.h"
 #include "vm/vm.h"        // para Chunk (pero solo se usa el forward declaration en types.h)
 
-/* ─── Control flow constants ────────────────────────────── */
+/* --- Control flow constants ------------------------------ */
 #define CF_NONE        0
 #define CF_RETURN      1
 #define CF_BREAK       2
 #define CF_CONTINUE    3
 #define CF_REPEAT_LINE 4
 
-/* ─── Global scopes ──────────────────────────────────────── */
+/* --- Global scopes ---------------------------------------- */
 extern Scope *global_scope;
 extern Scope *super_global_scope;
 extern Scope *current_scope;
 
-/* ─── Function table ────────────────────────────────────── */
+/* --- Function table -------------------------------------- */
 typedef struct FuncEntry {
     char *name;
     FuncObject *obj;
@@ -35,11 +35,11 @@ void func_register(const char *name, ASTNode *def);
 void func_register_builtin(const char *name, BuiltinFunc fn);
 FuncObject *func_lookup(const char *name);
 
-/* ─── Import prefix y límite de iteraciones ─────────────── */
+/* --- Import prefix y límite de iteraciones --------------- */
 extern char *current_import_prefix;
 extern int max_loop_iterations;
 
-/* ─── Error y control de flujo ───────────────────────────── */
+/* --- Error y control de flujo ----------------------------- */
 extern jmp_buf exception_env;
 extern int exception_raised;
 extern char exception_msg[512];
@@ -48,18 +48,18 @@ extern int source_line_count;
 extern int control_flow;
 extern Value return_value;
 
-/* ─── Argumentos del script ──────────────────────────────── */
+/* --- Argumentos del script -------------------------------- */
 extern int script_argc;
 extern char **script_argv;
 
-/* ─── Repeat line target ─────────────────────────────────── */
+/* --- Repeat line target ----------------------------------- */
 extern int repeat_line_target;
 
-/* ─── Directorio del script y archivo actual ─────────────── */
+/* --- Directorio del script y archivo actual --------------- */
 extern char *script_dir;
 extern char *current_source_file;
 
-/* ─── Shell configurado para ejecutar comandos del sistema ── */
+/* --- Shell configurado para ejecutar comandos del sistema -- */
 extern char *infernal_shell;
 void load_infernal_config(void);
 void show_shell_info(void);
@@ -67,7 +67,7 @@ void show_shell_info(void);
 extern int current_eval_line;
 extern int flags_arg_index;   /* <-- NUEVO: índice global para argumentos en modo 1 */
 
-/* ─── Registro de modos de flags definidos ────────────────── */
+/* --- Registro de modos de flags definidos ------------------ */
 #define MAX_FLAGS_MODES 256
 extern int defined_flags_modes[MAX_FLAGS_MODES];  /* 1 si el modo ya fue definido */
 

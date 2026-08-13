@@ -11,7 +11,7 @@
 NodeList parse_block(const char *terminator);
 ASTNode *parse_if_statement(void);
 
-/* ─── Función para construir comando desde tokens ──────────── */
+/* --- Función para construir comando desde tokens ------------ */
 char *build_command_from_tokens(int start_pos, int end_pos);
 
 #endif

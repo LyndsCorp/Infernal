@@ -16,7 +16,7 @@ extern int vm_global_types[MAX_GLOBALS];   // <-- NUEVO: tipos de globales
 extern int vm_global_count;
 extern char *vm_global_names[MAX_GLOBALS];
 
-/* ─── Ámbitos de variables globales ────────────────────────── */
+/* --- Ámbitos de variables globales -------------------------- */
 #define GLOBAL_SCRIPT 0   // variable global del script actual
 #define GLOBAL_SUPER  1   // variable global compartida entre scripts
 

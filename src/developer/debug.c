@@ -10,7 +10,7 @@
 #include "debug.h"
 #include <stdlib.h>
 
-/* ─── Inicialización del sistema de depuración ──────────────── */
+/* --- Inicialización del sistema de depuración ---------------- */
 #ifdef DEBUG
 static int debug_initialized = 0;
 
@@ -27,7 +27,7 @@ void debug_init(void) {
 }
 #endif
 
-/* ─── Función para activar/desactivar logs en tiempo de ejecución ── */
+/* --- Función para activar/desactivar logs en tiempo de ejecución -- */
 #ifdef DEBUG
 static int debug_enabled = 1;
 

@@ -33,7 +33,7 @@ static void add_flag_name(FlagSpec *spec, const char *name, int line) {
     spec->names[spec->name_count++] = strdup(name);
 }
 
-/* ─── Función auxiliar para parsear el nombre de un flag ─── */
+/* --- Función auxiliar para parsear el nombre de un flag --- */
 static char *parse_flag_name(int line) {
     char name_buf[128] = "";
     if (ts_peek().type == TOK_MINUS) {
@@ -126,7 +126,7 @@ ASTNode *parse_flags() {
         spec.is_empty = false;
         spec.is_global = false;
 
-        /* ─── DETECTAR 'empty' ─────────────────────────────────── */
+        /* --- DETECTAR 'empty' ----------------------------------- */
         if (ts_peek().type == TOK_IDENT && strcmp(ts_peek().lexeme, "empty") == 0) {
             if (node->data.flags.mode == 0) {
                 error(ts_peek().line, "'empty' solo se puede usar en modos > 0 (flags posicionales)");
@@ -161,7 +161,7 @@ ASTNode *parse_flags() {
             if (!ts_match(TOK_LBRACE)) error(ts_peek().line, "Se esperaba '{' después de '*'");
             parse_flag_body_tokens(&spec.body_tokens, &spec.body_count);
         } else {
-            /* ─── FLAG NORMAL (con nombre) ────────────────────── */
+            /* --- FLAG NORMAL (con nombre) ---------------------- */
             char *name = parse_flag_name(ts_peek().line);
             add_flag_name(&spec, name, ts_peek().line);
             free(name);
@@ -174,7 +174,7 @@ ASTNode *parse_flags() {
             }
 
             if (ts_match(TOK_EQ)) {
-                /* ─── Detectar 'global' o 'local' antes del tipo ── */
+                /* --- Detectar 'global' o 'local' antes del tipo -- */
                 bool is_global = false;
                 TokenType peek = ts_peek().type;
                 if (peek == TOK_GLOBAL || peek == TOK_LOCAL) {
@@ -193,7 +193,7 @@ ASTNode *parse_flags() {
                 }
             }
 
-            /* ─── Bloque opcional ──────────────────────────────── */
+            /* --- Bloque opcional -------------------------------- */
             if (ts_peek().type == TOK_LBRACE) {
                 ts_advance();
                 parse_flag_body_tokens(&spec.body_tokens, &spec.body_count);

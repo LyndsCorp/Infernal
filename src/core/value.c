@@ -68,7 +68,7 @@ Value val_list_copy(Value *src) {
     return copy_value_secure(*src);
 }
 
-/* ─── CORREGIDO: incluye VAL_MAP ─── */
+/* --- CORREGIDO: incluye VAL_MAP --- */
 int valtype_to_tokentype(int vtype) {
     switch (vtype) {
         case VAL_INT:    return TOK_INT;
@@ -96,7 +96,7 @@ Value val_ptr(void *ptr) {
     return v;
 }
 
-/* ─── Implementación de mapas ────────────────────────────── */
+/* --- Implementación de mapas ------------------------------ */
 
 Value val_map_empty(void) {
     Value v;

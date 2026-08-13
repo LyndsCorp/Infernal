@@ -13,7 +13,7 @@
 #include "runtime/globals.h"
 #include "vm/vm.h"
 
-/* ─── Mapa de nombres de color a códigos ANSI ──────────────── */
+/* --- Mapa de nombres de color a códigos ANSI ---------------- */
 static const struct {
     const char *name;
     const char *code;
@@ -30,7 +30,7 @@ static const struct {
     {NULL, NULL}
 };
 
-/* ─── Función global de impresión (sin static) ────────────── */
+/* --- Función global de impresión (sin static) -------------- */
 void print_value(Value v) {
     switch (v.type) {
         case VAL_INT:    printf("%d", v.data.ival); break;
@@ -59,7 +59,7 @@ void print_value(Value v) {
     }
 }
 
-/* ─── color() ─── */
+/* --- color() --- */
 static Value builtin_color(int argc, Value *args) {
     if (argc < 1) return val_string("\033[0m");
     Value arg = args[0];
@@ -73,7 +73,7 @@ static Value builtin_color(int argc, Value *args) {
     return val_string("\033[0m");
 }
 
-/* ─── print() ─── */
+/* --- print() --- */
 static Value builtin_print(int argc, Value *args) {
     for (int i = 0; i < argc; i++) {
         if (i > 0) printf(" ");
@@ -84,7 +84,7 @@ static Value builtin_print(int argc, Value *args) {
     return val_make_null();
 }
 
-/* ─── warn, error, success ─── */
+/* --- warn, error, success --- */
 static Value builtin_warn(int argc, Value *args) {
     printf("\033[33m");
     for (int i = 0; i < argc; i++) {
@@ -118,7 +118,7 @@ static Value builtin_success(int argc, Value *args) {
     return val_make_null();
 }
 
-/* ─── Registro ─── */
+/* --- Registro --- */
 void register_output_builtins(void) {
     func_register_builtin("print", builtin_print);
     func_register_builtin("warn", builtin_warn);

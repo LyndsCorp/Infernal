@@ -13,7 +13,7 @@ void exec_block(NodeList *block);
 void exec_block_from(NodeList *block, int start_index);
 void exec_flag_spec(FlagSpec *spec);
 
-/* ─── Conversión de tipos (pública) ─── */
+/* --- Conversión de tipos (pública) --- */
 bool try_convert_value(Value *val, int target_tok_type);
 
 #endif

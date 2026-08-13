@@ -60,7 +60,7 @@ int main(int argc, char **argv) {
         return 0;
     }
 
-    // ─── Procesar argumentos: --shell y script ──────────────
+    // --- Procesar argumentos: --shell y script --------------
     char *script_file = NULL;
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--shell") == 0) {
@@ -152,7 +152,7 @@ int main(int argc, char **argv) {
 
     register_all_builtins();
 
-    // ─── Cargar configuración de shell (solo si no se especificó --shell) ──
+    // --- Cargar configuración de shell (solo si no se especificó --shell) --
     if (!infernal_shell) {
         load_infernal_config();
     } else {

@@ -11,10 +11,10 @@
 #include <stdbool.h>
 #include <setjmp.h>
 
-/* ─── Forward declarations ────────────────────────────────── */
+/* --- Forward declarations ---------------------------------- */
 typedef struct Chunk Chunk;
 
-/* ─── Token types ────────────────────────────────────────── */
+/* --- Token types ------------------------------------------ */
 typedef enum {
     TOK_EOF, TOK_NEWLINE, TOK_IDENT, TOK_NUMBER, TOK_STRING_LITERAL,
     TOK_EQ, TOK_PLUS, TOK_MINUS, TOK_STAR, TOK_SLASH, TOK_PERCENT,
@@ -41,7 +41,7 @@ typedef enum {
     TOK_MAP
 } TokenType;
 
-/* ─── Token ──────────────────────────────────────────────── */
+/* --- Token ------------------------------------------------ */
 typedef struct {
     TokenType type;
     char *lexeme;
@@ -50,7 +50,7 @@ typedef struct {
     int end_col;
 } Token;
 
-/* ─── AST nodes ──────────────────────────────────────────── */
+/* --- AST nodes -------------------------------------------- */
 typedef struct ASTNode ASTNode;
 typedef struct {
     ASTNode **stmts;
@@ -69,7 +69,7 @@ typedef struct {
     bool is_global;
 } FlagSpec;
 
-/* ─── Value types ────────────────────────────────────────── */
+/* --- Value types ------------------------------------------ */
 #define VAL_NULL      0
 #define VAL_INT       1
 #define VAL_FLOAT     2
@@ -80,7 +80,7 @@ typedef struct {
 #define VAL_PTR       7
 #define VAL_MAP       8
 
-/* ─── Estructura opaca para datos de mapa ────────────────── */
+/* --- Estructura opaca para datos de mapa ------------------ */
 typedef struct MapData MapData;
 
 typedef struct Value Value;
@@ -107,7 +107,7 @@ struct Value {
 
 typedef Value (*BuiltinFunc)(int argc, Value *args);
 
-/* ─── Función objeto ──────────────────────────────────────── */
+/* --- Función objeto ---------------------------------------- */
 typedef struct FuncObject {
     enum { FUNC_USER, FUNC_BUILTIN } kind;
     union {
@@ -117,7 +117,7 @@ typedef struct FuncObject {
     Chunk *code;
 } FuncObject;
 
-/* ─── AST node structure ──────────────────────────────────── */
+/* --- AST node structure ------------------------------------ */
 struct ASTNode {
     int line;
     enum {
@@ -161,7 +161,7 @@ struct ASTNode {
                 struct { ASTNode *key; ASTNode *value; } *pairs;
                 int pair_count;
             } map;
-            /* ─── UNARY ──────────────────────────────────────────── */
+            /* --- UNARY -------------------------------------------- */
             struct {
                 int op; // operador (TOK_NOT)
                 ASTNode *operand;
