@@ -1,7 +1,7 @@
 /*
  * Infernal: el intérprete de Aro Infernal.
- * Copyright (C) 2026, Lynds Corp., David Baña Szymaniak
- * Licencia GPL v3 o posterior
+ * Copyright (C) 2026, David Baña Szymaniak
+ * Este software se distribuye bajo la licencia Apache 2.0
  * Código fuente de Infernal: stdlib/neutral.c
  *
  * Funciones polimórficas que trabajan con varios tipos (string, lista, mapa).

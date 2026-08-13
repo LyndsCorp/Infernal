@@ -1,9 +1,10 @@
 /*
- * Infernal: el lenguaje de programación.
- * Copyright (C) 2026, Lynds Corp., David Baña Szymaniak, GPL v3+ License.
- * Código fuente de Infernal: developer/debug.h
+ * Infernal: el intérprete de Aro Infernal.
+ * Copyright (C) 2026, David Baña Szymaniak
+ * Este software se distribuye bajo la licencia Apache 2.0
+ * Código fuente de Infernal: developer/debug.c
  *
- * Módulo de depuración. Activar con -DDEBUG en tiempo de compilación.
+ * Módulo de depuración. Activar con -DDEBUG en tiempo de compilación. make debug lo hace automaticamente.
 */
 
 #ifndef DEVELOPER_DEBUG_H

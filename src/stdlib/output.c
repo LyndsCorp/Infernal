@@ -1,6 +1,6 @@
 /*
  * Infernal: el lenguaje de programación.
- * Copyright (C) 2026, Lynds Corp., David Baña Szymaniak, GPL v3+ License.
+ * Copyright (C) 2026, David Baña Szymaniak, GPL v3+ License.
  * Proyecto: Aros Legendarios
  * Código fuente de Infernal: stdlib/output.c
 */
