@@ -1,7 +1,9 @@
 /*
- * Infernal: el lenguaje de programación. Copyright (C) 2026, GPL v3+ License, Lynds Corp., Aros Legendarios, David Baña Szymaniak.
+ * Infernal: el intérprete de Aro Infernal.
+ * Copyright (C) 2026, Lynds Corp., David Baña Szymaniak
+ * Licencia GPL v3 o posterior
  * Código fuente de Infernal: parser/expression.c
- */
+*/
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -355,9 +357,10 @@ static ASTNode *parse_member_access() {
     return left;
 }
 
-/* ─── Unary minus ──────────────────────────────────────────────── */
+/* ─── Unary minus y not ──────────────────────────────────────────────── */
 static ASTNode *parse_unary() {
     Token t = ts_peek();
+
     if (ts_match(TOK_MINUS)) {
         ASTNode *right = parse_unary();
         ASTNode *n = node_create(NODE_BINOP, t.line);
@@ -368,6 +371,15 @@ static ASTNode *parse_unary() {
         n->data.binop.right = right;
         return n;
     }
+
+    if (ts_match(TOK_NOT)) {
+        ASTNode *operand = parse_unary();
+        ASTNode *n = node_create(NODE_UNARY, t.line);
+        n->data.unary.op = TOK_NOT;
+        n->data.unary.operand = operand;
+        return n;
+    }
+
     return parse_member_access();
 }
 

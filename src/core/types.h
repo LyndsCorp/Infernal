@@ -1,7 +1,9 @@
 /*
- * Infernal: el lenguaje de programación. Copyright (C) 2026, GPL v3+ License, Lynds Corp., Aros Legendarios, David Baña Szymaniak.
- * Código fuente de Infernal: core/types.h
- */
+ * Infernal: el intérprete de Aro Infernal.
+ * Copyright (C) 2026, Lynds Corp., David Baña Szymaniak
+ * Licencia GPL v3 o posterior
+ * Código fuente de Infernal: core/types.c
+*/
 
 #ifndef CORE_TYPES_H
 #define CORE_TYPES_H
@@ -28,6 +30,7 @@ typedef enum {
     TOK_TRUE, TOK_FALSE,
     TOK_LOCAL, TOK_GLOBAL,
     TOK_AND, TOK_OR,
+    TOK_NOT,
     TOK_IN,
     TOK_FLAG,
     TOK_BANG,
@@ -35,7 +38,7 @@ typedef enum {
     TOK_LINE,
     TOK_COLON,
     TOK_EXECUTE,
-    TOK_MAP          /* <-- palabra clave "map" */
+    TOK_MAP
 } TokenType;
 
 /* ─── Token ──────────────────────────────────────────────── */
@@ -75,7 +78,7 @@ typedef struct {
 #define VAL_LIST      5
 #define VAL_REFERENCE 6
 #define VAL_PTR       7
-#define VAL_MAP       8   /* <-- NUEVO: tipo mapa */
+#define VAL_MAP       8
 
 /* ─── Estructura opaca para datos de mapa ────────────────── */
 typedef struct MapData MapData;
@@ -98,7 +101,7 @@ struct Value {
             int index;
         } ref;
         void *ptr;
-        MapData *map;   /* <-- puntero a datos del mapa */
+        MapData *map;
     } data;
 };
 
@@ -125,7 +128,8 @@ struct ASTNode {
         NODE_FLAGS, NODE_LIST, NODE_FOR_IN, NODE_PORTAL,
         NODE_SLICE,
         NODE_EXECUTE,
-        NODE_MAP     /* <-- literal de mapa */
+        NODE_MAP,
+        NODE_UNARY
     } kind;
     union {
         struct { NodeList stmts; } prog;
@@ -153,11 +157,15 @@ struct ASTNode {
             struct { char *name; bool is_local; } portal;
             struct { ASTNode *list; int mode; int start; int end; } slice;
             struct { ASTNode *path_expr; char **args; int argc; } execute;
-            /* ─── MAPA ────────────────────────────────────────────── */
             struct {
                 struct { ASTNode *key; ASTNode *value; } *pairs;
                 int pair_count;
             } map;
+            /* ─── UNARY ──────────────────────────────────────────── */
+            struct {
+                int op; // operador (TOK_NOT)
+                ASTNode *operand;
+            } unary;
     } data;
 };
 

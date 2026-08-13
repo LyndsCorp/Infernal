@@ -1,5 +1,7 @@
 /*
- * Infernal: el lenguaje de programación. Copyright (C) 2026, GPL v3+ License, Lynds Corp., Aros Legendarios, David Baña Szymaniak.
+ * Infernal: el intérprete de Aro Infernal.
+ * Copyright (C) 2026, Lynds Corp., David Baña Szymaniak
+ * Licencia GPL v3 o posterior
  * Código fuente de Infernal: lexer/keywords.c
 */
 
@@ -56,6 +58,7 @@ TokenType lookup_keyword(const char *lexeme) {
     if (strcmp(lexeme, "and") == 0) return TOK_AND;
     if (strcmp(lexeme, "or") == 0) return TOK_OR;
     if (strcmp(lexeme, "in") == 0) return TOK_IN;
+    if (strcmp(lexeme, "not") == 0) return TOK_NOT;
 
     // Utilidades
     if (strcmp(lexeme, "flags") == 0) return TOK_FLAG;

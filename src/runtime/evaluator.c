@@ -1,7 +1,9 @@
 /*
- * Infernal: el lenguaje de programación. Copyright (C) 2026, GPL v3+ License.
+ * Infernal: el intérprete de Aro Infernal.
+ * Copyright (C) 2026, Lynds Corp., David Baña Szymaniak
+ * Licencia GPL v3 o posterior
  * Código fuente de Infernal: runtime/evaluator.c
- */
+*/
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -212,8 +214,15 @@ static int get_node_line(ASTNode *node) {
                 if (l) return l;
             }
             break;
-        default:
-            break;
+            /* ---- NUEVO: nodo unario ---- */
+            case NODE_UNARY:
+                if (node->data.unary.operand) {
+                    int l = get_node_line(node->data.unary.operand);
+                    if (l) return l;
+                }
+                break;
+            default:
+                break;
     }
     return 0;
 }

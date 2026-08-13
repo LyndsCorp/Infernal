@@ -1,8 +1,9 @@
 /*
- * Infernal: el lenguaje de programación.
- * Copyright (C) 2026, Lynds Corp., David Baña Szymaniak, GPL v3+ License.
+ * Infernal: el intérprete de Aro Infernal.
+ * Copyright (C) 2026, Lynds Corp., David Baña Szymaniak
+ * Licencia GPL v3 o posterior
  * Código fuente de Infernal: vm/compiler.c
- */
+*/
 
 #include <stdlib.h>
 #include <string.h>
@@ -16,7 +17,7 @@
 
 #define MAX_LOCALS 256
 
-/* ─── Estructura para portales durante la compilación ── */
+/* ---- Estructura para portales durante la compilación ---- */
 typedef struct CompilePortalEntry {
     char *name;
     int offset;        // índice de instrucción donde comienza el portal (-1 si aún no compilado)
@@ -77,7 +78,7 @@ static void patch_jump(Chunk *ch, int offset, int target) {
     ch->code[offset].operand = target - offset;
 }
 
-/* ─── Recolección de portales en el AST ──────────────────────── */
+/* ---- Recolección de portales en el AST ---- */
 static void collect_portals_rec(ASTNode *node, Compiler *c) {
     if (!node) return;
     if (node->kind == NODE_PORTAL) {
@@ -149,7 +150,7 @@ static void collect_portals_rec(ASTNode *node, Compiler *c) {
             for (int i = 0; i < node->data.list_lit.count; i++)
                 collect_portals_rec(node->data.list_lit.items[i], c);
         break;
-        /* ─── MAPA: solo recorrer pares, sin emitir ─── */
+        /* ---- MAPA: solo recorrer pares, sin emitir ---- */
         case NODE_MAP:
             for (int i = 0; i < node->data.map.pair_count; i++) {
                 collect_portals_rec(node->data.map.pairs[i].key, c);
@@ -171,12 +172,16 @@ static void collect_portals_rec(ASTNode *node, Compiler *c) {
             collect_portals_rec(node->data.binop.left, c);
             collect_portals_rec(node->data.binop.right, c);
             break;
-        default:
-            break;
+            /* ---- NUEVO: operador unario ---- */
+            case NODE_UNARY:
+                collect_portals_rec(node->data.unary.operand, c);
+                break;
+            default:
+                break;
     }
 }
 
-/* ─── Compilación de expresiones ─────────────────────────────── */
+/* ---- Compilación de expresiones ---- */
 static void compile_expr(Compiler *c, ASTNode *expr);
 static void compile_block(Compiler *c, NodeList *block);
 
@@ -318,6 +323,14 @@ static void compile_expr(Compiler *c, ASTNode *expr) {
                                         c->chunk->code[c->chunk->code_count - 1].operand2 = 1;
                                         break;
                                     }
+                                    /* ---- NUEVO: operador unario ---- */
+                                    case NODE_UNARY: {
+                                        if (expr->data.unary.op == TOK_NOT) {
+                                            compile_expr(c, expr->data.unary.operand);
+                                            emit(c->chunk, OP_NOT, 0);
+                                        }
+                                        break;
+                                    }
                                     default: {
                                         int const_idx = add_constant(c, val_ptr(expr));
                                         emit(c->chunk, OP_INTERPRET_NODE, const_idx);
@@ -327,7 +340,7 @@ static void compile_expr(Compiler *c, ASTNode *expr) {
     }
 }
 
-/* ─── Compilación de sentencias ──────────────────────────────── */
+/* ---- Compilación de sentencias ---- */
 static void compile_stmt(Compiler *c, ASTNode *stmt) {
     switch (stmt->kind) {
         case NODE_EXPR_STMT:
@@ -480,7 +493,7 @@ static void compile_block(Compiler *c, NodeList *block) {
     }
 }
 
-/* ─── Compilación del programa principal ──────────────────────── */
+/* ---- Compilación del programa principal ---- */
 Chunk *compile_program(NodeList *program) {
     Compiler c;
     c.chunk = calloc(1, sizeof(Chunk));
