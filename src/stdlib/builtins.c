@@ -1,9 +1,11 @@
 /*
- * Infernal: el lenguaje de programación. Copyright (C) 2026, GPL v3+ License.
+ * Infernal: el intérprete de Aro Infernal.
+ * Copyright (C) 2026, Lynds Corp., David Baña Szymaniak
+ * Licencia GPL v3 o posterior
  * Código fuente de Infernal: stdlib/builtins.c
 */
 
-//AQUI SE AÑADEN LOS .h DE LOS STDLIB
+// AQUI SE AÑADEN LOS .h DE LOS STDLIB
 #include "builtins.h"
 #include "core/value.h"
 #include "output.h" //funciones de salida
@@ -14,7 +16,7 @@
 #include "bytes.h" //funciones de bytes crudos
 #include "neutral.h" //funciones polimorficas
 
-//AQUI SE AÑADEN LOS STDLIB
+// AQUI SE AÑADEN LOS STDLIB
 void register_all_builtins(void) {
     register_output_builtins();
     register_io_builtins();

@@ -21,7 +21,7 @@
  *  Funciones de la biblioteca
  * ================================================ */
 
-/* --- has --- */
+/* --- has() --- */
 static Value builtin_has(int argc, Value *args) {
     if (argc != 2) error(current_eval_line, "has() espera exactamente 2 argumentos");
 
@@ -71,7 +71,7 @@ static Value builtin_has(int argc, Value *args) {
     return val_make_null();
 }
 
-/* --- size --- */
+/* --- size() --- */
 static Value builtin_size(int argc, Value *args) {
     if (argc != 1) error(current_eval_line, "size() espera exactamente 1 argumento");
 

@@ -1,5 +1,7 @@
 /*
- * Infernal: el lenguaje de programación. Copyright (C) 2026, GPL v3+ License.
+ * Infernal: el intérprete de Aro Infernal.
+ * Copyright (C) 2026, Lynds Corp., David Baña Szymaniak
+ * Licencia GPL v3 o posterior
  * Código fuente de Infernal: stdlib/io.c
 */
 
@@ -11,9 +13,14 @@
 #include "runtime/globals.h"
 #include "runtime/error.h"
 #include "vm/vm.h"
-#include "stdlib/output.h"   /* print_value global */
+#include "stdlib/output.h"
 
-/* ─── printAllVars mejorado ────────────────────────────────── */
+
+/* ================================================
+ *  Funciones de la biblioteca
+ * ================================================ */
+
+/* --- printAllVars() --- */
 static Value builtin_printAllVars(int argc, Value *args) {
     (void)argc; (void)args;
 
@@ -79,7 +86,7 @@ static Value builtin_printAllVars(int argc, Value *args) {
     return val_make_null();
 }
 
-/* ─── vartype() – ahora reconoce VAL_MAP ───────────────────── */
+/* --- vartype() --- */
 static Value builtin_vartype(int argc, Value *args) {
     if (argc < 1) error(0, "vartype requiere un argumento");
     Value arg = args[0];
@@ -97,7 +104,7 @@ static Value builtin_vartype(int argc, Value *args) {
     return val_string(t);
 }
 
-/* ─── input() ────────────────────────────────────────────────── */
+/* --- input() --- */
 static Value builtin_input(int argc, Value *args) {
     if (argc >= 1 && args[0].type == VAL_STRING) {
         printf("%s", args[0].data.sval);
@@ -114,7 +121,11 @@ static Value builtin_input(int argc, Value *args) {
     return val_string(buffer);
 }
 
-/* ─── Registro ────────────────────────────────────────────────── */
+
+/* ================================================
+ *  Registro de funciones
+ * ================================================ */
+
 void register_io_builtins(void) {
     func_register_builtin("printAllVars", builtin_printAllVars);
     func_register_builtin("vartype", builtin_vartype);

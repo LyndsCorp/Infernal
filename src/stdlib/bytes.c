@@ -22,7 +22,7 @@
  *  Funciones de la biblioteca
  * ================================================ */
 
-/* --- countbytes --- */
+/* --- countbytes() --- */
 static Value builtin_countbytes(int argc, Value *args) {
     if (argc != 1) error(current_eval_line, "countbytes() espera exactamente 1 argumento");
     if (args[0].type != VAL_STRING) error(current_eval_line, "countbytes() espera un string.");
@@ -30,7 +30,7 @@ static Value builtin_countbytes(int argc, Value *args) {
     return val_int((int)len);
 }
 
-/* --- headbytes --- */
+/* --- headbytes() --- */
 static Value builtin_headbytes(int argc, Value *args) {
     if (argc != 2) error(current_eval_line, "headbytes requiere dos argumentos");
     if (args[0].type != VAL_STRING) error(current_eval_line, "headbytes espera un string como primer argumento");
@@ -50,7 +50,7 @@ static Value builtin_headbytes(int argc, Value *args) {
     return res;
 }
 
-/* --- tailbytes --- */
+/* --- tailbytes() --- */
 static Value builtin_tailbytes(int argc, Value *args) {
     if (argc != 2) error(current_eval_line, "tailbytes requiere dos argumentos");
     if (args[0].type != VAL_STRING) error(current_eval_line, "tailbytes espera un string como primer argumento");
@@ -71,7 +71,7 @@ static Value builtin_tailbytes(int argc, Value *args) {
     return res;
 }
 
-/* --- replacebytes --- */
+/* --- replacebytes() --- */
 static Value builtin_replacebytes(int argc, Value *args) {
     if (argc != 3) error(current_eval_line, "replacebytes() espera exactamente 3 argumentos");
     if (args[0].type != VAL_STRING) error(current_eval_line, "replacebytes() espera un string como primer argumento");
@@ -136,7 +136,7 @@ static Value builtin_replacebytes(int argc, Value *args) {
     return res;
 }
 
-/* --- reversebytes --- */
+/* --- reversebytes() --- */
 static Value builtin_reversebytes(int argc, Value *args) {
     if (argc != 1) error(current_eval_line, "reversebytes() espera exactamente 1 argumento");
     if (args[0].type != VAL_STRING) error(current_eval_line, "reversebytes() espera un string.");
@@ -152,7 +152,7 @@ static Value builtin_reversebytes(int argc, Value *args) {
     return res;
 }
 
-/* --- lengthbytes --- */
+/* --- lengthbytes() --- */
 static Value builtin_lengthbytes(int argc, Value *args) {
     if (argc != 1) error(current_eval_line, "lengthbytes() espera exactamente 1 argumento");
     if (args[0].type != VAL_STRING) error(current_eval_line, "lengthbytes() espera un string.");

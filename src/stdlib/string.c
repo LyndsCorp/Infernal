@@ -93,7 +93,7 @@ static bool seg_equal(const CharSegment *a, const CharSegment *b) {
  *  Funciones de la biblioteca
  * ================================================ */
 
-/* --- lower --- */
+/* --- lower() --- */
 static Value builtin_lower(int argc, Value *args) {
     if (argc != 1) error(current_eval_line, "lower() espera exactamente 1 argumento");
     if (args[0].type != VAL_STRING) error(current_eval_line, "lower() espera un string.");
@@ -105,7 +105,7 @@ static Value builtin_lower(int argc, Value *args) {
     return res;
 }
 
-/* --- upper --- */
+/* --- upper() --- */
 static Value builtin_upper(int argc, Value *args) {
     if (argc != 1) error(current_eval_line, "upper() espera exactamente 1 argumento");
     if (args[0].type != VAL_STRING) error(current_eval_line, "upper() espera un string.");
@@ -117,7 +117,7 @@ static Value builtin_upper(int argc, Value *args) {
     return res;
 }
 
-/* --- capitalize --- */
+/* --- capitalize() --- */
 static Value builtin_capitalize(int argc, Value *args) {
     if (argc != 1) error(current_eval_line, "capitalize() espera exactamente 1 argumento");
     if (args[0].type != VAL_STRING) error(current_eval_line, "capitalize() espera un string.");
@@ -138,7 +138,7 @@ static Value builtin_capitalize(int argc, Value *args) {
     return res;
 }
 
-/* --- count --- */
+/* --- count() --- */
 static Value builtin_count(int argc, Value *args) {
     if (argc != 2) error(current_eval_line, "count() espera exactamente 2 argumentos");
     if (args[0].type != VAL_STRING) error(current_eval_line, "count() espera un string como primer argumento");
@@ -158,7 +158,7 @@ static Value builtin_count(int argc, Value *args) {
     return val_int(count);
 }
 
-/* --- replace --- */
+/* --- replace() --- */
 static Value builtin_replace(int argc, Value *args) {
     if (argc != 3) error(current_eval_line, "replace() espera exactamente 3 argumentos");
     if (args[0].type != VAL_STRING) error(current_eval_line, "replace() espera un string como primer argumento");
@@ -226,7 +226,7 @@ static Value builtin_replace(int argc, Value *args) {
     return res;
 }
 
-/* --- reverse -- */
+/* --- reverse() -- */
 static Value builtin_reverse(int argc, Value *args) {
     if (argc != 1) error(current_eval_line, "reverse() espera exactamente 1 argumento");
     if (args[0].type != VAL_STRING) error(current_eval_line, "reverse() espera un string.");
@@ -255,7 +255,7 @@ static Value builtin_reverse(int argc, Value *args) {
     return res;
 }
 
-/* --- join --- */
+/* --- join() --- */
 static Value builtin_join(int argc, Value *args) {
     if (argc != 2) error(current_eval_line, "join() espera exactamente 2 argumentos");
     if (args[0].type != VAL_LIST) error(current_eval_line, "join() espera una lista como primer argumento");
@@ -304,7 +304,7 @@ static Value builtin_join(int argc, Value *args) {
     return res;
 }
 
-/* --- length --- */
+/* --- length() --- */
 static Value builtin_length(int argc, Value *args) {
     if (argc != 1) error(current_eval_line, "length() espera exactamente 1 argumento");
     if (args[0].type != VAL_STRING) error(current_eval_line, "length() espera un string.");
@@ -332,7 +332,7 @@ static char* do_trim(const char *str, int left, int right) {
     return trimmed;
 }
 
-/* --- trim --- */
+/* --- trim() --- */
 static Value builtin_trim(int argc, Value *args) {
     if (argc != 1) error(current_eval_line, "trim() espera exactamente 1 argumento");
     if (args[0].type != VAL_STRING) error(current_eval_line, "trim() espera un string.");
@@ -342,7 +342,7 @@ static Value builtin_trim(int argc, Value *args) {
     return res;
 }
 
-/* --- rtrim --- */
+/* --- rtrim() --- */
 static Value builtin_rtrim(int argc, Value *args) {
     if (argc != 1) error(current_eval_line, "rtrim() espera exactamente 1 argumento");
     if (args[0].type != VAL_STRING) error(current_eval_line, "rtrim() espera un string.");
@@ -352,7 +352,7 @@ static Value builtin_rtrim(int argc, Value *args) {
     return res;
 }
 
-/* --- ltrim --- */
+/* --- ltrim() --- */
 static Value builtin_ltrim(int argc, Value *args) {
     if (argc != 1) error(current_eval_line, "ltrim() espera exactamente 1 argumento");
     if (args[0].type != VAL_STRING) error(current_eval_line, "ltrim() espera un string.");
@@ -362,7 +362,7 @@ static Value builtin_ltrim(int argc, Value *args) {
     return res;
 }
 
-/* --- trimcenter --- */
+/* --- trimcenter() --- */
 static Value builtin_trimcenter(int argc, Value *args) {
     if (argc != 1) error(current_eval_line, "trimcenter() espera exactamente 1 argumento");
     if (args[0].type != VAL_STRING) error(current_eval_line, "trimcenter() espera un string.");
@@ -429,7 +429,7 @@ static Value builtin_trimcenter(int argc, Value *args) {
     return res;
 }
 
-/* --- head --- */
+/* --- head() --- */
 static Value builtin_head(int argc, Value *args) {
     if (argc != 2) error(current_eval_line, "head requiere dos argumentos");
     if (args[0].type != VAL_STRING) error(current_eval_line, "head espera un string como primer argumento");
@@ -468,7 +468,7 @@ static Value builtin_head(int argc, Value *args) {
     return val_make_null();
 }
 
-/* --- tail --- */
+/* --- tail() --- */
 static Value builtin_tail(int argc, Value *args) {
     if (argc != 2) error(current_eval_line, "tail requiere dos argumentos");
     if (args[0].type != VAL_STRING) error(current_eval_line, "tail espera un string como primer argumento");
@@ -507,7 +507,7 @@ static Value builtin_tail(int argc, Value *args) {
     return val_make_null();
 }
 
-/* --- starts --- */
+/* --- starts() --- */
 static Value builtin_starts(int argc, Value *args) {
     if (argc != 2) error(current_eval_line, "starts() espera exactamente 2 argumentos");
     if (args[0].type != VAL_STRING) error(current_eval_line, "starts() espera un string como primer argumento");
@@ -520,7 +520,7 @@ static Value builtin_starts(int argc, Value *args) {
     return val_bool(slen >= plen && strncmp(s, prefix, plen) == 0);
 }
 
-/* --- ends --- */
+/* --- ends() --- */
 static Value builtin_ends(int argc, Value *args) {
     if (argc != 2) error(current_eval_line, "ends() espera exactamente 2 argumentos");
     if (args[0].type != VAL_STRING) error(current_eval_line, "ends() espera un string como primer argumento");
