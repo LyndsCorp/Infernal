@@ -1,5 +1,7 @@
 /*
- * Infernal: el lenguaje de programación. Copyright (C) 2026, GPL v3+ License, Lynds Corp., Aros Legendarios, David Baña Szymaniak.
+ * Infernal: el intérprete de Aro Infernal.
+ * Copyright (C) 2026, David Baña Szymaniak
+ * Este software se distribuye bajo la licencia Apache 2.0
  * Código fuente de Infernal: vm/vm.h
 */
 
@@ -16,7 +18,7 @@ extern int vm_global_types[MAX_GLOBALS];   // <-- NUEVO: tipos de globales
 extern int vm_global_count;
 extern char *vm_global_names[MAX_GLOBALS];
 
-/* ─── Ámbitos de variables globales ────────────────────────── */
+/* --- Ámbitos de variables globales -------------------------- */
 #define GLOBAL_SCRIPT 0   // variable global del script actual
 #define GLOBAL_SUPER  1   // variable global compartida entre scripts
 

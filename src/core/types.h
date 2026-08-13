@@ -1,7 +1,9 @@
 /*
- * Infernal: el lenguaje de programación. Copyright (C) 2026, GPL v3+ License, Lynds Corp., Aros Legendarios, David Baña Szymaniak.
- * Código fuente de Infernal: core/types.h
- */
+ * Infernal: el intérprete de Aro Infernal.
+ * Copyright (C) 2026, David Baña Szymaniak
+ * Este software se distribuye bajo la licencia Apache 2.0
+ * Código fuente de Infernal: core/types.c
+*/
 
 #ifndef CORE_TYPES_H
 #define CORE_TYPES_H
@@ -9,10 +11,10 @@
 #include <stdbool.h>
 #include <setjmp.h>
 
-/* ─── Forward declarations ────────────────────────────────── */
+/* --- Forward declarations ---------------------------------- */
 typedef struct Chunk Chunk;
 
-/* ─── Token types ────────────────────────────────────────── */
+/* --- Token types ------------------------------------------ */
 typedef enum {
     TOK_EOF, TOK_NEWLINE, TOK_IDENT, TOK_NUMBER, TOK_STRING_LITERAL,
     TOK_EQ, TOK_PLUS, TOK_MINUS, TOK_STAR, TOK_SLASH, TOK_PERCENT,
@@ -28,6 +30,7 @@ typedef enum {
     TOK_TRUE, TOK_FALSE,
     TOK_LOCAL, TOK_GLOBAL,
     TOK_AND, TOK_OR,
+    TOK_NOT,
     TOK_IN,
     TOK_FLAG,
     TOK_BANG,
@@ -35,10 +38,10 @@ typedef enum {
     TOK_LINE,
     TOK_COLON,
     TOK_EXECUTE,
-    TOK_MAP          /* <-- palabra clave "map" */
+    TOK_MAP
 } TokenType;
 
-/* ─── Token ──────────────────────────────────────────────── */
+/* --- Token ------------------------------------------------ */
 typedef struct {
     TokenType type;
     char *lexeme;
@@ -47,7 +50,7 @@ typedef struct {
     int end_col;
 } Token;
 
-/* ─── AST nodes ──────────────────────────────────────────── */
+/* --- AST nodes -------------------------------------------- */
 typedef struct ASTNode ASTNode;
 typedef struct {
     ASTNode **stmts;
@@ -66,7 +69,7 @@ typedef struct {
     bool is_global;
 } FlagSpec;
 
-/* ─── Value types ────────────────────────────────────────── */
+/* --- Value types ------------------------------------------ */
 #define VAL_NULL      0
 #define VAL_INT       1
 #define VAL_FLOAT     2
@@ -75,9 +78,9 @@ typedef struct {
 #define VAL_LIST      5
 #define VAL_REFERENCE 6
 #define VAL_PTR       7
-#define VAL_MAP       8   /* <-- NUEVO: tipo mapa */
+#define VAL_MAP       8
 
-/* ─── Estructura opaca para datos de mapa ────────────────── */
+/* --- Estructura opaca para datos de mapa ------------------ */
 typedef struct MapData MapData;
 
 typedef struct Value Value;
@@ -98,13 +101,13 @@ struct Value {
             int index;
         } ref;
         void *ptr;
-        MapData *map;   /* <-- puntero a datos del mapa */
+        MapData *map;
     } data;
 };
 
 typedef Value (*BuiltinFunc)(int argc, Value *args);
 
-/* ─── Función objeto ──────────────────────────────────────── */
+/* --- Función objeto ---------------------------------------- */
 typedef struct FuncObject {
     enum { FUNC_USER, FUNC_BUILTIN } kind;
     union {
@@ -114,7 +117,7 @@ typedef struct FuncObject {
     Chunk *code;
 } FuncObject;
 
-/* ─── AST node structure ──────────────────────────────────── */
+/* --- AST node structure ------------------------------------ */
 struct ASTNode {
     int line;
     enum {
@@ -125,7 +128,8 @@ struct ASTNode {
         NODE_FLAGS, NODE_LIST, NODE_FOR_IN, NODE_PORTAL,
         NODE_SLICE,
         NODE_EXECUTE,
-        NODE_MAP     /* <-- literal de mapa */
+        NODE_MAP,
+        NODE_UNARY
     } kind;
     union {
         struct { NodeList stmts; } prog;
@@ -153,11 +157,15 @@ struct ASTNode {
             struct { char *name; bool is_local; } portal;
             struct { ASTNode *list; int mode; int start; int end; } slice;
             struct { ASTNode *path_expr; char **args; int argc; } execute;
-            /* ─── MAPA ────────────────────────────────────────────── */
             struct {
                 struct { ASTNode *key; ASTNode *value; } *pairs;
                 int pair_count;
             } map;
+            /* --- UNARY -------------------------------------------- */
+            struct {
+                int op; // operador (TOK_NOT)
+                ASTNode *operand;
+            } unary;
     } data;
 };
 

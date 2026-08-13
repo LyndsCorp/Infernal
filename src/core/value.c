@@ -1,5 +1,7 @@
 /*
- * Infernal: el lenguaje de programación. Copyright (C) 2026, GPL v3+ License.
+ * Infernal: el intérprete de Aro Infernal.
+ * Copyright (C) 2026, David Baña Szymaniak
+ * Este software se distribuye bajo la licencia Apache 2.0
  * Código fuente de Infernal: core/value.c
  */
 
@@ -68,7 +70,7 @@ Value val_list_copy(Value *src) {
     return copy_value_secure(*src);
 }
 
-/* ─── CORREGIDO: incluye VAL_MAP ─── */
+/* --- CORREGIDO: incluye VAL_MAP --- */
 int valtype_to_tokentype(int vtype) {
     switch (vtype) {
         case VAL_INT:    return TOK_INT;
@@ -96,7 +98,7 @@ Value val_ptr(void *ptr) {
     return v;
 }
 
-/* ─── Implementación de mapas ────────────────────────────── */
+/* --- Implementación de mapas ------------------------------ */
 
 Value val_map_empty(void) {
     Value v;

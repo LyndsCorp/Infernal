@@ -1,7 +1,9 @@
 /*
- * Infernal: el lenguaje de programación. Copyright (C) 2026, GPL v3+ License.
+ * Infernal: el intérprete de Aro Infernal.
+ * Copyright (C) 2026, David Baña Szymaniak
+ * Este software se distribuye bajo la licencia Apache 2.0
  * Código fuente de Infernal: runtime/evaluator.c
- */
+*/
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -19,7 +21,7 @@
 #include "parser/parser.h"
 #include "developer/debug.h"
 
-/* ─── Funciones auxiliares ────────────────────────────────────── */
+/* --- Funciones auxiliares -------------------------------------- */
 static bool val_is_truthy(Value v) {
     switch (v.type) {
         case VAL_BOOL:   return v.data.bval;
@@ -44,7 +46,7 @@ static const char *type_name(int tok_type) {
     }
 }
 
-/* ─── Conversión de tipos (pública) ──────────────────────────── */
+/* --- Conversión de tipos (pública) ---------------------------- */
 bool try_convert_value(Value *val, int target_tok_type) {
     if (val->type == VAL_STRING) {
         const char *s = val->data.sval;
@@ -160,7 +162,7 @@ void exec_flag_spec(FlagSpec *spec) {
     ts = saved_ts;
 }
 
-/* ─── Función auxiliar para obtener la línea de un nodo (recursiva) ─── */
+/* --- Función auxiliar para obtener la línea de un nodo (recursiva) --- */
 static int get_node_line(ASTNode *node) {
     if (!node) return 0;
     if (node->line != 0) return node->line;
@@ -212,15 +214,22 @@ static int get_node_line(ASTNode *node) {
                 if (l) return l;
             }
             break;
-        default:
-            break;
+            /* ---- NUEVO: nodo unario ---- */
+            case NODE_UNARY:
+                if (node->data.unary.operand) {
+                    int l = get_node_line(node->data.unary.operand);
+                    if (l) return l;
+                }
+                break;
+            default:
+                break;
     }
     return 0;
 }
 
-/* ────────────────────────────────────────────────────────────── */
+/* -------------------------------------------------------------- */
 /* Slice y eliminación de listas (versión robusta)             */
-/* ────────────────────────────────────────────────────────────── */
+/* -------------------------------------------------------------- */
 
 static Value eval_slice(ASTNode *node) {
     DEBUG_INFO("eval_slice: entrada");
@@ -444,7 +453,7 @@ static Value resolve_reference(Value v, int line) {
     return list_var->value.data.list.items[idx - 1];
 }
 
-/* ─── Evaluación de expresiones ──────────────────────────────── */
+/* --- Evaluación de expresiones -------------------------------- */
 Value eval_expr(ASTNode *expr) {
     DEBUG_INFO("eval_expr: evaluando nodo de tipo %d", expr->kind);
 
@@ -650,7 +659,7 @@ Value eval_expr(ASTNode *expr) {
                 error(expr->line, "No se puede eliminar de la lista con este tipo de especificación (nodo: %d)", right_node->kind);
             }
 
-            /* ─── INSERCIÓN EN LISTA: lista + elemento[pos] ─── */
+            /* --- INSERCIÓN EN LISTA: lista + elemento[pos] --- */
             if (left.type == VAL_LIST && expr->data.binop.op == TOK_PLUS &&
                 expr->data.binop.right->kind == NODE_INDEX) {
                 DEBUG_OP("=== INSERCIÓN EN LISTA DETECTADA ===");
@@ -817,7 +826,7 @@ Value eval_expr(ASTNode *expr) {
     return val_make_null();
 }
 
-/* ─── Ejecución de bloques ────────────────────────────────────── */
+/* --- Ejecución de bloques -------------------------------------- */
 void exec_block(NodeList *block) {
     exec_block_from(block, 0);
 }

@@ -174,7 +174,7 @@ $(EMBED_TABLE_SRC): $(FIRE_FILES) $(BIN_FILES)
 	@echo " [GEN] $@"
 	@echo '// Auto-generated embedded module table' > $@
 	@echo '#include <stddef.h>' >> $@
-	@echo '#include "stdlib/embedded.h"' >> $@
+	@echo '#include "embedded/embedded.h"' >> $@
 	@for f in $(FIRE_FILES); do \
 		name=$$(basename $$f .fire); \
 		sanename=$$(echo $${name} | tr '-' '_'); \

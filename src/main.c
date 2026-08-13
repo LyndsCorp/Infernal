@@ -1,6 +1,8 @@
 /*
- * Infernal: el lenguaje de programación. Copyright (C) 2026, GPL v3+ License, Lynds Corp., Aros Legendarios, David Baña Szymaniak.
- * Código fuente de Infernal: main.c
+ * Infernal: el intérprete de Aro Infernal.
+ * Copyright (C) 2026, David Baña Szymaniak
+ * Este software se distribuye bajo la licencia Apache 2.0
+ * Código fuente de Infernal: vm/main.c
 */
 
 #include <stdio.h>
@@ -60,7 +62,7 @@ int main(int argc, char **argv) {
         return 0;
     }
 
-    // ─── Procesar argumentos: --shell y script ──────────────
+    // --- Procesar argumentos: --shell y script --------------
     char *script_file = NULL;
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--shell") == 0) {
@@ -152,7 +154,7 @@ int main(int argc, char **argv) {
 
     register_all_builtins();
 
-    // ─── Cargar configuración de shell (solo si no se especificó --shell) ──
+    // --- Cargar configuración de shell (solo si no se especificó --shell) --
     if (!infernal_shell) {
         load_infernal_config();
     } else {

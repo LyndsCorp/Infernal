@@ -1,5 +1,7 @@
 /*
- * Infernal: el lenguaje de programación. Copyright (C) 2026, GPL v3+ License, Lynds Corp., Aros Legendarios, David Baña Szymaniak.
+ * Infernal: el intérprete de Aro Infernal.
+ * Copyright (C) 2026, David Baña Szymaniak
+ * Este software se distribuye bajo la licencia Apache 2.0
  * Código fuente de Infernal: runtime/command.c
 */
 
@@ -21,12 +23,12 @@
 #include "command.h"
 #include "runtime/scope.h"
 #include "runtime/globals.h"
-#include "stdlib/embedded.h"
+#include "embedded/embedded.h"
 #include "vm/vm.h"
 #include "developer/debug.h"
 
-/* ─── Límite de seguridad para descompresión ─── */
-#define MAX_DECOMPRESSED_SIZE (500 * 1024 * 1024)  /* 500 MiB */
+/* --- Límite de seguridad para descompresión --- */
+#define MAX_DECOMPRESSED_SIZE (500 * 1024 * 1024)  // 500 MiB
 
 static char *embedded_tmp_dir = NULL;
 
@@ -50,7 +52,7 @@ char *get_var_string(const char *name) {
     return strdup(buf);
 }
 
-/* ─── Función auxiliar para añadir '$' + nombre al buffer ─── */
+/* --- Función auxiliar para añadir '$' + nombre al buffer --- */
 static void append_dollar_name(char **result, size_t *len, size_t *cap, const char *name) {
     size_t nlen = strlen(name);
     if (*len + 1 + nlen >= *cap) {
@@ -62,7 +64,7 @@ static void append_dollar_name(char **result, size_t *len, size_t *cap, const ch
     *len += nlen;
 }
 
-/* ─── Expansión de comandos (versión con scopes) ─────────────── */
+/* --- Expansión de comandos --- */
 char *expand_command(const char *cmd) {
     if (!cmd) return NULL;
     size_t cap = strlen(cmd) * 2 + 64;
@@ -119,7 +121,7 @@ char *expand_command(const char *cmd) {
     return realloc(result, len + 1);
 }
 
-/* ─── Expansión de comandos usando arrays de locales (para la VM) ─── */
+/* --- Expansión de comandos usando arrays de locales (para la VM) --- */
 char *expand_command_with_locals(const char *cmd, char **names, Value *values, int count) {
     if (!cmd) return NULL;
     size_t cap = strlen(cmd) * 2 + 64;
@@ -221,7 +223,7 @@ char *expand_command_with_locals(const char *cmd, char **names, Value *values, i
     return realloc(result, len + 1);
 }
 
-/* ─── Descompresión usando libz cargada dinámicamente ──────────── */
+/* --- Descompresión usando libz cargada dinámicamente --- */
 static unsigned char *gunzip_data(const unsigned char *compressed, size_t compressed_len, size_t *out_len) {
     static void *zlib_handle = NULL;
     static int zlib_available = -1;
@@ -334,7 +336,7 @@ static unsigned char *gunzip_data(const unsigned char *compressed, size_t compre
     return out;
 }
 
-/* ─── Extracción del binario embebido (con soporte de compresión) ─── */
+/* --- Extracción del binario embebido (con soporte de compresión) --- */
 static char *prepare_embedded_binary(const char *cmd_name) {
     const unsigned char *data = NULL;
     size_t size = 0;
@@ -418,7 +420,7 @@ static char *prepare_embedded_binary(const char *cmd_name) {
     return abs_path;
 }
 
-/* ─── Ejecutar comando embebido y devolver código de salida ─── */
+/* --- Ejecutar comando embebido y devolver código de salida --- */
 int execute_embedded(const char *full_cmd) {
     if (!full_cmd) return -1;
     char *cmd_copy = strdup(full_cmd);
@@ -490,7 +492,7 @@ void cleanup_embedded_temp_dir(void) {
     rmdir(work_dir);
 }
 
-/* ─── Ejecutar comando shell con el shell configurado ──────── */
+/* --- Ejecutar comando shell con el shell configurado --- */
 int run_shell_command(const char *cmd) {
     if (!infernal_shell) {
         DEBUG_WARN("infernal_shell no configurado, usando system() fallback");
@@ -514,7 +516,7 @@ int run_shell_command(const char *cmd) {
     }
 }
 
-/* ─── Nueva función unificada: ejecuta y devuelve el código de salida ── */
+/* --- Función unificada: ejecuta y devuelve el código de salida --- */
 int run_command_get_exit_code(const char *cmd) {
     if (!cmd) return -1;
     char *expanded = expand_command(cmd);

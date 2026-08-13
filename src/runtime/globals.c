@@ -1,5 +1,7 @@
 /*
- * Infernal: el lenguaje de programación. Copyright (C) 2026, GPL v3+ License, Lynds Corp., Aros Legendarios, David Baña Szymaniak.
+ * Infernal: el intérprete de Aro Infernal.
+ * Copyright (C) 2026, David Baña Szymaniak
+ * Este software se distribuye bajo la licencia Apache 2.0
  * Código fuente de Infernal: runtime/globals.c
 */
 
@@ -38,13 +40,13 @@ char *current_source_file = NULL;
 int current_eval_line = 0;
 int flags_arg_index = 2;   /* primer argumento después del script */
 
-/* ─── Registro de modos de flags definidos ────────────────── */
+/* --- Registro de modos de flags definidos ------------------ */
 int defined_flags_modes[MAX_FLAGS_MODES] = {0};
 
-/* ─── Shell configurado ───────────────────────────────────── */
+/* --- Shell configurado ------------------------------------- */
 char *infernal_shell = NULL;
 
-/* ─── Función auxiliar para parsear archivo de configuración ── */
+/* --- Función auxiliar para parsear archivo de configuración -- */
 static int parse_config_file(const char *path, char **shell_ptr) {
     FILE *fp = fopen(path, "r");
     if (!fp) return 0;
@@ -79,7 +81,7 @@ static int parse_config_file(const char *path, char **shell_ptr) {
     return 0;
 }
 
-/* ─── Carga de configuración de shell ────────────────────── */
+/* --- Carga de configuración de shell ---------------------- */
 void load_infernal_config(void) {
     if (infernal_shell) {
         DEBUG_INFO("Shell ya configurado, omitiendo carga de configuraciones");
@@ -112,7 +114,7 @@ void load_infernal_config(void) {
     }
 }
 
-/* ─── Mostrar información de configuración de shell ──────── */
+/* --- Mostrar información de configuración de shell -------- */
 void show_shell_info(void) {
     char *user_shell = NULL;
     char *system_shell = NULL;

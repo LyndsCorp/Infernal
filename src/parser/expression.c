@@ -1,7 +1,9 @@
 /*
- * Infernal: el lenguaje de programación. Copyright (C) 2026, GPL v3+ License, Lynds Corp., Aros Legendarios, David Baña Szymaniak.
+ * Infernal: el intérprete de Aro Infernal.
+ * Copyright (C) 2026, David Baña Szymaniak
+ * Este software se distribuye bajo la licencia Apache 2.0
  * Código fuente de Infernal: parser/expression.c
- */
+*/
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -14,7 +16,7 @@
 #include "parser.h"
 #include "developer/debug.h"
 
-/* ─── Función auxiliar para parsear el contenido de un slice ── */
+/* --- Función auxiliar para parsear el contenido de un slice -- */
 ASTNode *parse_slice_content(int line) {
     Token t = ts_peek();
     int mode = -1;
@@ -104,7 +106,7 @@ ASTNode *parse_slice_content(int line) {
     return node;
 }
 
-/* ─── parse_index_or_slice: parsea el contenido dentro de [ ] y devuelve NODE_INDEX o NODE_SLICE ── */
+/* --- parse_index_or_slice: parsea el contenido dentro de [ ] y devuelve NODE_INDEX o NODE_SLICE -- */
 ASTNode *parse_index_or_slice(int line) {
     Token t = ts_peek();
     ASTNode *node = NULL;
@@ -120,7 +122,7 @@ ASTNode *parse_index_or_slice(int line) {
     return node;
 }
 
-/* ─── parse_map_literal: lee un literal de mapa ────────────── */
+/* --- parse_map_literal: lee un literal de mapa -------------- */
 static ASTNode *parse_map_literal(int line) {
     ASTNode *node = node_create(NODE_MAP, line);
     node->data.map.pairs = NULL;
@@ -154,7 +156,7 @@ static ASTNode *parse_map_literal(int line) {
     return node;
 }
 
-/* ─── parse_primary ────────────────────────────────────────────── */
+/* --- parse_primary ---------------------------------------------- */
 ASTNode *parse_primary() {
     Token t = ts_peek();
     DEBUG_INFO("parse_primary: token '%s' (tipo %d)", t.lexeme, t.type);
@@ -327,7 +329,7 @@ ASTNode *parse_primary() {
     return NULL;
 }
 
-/* ─── parse_member_access ──────────────────────────────────────── */
+/* --- parse_member_access ---------------------------------------- */
 static ASTNode *parse_member_access() {
     ASTNode *left = parse_primary();
     if (left->kind == NODE_VAR && strchr(left->data.var.name, '.') != NULL) {
@@ -355,9 +357,10 @@ static ASTNode *parse_member_access() {
     return left;
 }
 
-/* ─── Unary minus ──────────────────────────────────────────────── */
+/* --- Unary minus y not ------------------------------------------------ */
 static ASTNode *parse_unary() {
     Token t = ts_peek();
+
     if (ts_match(TOK_MINUS)) {
         ASTNode *right = parse_unary();
         ASTNode *n = node_create(NODE_BINOP, t.line);
@@ -368,10 +371,19 @@ static ASTNode *parse_unary() {
         n->data.binop.right = right;
         return n;
     }
+
+    if (ts_match(TOK_NOT)) {
+        ASTNode *operand = parse_unary();
+        ASTNode *n = node_create(NODE_UNARY, t.line);
+        n->data.unary.op = TOK_NOT;
+        n->data.unary.operand = operand;
+        return n;
+    }
+
     return parse_member_access();
 }
 
-/* ─── Term ────────────────────────────────────────────────── */
+/* --- Term -------------------------------------------------- */
 static ASTNode *parse_term() {
     ASTNode *left = parse_unary();
     while (ts_peek().type == TOK_STAR || ts_peek().type == TOK_SLASH || ts_peek().type == TOK_PERCENT) {
@@ -386,7 +398,7 @@ static ASTNode *parse_term() {
     return left;
 }
 
-/* ─── Expression (suma, resta) ────────────────────────────────── */
+/* --- Expression (suma, resta) ---------------------------------- */
 static ASTNode *parse_expr() {
     ASTNode *left = parse_term();
     while (ts_peek().type == TOK_PLUS || ts_peek().type == TOK_MINUS) {
@@ -418,7 +430,7 @@ static ASTNode *parse_expr() {
     return left;
 }
 
-/* ─── Comparaciones ───────────────────────────────────────────── */
+/* --- Comparaciones --------------------------------------------- */
 static ASTNode *parse_comparison() {
     ASTNode *left = parse_expr();
     TokenType op = ts_peek().type;
@@ -435,7 +447,7 @@ static ASTNode *parse_comparison() {
         return left;
 }
 
-/* ─── AND ───────────────────────────────────────────────── */
+/* --- AND ------------------------------------------------- */
 static ASTNode *parse_logic_and() {
     ASTNode *left = parse_comparison();
     while (ts_peek().type == TOK_AND) {
@@ -450,7 +462,7 @@ static ASTNode *parse_logic_and() {
     return left;
 }
 
-/* ─── OR ────────────────────────────────────────────────── */
+/* --- OR -------------------------------------------------- */
 static ASTNode *parse_logic_or() {
     ASTNode *left = parse_logic_and();
     while (ts_peek().type == TOK_OR) {
@@ -465,7 +477,7 @@ static ASTNode *parse_logic_or() {
     return left;
 }
 
-/* ─── Expresión principal ──────────────────────────────────── */
+/* --- Expresión principal ------------------------------------ */
 ASTNode *parse_expression(int dummy) {
     (void)dummy;
     return parse_logic_or();

@@ -1,6 +1,7 @@
 /*
- * Infernal: el lenguaje de programación.
- * Copyright (C) 2026, Lynds Corp., David Baña Szymaniak, GPL v3+ License.
+ * Infernal: el intérprete de Aro Infernal.
+ * Copyright (C) 2026, David Baña Szymaniak
+ * Este software se distribuye bajo la licencia Apache 2.0
  * Código fuente de Infernal: stdlib/map.c
 */
 
@@ -12,7 +13,12 @@
 #include "runtime/globals.h"
 #include "vm/vm.h"
 
-/* ─── keys() ─── */
+
+/* ================================================
+ *  Funciones de la biblioteca
+ * ================================================ */
+
+/* --- keys() --- */
 static Value builtin_keys(int argc, Value *args) {
     if (argc != 1) error(0, "keys() espera exactamente 1 argumento");
     if (args[0].type != VAL_MAP) error(0, "keys() espera un mapa");
@@ -25,7 +31,7 @@ static Value builtin_keys(int argc, Value *args) {
     return list;
 }
 
-/* ─── values() ─── */
+/* --- values() --- */
 static Value builtin_values(int argc, Value *args) {
     if (argc != 1) error(0, "values() espera exactamente 1 argumento");
     if (args[0].type != VAL_MAP) error(0, "values() espera un mapa");
@@ -38,7 +44,7 @@ static Value builtin_values(int argc, Value *args) {
     return list;
 }
 
-/* ─── delete() – modifica in‑place y devuelve el mapa ─── */
+/* --- delete() --- */
 static Value builtin_delete(int argc, Value *args) {
     if (argc != 2) error(0, "delete() espera exactamente 2 argumentos");
     if (args[0].type != VAL_MAP) error(0, "delete() espera un mapa como primer argumento");
@@ -48,7 +54,7 @@ static Value builtin_delete(int argc, Value *args) {
     return args[0];
 }
 
-/* ─── size() ─── */
+/* --- size() --- */
 static Value builtin_size(int argc, Value *args) {
     if (argc != 1) error(0, "size() espera exactamente 1 argumento");
 
@@ -64,7 +70,11 @@ static Value builtin_size(int argc, Value *args) {
     return val_make_null();
 }
 
-/* ─── Registro ─── */
+
+/* ================================================
+ *  Registro de funciones
+ * ================================================ */
+
 void register_map_builtins(void) {
     func_register_builtin("keys", builtin_keys);
     func_register_builtin("values", builtin_values);

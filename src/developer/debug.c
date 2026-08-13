@@ -1,16 +1,14 @@
 /*
- * Infernal: el lenguaje de programación.
- * Copyright (C) 2026, Lynds Corp., David Baña Szymaniak, GPL v3+ License.
+ * Infernal: el intérprete de Aro Infernal.
+ * Copyright (C) 2026, David Baña Szymaniak
+ * Este software se distribuye bajo la licencia Apache 2.0
  * Código fuente de Infernal: developer/debug.c
- *
- * Implementación de funciones de depuración (si se necesitan).
- * Por ahora solo contiene inicialización.
 */
 
 #include "debug.h"
 #include <stdlib.h>
 
-/* ─── Inicialización del sistema de depuración ──────────────── */
+/* --- Inicialización del sistema de depuración ---------------- */
 #ifdef DEBUG
 static int debug_initialized = 0;
 
@@ -27,7 +25,7 @@ void debug_init(void) {
 }
 #endif
 
-/* ─── Función para activar/desactivar logs en tiempo de ejecución ── */
+/* --- Función para activar/desactivar logs en tiempo de ejecución -- */
 #ifdef DEBUG
 static int debug_enabled = 1;
 

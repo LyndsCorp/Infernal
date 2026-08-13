@@ -1,19 +1,19 @@
-Infernal 1.23 (Main)
+Infernal 1.24 (Main)
 ──────────────────────────────────────────────
 
-Versión:           1.23
+Versión:           1.24
 Edición:           Código fuente de Infernal
 Arquitectura:      En la que lo compiles
 Sistema operativo: POSIX (Linux, macOS)
 
 Distribuido por:   David Baña Szymaniak
 Proyecto:          Aros Legendarios
-Licencia:          GPL v3+
+Licencia:          Apache 2.0
 
 
 Código fuente:     https://github.com/LyndsCorp/Infernal/tree/main
 Repositorio:       https://github.com/LyndsCorp/Infernal
 Documentación:     https://github.com/LyndsCorp/Infernal-Documentation
 
-Copyright (C) Lynds Corp.
+Copyright (C) 2026 David Baña Szymaniak
 Hecho con <3 por David Baña Szymaniak

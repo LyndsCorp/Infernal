@@ -1,5 +1,7 @@
 /*
- * Infernal: el lenguaje de programación. Copyright (C) 2026, GPL v3+ License, Lynds Corp., Aros Legendarios, David Baña Szymaniak.
+ * Infernal: el intérprete de Aro Infernal.
+ * Copyright (C) 2026, David Baña Szymaniak
+ * Este software se distribuye bajo la licencia Apache 2.0
  * Código fuente de Infernal: parser/parser.c
 */
 
@@ -16,11 +18,11 @@
 #include "runtime/scope.h"
 #include "runtime/globals.h"
 #include "runtime/error.h"
-#include "stdlib/embedded.h"
+#include "embedded/embedded.h"
 #include "vm/compiler.h"
 #include "developer/debug.h"
 
-/* ─── Función auxiliar para eliminar comillas de un string ── */
+/* --- Función auxiliar para eliminar comillas de un string -- */
 static char *strip_quotes(const char *s) {
     if (!s) return NULL;
     size_t len = strlen(s);
@@ -34,7 +36,7 @@ static char *strip_quotes(const char *s) {
     return strdup(s);
 }
 
-/* ─── Extraer el comando literal desde la línea, reemplazando ?? por $$ ── */
+/* --- Extraer el comando literal desde la línea, reemplazando ?? por $$ -- */
 static char *extract_literal_command(int line) {
     char *raw = extract_command_string(line);
     if (!raw) return strdup("");
@@ -142,7 +144,7 @@ NodeList parse_block(const char *terminator) {
 
         ASTNode *stmt = NULL;
 
-        /* ─── Comandos embebidos con ! ────────────────────────────── */
+        /* --- Comandos embebidos con ! ------------------------------ */
         if (t.type == TOK_BANG) {
             ts_advance();
             char cmd[4096] = {0};
@@ -230,7 +232,7 @@ NodeList parse_block(const char *terminator) {
             continue;
         }
 
-        /* ─── Comandos shell entre comillas ─────────────────────────── */
+        /* --- Comandos shell entre comillas --------------------------- */
         if (t.type == TOK_STRING_LITERAL) {
             char cmd[4096] = {0};
             Token first = ts_advance();
@@ -318,7 +320,7 @@ NodeList parse_block(const char *terminator) {
             continue;
         }
 
-        /* ─── Portales (@) ────────────────────────────────────────── */
+        /* --- Portales (@) ------------------------------------------ */
         if (t.type == TOK_AT) {
             ts_advance();
             if (ts_peek().type != TOK_IDENT) error(t.line, "Se esperaba nombre de portal después de '@'");
@@ -331,7 +333,7 @@ NodeList parse_block(const char *terminator) {
             continue;
         }
 
-        /* ─── Flags ────────────────────────────────────────────────── */
+        /* --- Flags -------------------------------------------------- */
         if (t.type == TOK_FLAG) {
             ts_advance();
             stmt = parse_flags();
@@ -340,7 +342,7 @@ NodeList parse_block(const char *terminator) {
             continue;
         }
 
-        /* ─── execute ────────────────────────────────────────────────── */
+        /* --- execute -------------------------------------------------- */
         if (t.type == TOK_EXECUTE) {
             ts_advance();
             ASTNode *path_expr = parse_expression(0);
@@ -364,7 +366,7 @@ NodeList parse_block(const char *terminator) {
             continue;
         }
 
-        /* ─── Estructuras de control ────────────────────────────────── */
+        /* --- Estructuras de control ---------------------------------- */
         if (t.type == TOK_IF) {
             stmt = parse_if_statement();
         } else if (t.type == TOK_WHILE) {

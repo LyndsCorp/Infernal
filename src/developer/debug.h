@@ -1,9 +1,10 @@
 /*
- * Infernal: el lenguaje de programación.
- * Copyright (C) 2026, Lynds Corp., David Baña Szymaniak, GPL v3+ License.
- * Código fuente de Infernal: developer/debug.h
+ * Infernal: el intérprete de Aro Infernal.
+ * Copyright (C) 2026, David Baña Szymaniak
+ * Este software se distribuye bajo la licencia Apache 2.0
+ * Código fuente de Infernal: developer/debug.c
  *
- * Módulo de depuración. Activar con -DDEBUG en tiempo de compilación.
+ * Módulo de depuración. Activar con -DDEBUG en tiempo de compilación. make debug lo hace automaticamente.
 */
 
 #ifndef DEVELOPER_DEBUG_H
@@ -15,7 +16,7 @@
 
 #ifdef DEBUG
 
-/* ─── Colores ANSI para logs ─────────────────────────────────── */
+/* --- Colores ANSI para logs ----------------------------------- */
 #define DEBUG_COLOR_RESET   "\033[0m"
 #define DEBUG_COLOR_RED     "\033[31m"
 #define DEBUG_COLOR_GREEN   "\033[32m"
@@ -24,7 +25,7 @@
 #define DEBUG_COLOR_MAGENTA "\033[35m"
 #define DEBUG_COLOR_CYAN    "\033[36m"
 
-/* ─── Macro de depuración principal ──────────────────────────── */
+/* --- Macro de depuración principal ---------------------------- */
 #define DEBUG_LOG(level, color, fmt, ...) \
 do { \
     struct timeval tv; \
@@ -39,7 +40,7 @@ do { \
     fflush(stderr); \
 } while(0)
 
-/* ─── Niveles de log ─────────────────────────────────────────── */
+/* --- Niveles de log ------------------------------------------- */
 #define DEBUG_INFO(fmt, ...)   DEBUG_LOG("INFO", DEBUG_COLOR_GREEN, fmt, ##__VA_ARGS__)
 #define DEBUG_WARN(fmt, ...)   DEBUG_LOG("WARN", DEBUG_COLOR_YELLOW, fmt, ##__VA_ARGS__)
 #define DEBUG_ERROR(fmt, ...)  DEBUG_LOG("ERROR", DEBUG_COLOR_RED, fmt, ##__VA_ARGS__)
@@ -47,11 +48,11 @@ do { \
 #define DEBUG_VM(fmt, ...)     DEBUG_LOG("VM", DEBUG_COLOR_MAGENTA, fmt, ##__VA_ARGS__)
 #define DEBUG_COMPILER(fmt, ...) DEBUG_LOG("COMPILER", DEBUG_COLOR_BLUE, fmt, ##__VA_ARGS__)
 
-/* ─── Macro para trazar ejecución de bytecode ────────────────── */
+/* --- Macro para trazar ejecución de bytecode ------------------ */
 #define DEBUG_TRACE_OP(op, desc) \
 DEBUG_OP("%s (op=%d, operand=%d, operand2=%d)", desc, ip->op, ip->operand, ip->operand2)
 
-/* ─── Macro para mostrar estado de la pila ───────────────────── */
+/* --- Macro para mostrar estado de la pila --------------------- */
 #define DEBUG_STACK() \
 do { \
     if (sp > stack) { \
@@ -72,7 +73,7 @@ do { \
     } \
 } while(0)
 
-/* ─── Macro para mostrar valor de una variable ───────────────── */
+/* --- Macro para mostrar valor de una variable ----------------- */
 #define DEBUG_VAR(name, value) \
 do { \
     switch ((value).type) { \
@@ -86,13 +87,13 @@ do { \
     } \
 } while(0)
 
-/* ─── Macro para marcar entrada/salida de funciones ──────────── */
+/* --- Macro para marcar entrada/salida de funciones ------------ */
 #define DEBUG_ENTER(fn) DEBUG_INFO("→ Entering %s()", fn)
 #define DEBUG_LEAVE(fn) DEBUG_INFO("← Leaving %s()", fn)
 
 #else /* !DEBUG */
 
-/* ─── Modo producción: todas las macros se expanden a nada ──── */
+/* --- Modo producción: todas las macros se expanden a nada ---- */
 #define DEBUG_INFO(fmt, ...)
 #define DEBUG_WARN(fmt, ...)
 #define DEBUG_ERROR(fmt, ...)
