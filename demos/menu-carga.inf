@@ -1,0 +1,10 @@
+#!../infernal
+print(color("green") + "Barra de progreso fake (usa \\r y \\N)")
+print("\r[#####---------------] 25%\N")
+sleep 0.3
+print("\r[##########----------] 50%\N")
+sleep 0.3
+print("\r[###############-----] 75%\N")
+sleep 0.3
+print("\r[####################] 100%\N")
+echo

@@ -32,6 +32,7 @@ typedef struct {
     bool top_level;
     CompilePortalEntry *portals;   // tabla de portales recolectados
     int portal_count;
+    int current_line;              // línea actual que se está compilando
 } Compiler;
 
 static int add_constant(Compiler *c, Value v) {
@@ -58,7 +59,8 @@ static int resolve_local(Compiler *c, const char *name) {
     return -1;
 }
 
-static void emit(Chunk *ch, OpCode op, int operand) {
+static void emit(Compiler *c, OpCode op, int operand) {
+    Chunk *ch = c->chunk;
     if (ch->code_count >= ch->code_cap) {
         ch->code_cap = ch->code_cap == 0 ? 256 : ch->code_cap * 2;
         ch->code = realloc(ch->code, ch->code_cap * sizeof(Instruction));
@@ -66,16 +68,17 @@ static void emit(Chunk *ch, OpCode op, int operand) {
     ch->code[ch->code_count].op = op;
     ch->code[ch->code_count].operand = operand;
     ch->code[ch->code_count].operand2 = 0;
+    ch->code[ch->code_count].line = c->current_line;
     ch->code_count++;
 }
 
-static int emit_jump(Chunk *ch, OpCode op) {
-    emit(ch, op, 0);
-    return ch->code_count - 1;
+static int emit_jump(Compiler *c, OpCode op) {
+    emit(c, op, 0);
+    return c->chunk->code_count - 1;
 }
 
-static void patch_jump(Chunk *ch, int offset, int target) {
-    ch->code[offset].operand = target - offset;
+static void patch_jump(Compiler *c, int offset, int target) {
+    c->chunk->code[offset].operand = target - offset;
 }
 
 /* ---- Recolección de portales en el AST ---- */
@@ -172,12 +175,11 @@ static void collect_portals_rec(ASTNode *node, Compiler *c) {
             collect_portals_rec(node->data.binop.left, c);
             collect_portals_rec(node->data.binop.right, c);
             break;
-            /* ---- NUEVO: operador unario ---- */
-            case NODE_UNARY:
-                collect_portals_rec(node->data.unary.operand, c);
-                break;
-            default:
-                break;
+        case NODE_UNARY:
+            collect_portals_rec(node->data.unary.operand, c);
+            break;
+        default:
+            break;
     }
 }
 
@@ -186,36 +188,38 @@ static void compile_expr(Compiler *c, ASTNode *expr);
 static void compile_block(Compiler *c, NodeList *block);
 
 static void compile_expr(Compiler *c, ASTNode *expr) {
+    c->current_line = expr->line;  // establecer línea actual
+
     switch (expr->kind) {
         case NODE_LITERAL:
             switch (expr->data.lit.type) {
-                case TOK_INT:    emit(c->chunk, OP_PUSH_INT, add_constant(c, val_int(expr->data.lit.ival))); break;
-                case TOK_FLOAT:  emit(c->chunk, OP_PUSH_FLOAT, add_constant(c, val_float(expr->data.lit.fval))); break;
-                case TOK_BOOL:   emit(c->chunk, OP_PUSH_BOOL, add_constant(c, val_bool(expr->data.lit.bval))); break;
-                case TOK_STRING: emit(c->chunk, OP_PUSH_STRING, add_constant(c, val_string(expr->data.lit.sval))); break;
+                case TOK_INT:    emit(c, OP_PUSH_INT, add_constant(c, val_int(expr->data.lit.ival))); break;
+                case TOK_FLOAT:  emit(c, OP_PUSH_FLOAT, add_constant(c, val_float(expr->data.lit.fval))); break;
+                case TOK_BOOL:   emit(c, OP_PUSH_BOOL, add_constant(c, val_bool(expr->data.lit.bval))); break;
+                case TOK_STRING: emit(c, OP_PUSH_STRING, add_constant(c, val_string(expr->data.lit.sval))); break;
             }
             break;
                 case NODE_VAR: {
                     const char *name = expr->data.var.name;
                     if (name[0] == '$') {
                         int const_idx = add_constant(c, val_ptr(expr));
-                        emit(c->chunk, OP_INTERPRET_NODE, const_idx);
+                        emit(c, OP_INTERPRET_NODE, const_idx);
                         c->chunk->code[c->chunk->code_count - 1].operand2 = 1;
                         break;
                     }
                     const char *clean_name = (name[0] == '?') ? name + 1 : name;
                     int gidx = vm_find_global_index(clean_name);
                     if (gidx >= 0) {
-                        emit(c->chunk, OP_LOAD_GLOBAL, gidx);
+                        emit(c, OP_LOAD_GLOBAL, gidx);
                         break;
                     }
                     int slot = resolve_local(c, clean_name);
                     if (slot >= 0) {
-                        emit(c->chunk, OP_LOAD_VAR, slot);
+                        emit(c, OP_LOAD_VAR, slot);
                         break;
                     }
                     int const_idx = add_constant(c, val_ptr(expr));
-                    emit(c->chunk, OP_INTERPRET_NODE, const_idx);
+                    emit(c, OP_INTERPRET_NODE, const_idx);
                     c->chunk->code[c->chunk->code_count - 1].operand2 = 1;
                     break;
                 }
@@ -224,7 +228,7 @@ static void compile_expr(Compiler *c, ASTNode *expr) {
                         expr->data.binop.right != NULL &&
                         expr->data.binop.right->kind == NODE_INDEX) {
                         int const_idx = add_constant(c, val_ptr(expr));
-                    emit(c->chunk, OP_INTERPRET_NODE, const_idx);
+                    emit(c, OP_INTERPRET_NODE, const_idx);
                     c->chunk->code[c->chunk->code_count - 1].operand2 = 1;
                     break;
                         }
@@ -235,7 +239,7 @@ static void compile_expr(Compiler *c, ASTNode *expr) {
                             (expr->data.binop.right->kind == NODE_LIST &&
                             expr->data.binop.right->data.list_lit.count == 1))) {
                             int const_idx = add_constant(c, val_ptr(expr));
-                        emit(c->chunk, OP_INTERPRET_NODE, const_idx);
+                        emit(c, OP_INTERPRET_NODE, const_idx);
                         c->chunk->code[c->chunk->code_count - 1].operand2 = 1;
                         break;
                             }
@@ -243,29 +247,29 @@ static void compile_expr(Compiler *c, ASTNode *expr) {
                             if (expr->data.binop.op == TOK_AND) {
                                 compile_expr(c, expr->data.binop.left);
                                 compile_expr(c, expr->data.binop.right);
-                                emit(c->chunk, OP_AND, 0);
+                                emit(c, OP_AND, 0);
                             } else if (expr->data.binop.op == TOK_OR) {
                                 compile_expr(c, expr->data.binop.left);
                                 compile_expr(c, expr->data.binop.right);
-                                emit(c->chunk, OP_OR, 0);
+                                emit(c, OP_OR, 0);
                             } else {
                                 compile_expr(c, expr->data.binop.left);
                                 compile_expr(c, expr->data.binop.right);
                                 switch (expr->data.binop.op) {
-                                    case TOK_PLUS:  emit(c->chunk, OP_ADD, 0); break;
-                                    case TOK_MINUS: emit(c->chunk, OP_SUB, 0); break;
-                                    case TOK_STAR:  emit(c->chunk, OP_MUL, 0); break;
-                                    case TOK_SLASH: emit(c->chunk, OP_DIV, 0); break;
-                                    case TOK_PERCENT: emit(c->chunk, OP_MOD, 0); break;
-                                    case TOK_EEQ:   emit(c->chunk, OP_EQ, 0); break;
-                                    case TOK_NEQ:   emit(c->chunk, OP_NEQ, 0); break;
-                                    case TOK_LT_OP: emit(c->chunk, OP_LT, 0); break;
-                                    case TOK_GT_OP: emit(c->chunk, OP_GT, 0); break;
-                                    case TOK_LE:    emit(c->chunk, OP_LE, 0); break;
-                                    case TOK_GE:    emit(c->chunk, OP_GE, 0); break;
+                                    case TOK_PLUS:  emit(c, OP_ADD, 0); break;
+                                    case TOK_MINUS: emit(c, OP_SUB, 0); break;
+                                    case TOK_STAR:  emit(c, OP_MUL, 0); break;
+                                    case TOK_SLASH: emit(c, OP_DIV, 0); break;
+                                    case TOK_PERCENT: emit(c, OP_MOD, 0); break;
+                                    case TOK_EEQ:   emit(c, OP_EQ, 0); break;
+                                    case TOK_NEQ:   emit(c, OP_NEQ, 0); break;
+                                    case TOK_LT_OP: emit(c, OP_LT, 0); break;
+                                    case TOK_GT_OP: emit(c, OP_GT, 0); break;
+                                    case TOK_LE:    emit(c, OP_LE, 0); break;
+                                    case TOK_GE:    emit(c, OP_GE, 0); break;
                                     default: {
                                         int const_idx = add_constant(c, val_ptr(expr));
-                                        emit(c->chunk, OP_INTERPRET_NODE, const_idx);
+                                        emit(c, OP_INTERPRET_NODE, const_idx);
                                         c->chunk->code[c->chunk->code_count - 1].operand2 = 1;
                                     }
                                 }
@@ -278,40 +282,39 @@ static void compile_expr(Compiler *c, ASTNode *expr) {
                                         int builtin_idx = vm_find_builtin_index(expr->data.call.name);
                                         if (builtin_idx >= 0) {
                                             int call_pos = c->chunk->code_count;
-                                            emit(c->chunk, OP_CALL_BUILTIN, builtin_idx);
+                                            emit(c, OP_CALL_BUILTIN, builtin_idx);
                                             c->chunk->code[call_pos].operand2 = expr->data.call.argc;
                                         } else {
                                             FuncObject *fobj = func_lookup(expr->data.call.name);
                                             if (fobj && fobj->kind == FUNC_USER && fobj->code != NULL) {
                                                 int const_idx = add_constant(c, val_ptr(expr));
-                                                emit(c->chunk, OP_INTERPRET_NODE, const_idx);
+                                                emit(c, OP_INTERPRET_NODE, const_idx);
                                                 c->chunk->code[c->chunk->code_count - 1].operand2 = 1;
                                             } else {
                                                 int const_idx = add_constant(c, val_ptr(expr));
-                                                emit(c->chunk, OP_INTERPRET_NODE, const_idx);
+                                                emit(c, OP_INTERPRET_NODE, const_idx);
                                                 c->chunk->code[c->chunk->code_count - 1].operand2 = 1;
                                             }
                                         }
                                         break;
                                     }
                                     case NODE_LIST:
-                                        emit(c->chunk, OP_NEW_LIST, 0);
+                                        emit(c, OP_NEW_LIST, 0);
                                         for (int i = 0; i < expr->data.list_lit.count; i++) {
                                             compile_expr(c, expr->data.list_lit.items[i]);
-                                            emit(c->chunk, OP_LIST_APPEND, 0);
+                                            emit(c, OP_LIST_APPEND, 0);
                                         }
                                         break;
                                     case NODE_MAP: {
-                                        /* Delegamos la construcción del mapa al evaluador */
                                         int const_idx = add_constant(c, val_ptr(expr));
-                                        emit(c->chunk, OP_INTERPRET_NODE, const_idx);
+                                        emit(c, OP_INTERPRET_NODE, const_idx);
                                         c->chunk->code[c->chunk->code_count - 1].operand2 = 1;
                                         break;
                                     }
                                     case NODE_INDEX: {
                                         compile_expr(c, expr->data.idx.list);
                                         compile_expr(c, expr->data.idx.index);
-                                        emit(c->chunk, OP_INDEX, 0);
+                                        emit(c, OP_INDEX, 0);
                                         break;
                                     }
                                     case NODE_SLICE: {
@@ -319,21 +322,20 @@ static void compile_expr(Compiler *c, ASTNode *expr) {
                                             error(expr->line, "Compilador: nodo slice sin lista asignada");
                                         }
                                         int const_idx = add_constant(c, val_ptr(expr));
-                                        emit(c->chunk, OP_INTERPRET_NODE, const_idx);
+                                        emit(c, OP_INTERPRET_NODE, const_idx);
                                         c->chunk->code[c->chunk->code_count - 1].operand2 = 1;
                                         break;
                                     }
-                                    /* ---- NUEVO: operador unario ---- */
                                     case NODE_UNARY: {
                                         if (expr->data.unary.op == TOK_NOT) {
                                             compile_expr(c, expr->data.unary.operand);
-                                            emit(c->chunk, OP_NOT, 0);
+                                            emit(c, OP_NOT, 0);
                                         }
                                         break;
                                     }
                                     default: {
                                         int const_idx = add_constant(c, val_ptr(expr));
-                                        emit(c->chunk, OP_INTERPRET_NODE, const_idx);
+                                        emit(c, OP_INTERPRET_NODE, const_idx);
                                         c->chunk->code[c->chunk->code_count - 1].operand2 = 1;
                                         break;
                                     }
@@ -342,10 +344,12 @@ static void compile_expr(Compiler *c, ASTNode *expr) {
 
 /* ---- Compilación de sentencias ---- */
 static void compile_stmt(Compiler *c, ASTNode *stmt) {
+    c->current_line = stmt->line;  // establecer línea actual
+
     switch (stmt->kind) {
         case NODE_EXPR_STMT:
             compile_expr(c, stmt->data.expr_stmt.expr);
-            emit(c->chunk, OP_POP, 0);
+            emit(c, OP_POP, 0);
             break;
         case NODE_ASSIGN: {
             const char *name = stmt->data.assign.name;
@@ -353,7 +357,7 @@ static void compile_stmt(Compiler *c, ASTNode *stmt) {
 
             if (stmt->data.assign.lhs_index) {
                 int const_idx = add_constant(c, val_ptr(stmt));
-                emit(c->chunk, OP_INTERPRET_NODE, const_idx);
+                emit(c, OP_INTERPRET_NODE, const_idx);
                 c->chunk->code[c->chunk->code_count - 1].operand2 = 0;
                 break;
             }
@@ -367,11 +371,11 @@ static void compile_stmt(Compiler *c, ASTNode *stmt) {
                 }
                 if (stmt->data.assign.is_cmd) {
                     int const_node = add_constant(c, val_ptr(stmt));
-                    emit(c->chunk, OP_INTERPRET_NODE, const_node);
+                    emit(c, OP_INTERPRET_NODE, const_node);
                     c->chunk->code[c->chunk->code_count - 1].operand2 = 0;
                 } else {
                     compile_expr(c, stmt->data.assign.value);
-                    emit(c->chunk, OP_STORE_GLOBAL, gidx);
+                    emit(c, OP_STORE_GLOBAL, gidx);
                     c->chunk->code[c->chunk->code_count - 1].operand2 = GLOBAL_SUPER;
                 }
             } else if (stmt->data.assign.is_local) {
@@ -380,16 +384,16 @@ static void compile_stmt(Compiler *c, ASTNode *stmt) {
                 if (vtype != 0) c->local_types[slot] = vtype;
                 if (stmt->data.assign.is_cmd) {
                     int const_idx = add_constant(c, val_string(stmt->data.assign.cmd_str));
-                    emit(c->chunk, OP_CMD_ASSIGN, const_idx);
+                    emit(c, OP_CMD_ASSIGN, const_idx);
                     c->chunk->code[c->chunk->code_count - 1].operand2 = slot;
                 } else {
                     compile_expr(c, stmt->data.assign.value);
-                    emit(c->chunk, OP_STORE_VAR, slot);
+                    emit(c, OP_STORE_VAR, slot);
                 }
             } else {
                 if (stmt->data.assign.is_cmd) {
                     int const_node = add_constant(c, val_ptr(stmt));
-                    emit(c->chunk, OP_INTERPRET_NODE, const_node);
+                    emit(c, OP_INTERPRET_NODE, const_node);
                     c->chunk->code[c->chunk->code_count - 1].operand2 = 0;
                 } else {
                     int gidx = vm_find_global_index(name);
@@ -399,7 +403,7 @@ static void compile_stmt(Compiler *c, ASTNode *stmt) {
                         vm_global_types[gidx] = vtype;
                     }
                     compile_expr(c, stmt->data.assign.value);
-                    emit(c->chunk, OP_STORE_GLOBAL, gidx);
+                    emit(c, OP_STORE_GLOBAL, gidx);
                     c->chunk->code[c->chunk->code_count - 1].operand2 = GLOBAL_SCRIPT;
                 }
             }
@@ -407,37 +411,37 @@ static void compile_stmt(Compiler *c, ASTNode *stmt) {
         }
         case NODE_IF: {
             compile_expr(c, stmt->data.if_stmt.cond);
-            int jump_false = emit_jump(c->chunk, OP_JUMP_IF_FALSE);
+            int jump_false = emit_jump(c, OP_JUMP_IF_FALSE);
             compile_block(c, &stmt->data.if_stmt.then_block);
             if (stmt->data.if_stmt.else_block.count > 0) {
-                int jump_end = emit_jump(c->chunk, OP_JUMP);
-                patch_jump(c->chunk, jump_false, c->chunk->code_count);
+                int jump_end = emit_jump(c, OP_JUMP);
+                patch_jump(c, jump_false, c->chunk->code_count);
                 compile_block(c, &stmt->data.if_stmt.else_block);
-                patch_jump(c->chunk, jump_end, c->chunk->code_count);
+                patch_jump(c, jump_end, c->chunk->code_count);
             } else {
-                patch_jump(c->chunk, jump_false, c->chunk->code_count);
+                patch_jump(c, jump_false, c->chunk->code_count);
             }
             break;
         }
         case NODE_WHILE: {
             int loop_start = c->chunk->code_count;
             compile_expr(c, stmt->data.while_stmt.cond);
-            int jump_exit = emit_jump(c->chunk, OP_JUMP_IF_FALSE);
+            int jump_exit = emit_jump(c, OP_JUMP_IF_FALSE);
             compile_block(c, &stmt->data.while_stmt.body);
-            emit(c->chunk, OP_JUMP, loop_start - c->chunk->code_count);
-            patch_jump(c->chunk, jump_exit, c->chunk->code_count);
+            emit(c, OP_JUMP, loop_start - c->chunk->code_count);
+            patch_jump(c, jump_exit, c->chunk->code_count);
             break;
         }
         case NODE_CMD_STMT:
-            emit(c->chunk, OP_EMBEDDED_CMD, add_constant(c, val_string(stmt->data.cmd_stmt.cmd)));
+            emit(c, OP_EMBEDDED_CMD, add_constant(c, val_string(stmt->data.cmd_stmt.cmd)));
             break;
         case NODE_SHELL_CMD:
-            emit(c->chunk, OP_SHELL_CMD, add_constant(c, val_string(stmt->data.shell_cmd.cmd)));
+            emit(c, OP_SHELL_CMD, add_constant(c, val_string(stmt->data.shell_cmd.cmd)));
             break;
         case NODE_RETURN:
             if (stmt->data.ret.expr) compile_expr(c, stmt->data.ret.expr);
-            else emit(c->chunk, OP_PUSH_NULL, 0);
-            emit(c->chunk, OP_RETURN, 0);
+            else emit(c, OP_PUSH_NULL, 0);
+            emit(c, OP_RETURN, 0);
         break;
         case NODE_FUNC_DEF: {
             Chunk *func_chunk = compile_function(stmt);
@@ -470,17 +474,17 @@ static void compile_stmt(Compiler *c, ASTNode *stmt) {
                 }
                 int current = c->chunk->code_count;
                 int jump_offset = target_offset - current;
-                emit(c->chunk, OP_JUMP, jump_offset);
+                emit(c, OP_JUMP, jump_offset);
             } else {
                 int const_idx = add_constant(c, val_ptr(stmt));
-                emit(c->chunk, OP_INTERPRET_NODE, const_idx);
+                emit(c, OP_INTERPRET_NODE, const_idx);
                 c->chunk->code[c->chunk->code_count - 1].operand2 = 0;
             }
             break;
         }
         default: {
             int const_idx = add_constant(c, val_ptr(stmt));
-            emit(c->chunk, OP_INTERPRET_NODE, const_idx);
+            emit(c, OP_INTERPRET_NODE, const_idx);
             c->chunk->code[c->chunk->code_count - 1].operand2 = 0;
             break;
         }
@@ -502,13 +506,14 @@ Chunk *compile_program(NodeList *program) {
     c.top_level = true;
     c.portals = NULL;
     c.portal_count = 0;
+    c.current_line = 0;
 
     for (int i = 0; i < program->count; i++) {
         collect_portals_rec(program->stmts[i], &c);
     }
 
     compile_block(&c, program);
-    emit(c.chunk, OP_RETURN, 0);
+    emit(&c, OP_RETURN, 0);
 
     c.chunk->local_count = c.local_count;
     if (c.local_count > 0) {
@@ -535,6 +540,7 @@ Chunk *compile_function(ASTNode *func_node) {
     c.top_level = false;
     c.portals = NULL;
     c.portal_count = 0;
+    c.current_line = 0;
 
     for (int i = 0; i < func_node->data.func.param_count; i++) {
         int slot = add_local(&c, func_node->data.func.params[i]);
@@ -544,7 +550,7 @@ Chunk *compile_function(ASTNode *func_node) {
     }
 
     compile_block(&c, &func_node->data.func.body);
-    emit(c.chunk, OP_RETURN, 0);
+    emit(&c, OP_RETURN, 0);
 
     c.chunk->local_count = c.local_count;
     if (c.local_count > 0) {

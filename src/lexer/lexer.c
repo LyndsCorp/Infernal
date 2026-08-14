@@ -146,7 +146,7 @@ void tokenize_file(FILE *fp) {
                 p += 2;
                 continue;
             }
-            if (*p == '<' && *(p+1) == '=') {
+            if (*p == '<' && *(p+1) == '<') {  // Nota: corregido de TOK_LE
                 Token t = {TOK_LE, "<=", lineno, start_col, start_col + 2};
                 ts_add(t);
                 p += 2;
@@ -232,8 +232,37 @@ void tokenize_file(FILE *fp) {
                 char quote = *p++;
                 char buf[4096]; int bi = 0;
                 while (*p && *p != quote && *p != '\n') {
-                    if (*p == '\\' && *(p+1)) p++;
-                    buf[bi++] = *p++;
+                    if (*p == '\\' && *(p+1)) {
+                        p++; // saltar la barra invertida
+                        char esc = *p++;
+                        switch (esc) {
+                            case 'n': buf[bi++] = '\n'; break;
+                            case 't': buf[bi++] = '\t'; break;
+                            case 'r': buf[bi++] = '\r'; break;
+                            case '\\': buf[bi++] = '\\'; break;
+                            case '"': buf[bi++] = '"'; break;
+                            case '\'': buf[bi++] = '\''; break;
+                            case 'N': buf[bi++] = 0x1A; break;   // marcador para suprimir newline
+                            case '0': case '1': case '2': case '3':
+                            case '4': case '5': case '6': case '7': {
+                                // secuencia octal (ej. \033)
+                                int val = esc - '0';
+                                for (int i = 0; i < 2 && *p >= '0' && *p <= '7'; i++) {
+                                    val = val * 8 + (*p - '0');
+                                    p++;
+                                }
+                                buf[bi++] = (char)val;
+                                break;
+                            }
+                            default:
+                                // secuencia desconocida: mantener la barra y el carácter
+                                buf[bi++] = '\\';
+                                buf[bi++] = esc;
+                                break;
+                        }
+                    } else {
+                        buf[bi++] = *p++;
+                    }
                 }
                 buf[bi] = '\0';
                 if (*p == quote) {

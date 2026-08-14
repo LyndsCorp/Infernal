@@ -45,6 +45,7 @@ typedef struct {
     OpCode op;
     int operand;
     int operand2;
+    int line;          // número de línea para depuración
 } Instruction;
 
 typedef struct Chunk {

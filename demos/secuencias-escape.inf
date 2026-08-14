@@ -1,0 +1,20 @@
+#!../infernal
+print("=== TEST SECUENCIAS DE ESCAPE ===")
+
+print("\"Hola\" en una nueva linea:\nHola")
+print("Tabulador:\tHola")
+print("Barra invertida: \\")
+print("Comillas dobles: \"Hola\"")
+print("Comilla simple: \'Hola\'")
+
+print("Retorno de carro: ABC\rXYZ")
+
+print("\033[31mRojo\033[0m")
+print("\033[32mVerde\033[0m")
+print("\033[33mAmarillo\033[0m")
+print("\033[34mAzul\033[0m")
+print("\033[35mMagenta\033[0m")
+print("\033[36mCian\033[0m")
+
+print("Eliminar salto de línea\N")
+print("=== FIN ===")

@@ -47,7 +47,7 @@ keys_list = keys(stats)
 print("Claves:")
 print(keys_list)
 
-if length(keys_list) == 3 then
+if size(keys_list) == 3 then
     print("OK: keys() devuelve 3 claves")
 fi
 
@@ -63,7 +63,7 @@ values_list = values(stats)
 print("Valores:")
 print(values_list)
 
-if length(values_list) == 3 then
+if size(values_list) == 3 then
     print("OK: values() devuelve 3 valores")
 fi
 
@@ -238,7 +238,7 @@ print($inventory["items"])
 print("Oro:")
 print($inventory["oro"])
 
-if length($inventory["items"]) == 3 then
+if size($inventory["items"]) == 3 then
     print("OK: lista dentro del mapa")
 fi
 
@@ -389,11 +389,11 @@ print(final_keys)
 print("Values:")
 print(final_values)
 
-if length(final_keys) == 1 then
+if size(final_keys) == 1 then
     print("OK: keys() actualizado")
 fi
 
-if length(final_values) == 1 then
+if size(final_values) == 1 then
     print("OK: values() actualizado")
 fi
 

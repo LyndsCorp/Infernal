@@ -212,10 +212,11 @@ Value vm_run(Chunk *chunk) {
         &&OP_LIST_INSERT,
         &&OP_NEW_MAP, &&OP_MAP_SET
     };
-    #define DISPATCH() goto *dispatch_table[ip->op]
+    #define DISPATCH() do { current_eval_line = ip->line; goto *dispatch_table[ip->op]; } while(0)
     goto *dispatch_table[ip->op];
     #else
     for (;;) {
+        current_eval_line = ip->line;
         switch (ip->op) {
             #endif
 
@@ -506,7 +507,7 @@ Value vm_run(Chunk *chunk) {
             OP_MAP_SET: {
                 Value val = pop();
                 Value key = pop();
-                Value map = peek(0);  // el mapa debe estar en la pila
+                Value map = peek(0);
                 if (map.type != VAL_MAP) {
                     error(current_eval_line, "Se esperaba un mapa", map.type);
                 }
@@ -514,7 +515,6 @@ Value vm_run(Chunk *chunk) {
                     error(current_eval_line, "La clave de un mapa debe ser string");
                 }
                 val_map_set(&map, key.data.sval, val);
-                // el mapa en la pila queda actualizado
                 ip++;
                 DISPATCH();
             }
@@ -685,7 +685,7 @@ Value vm_run(Chunk *chunk) {
                     }
                 }
 
-                // Sincronizar global_scope completo con vm_globals (para variables definidas directamente)
+                // Sincronizar global_scope completo con vm_globals
                 for (VarEntry *var = global_scope->vars; var; var = var->next) {
                     int gidx = vm_find_global_index(var->name);
                     if (gidx < 0) {
