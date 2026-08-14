@@ -15,7 +15,6 @@ void error(int line, const char *fmt, ...);
 /* Helper para cuando falta 'then' en estructuras de control */
 #define error_missing_then(line, context) \
     error(line, "Se esperaba 'then' después de la condición del %s. " \
-                "Los operadores de comparación válidos son ==, !=, <=, >= . " \
-                "Asegúrate de no usar '<' o '>' sueltos.", context)
+                "Los operadores de comparación válidos son ==, !=, <=, >= .", context)
 
 #endif

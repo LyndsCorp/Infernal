@@ -1,0 +1,40 @@
+#FILE: VAR++_Y_FOR_MEJORADO.txt
+``` Infernal
+for local i = 0, i < 100, i++ then
+    print(i)
+fi
+```
+esto lo que haría es crear la variable `i` en el scope del for, luego si `i` es menor que 100, seguir y ejecutar lo tercero que puede ser "i += 1" o incluso con una variable que no tiene nada que ver.
+i++ hará como en C: sumar 1 a la variable int/float. Y i-- igual, solo que restando 1.
+También se puede poner:
+``` Infernal
+for local i = 0 , i < 100 , i++ then
+    print(i)
+fi 
+```
+Por ejemplo, con la coma asi.
+O tambien tipado fijo:
+``` Infernal
+for local int i = 0 , i < 100 , i++ then
+    print(i)
+fi
+```
+O scopes globales en el script:
+``` Infernal
+for i = 0 , i < 100 , i++ then
+    print(i)
+fi
+```
+O scopes globales:
+``` Infernal
+for global i = 0 , i < 100 , i++ then
+    print(i)
+fi
+```
+
+En resumen, la estructura esperada es:
+``` Infernal
+for crear-tmp-var, condicion, suma then
+    lo que hará hasta que la condicion no se cumpla
+fi
+```

@@ -1,0 +1,11 @@
+#FILE: OPERADORES_ARITMETRICOS.txt
+Hay que añadir estos operadores:
++= --> sirve para sumar como en C
+-= --> sirve para restar como en C
+*= --> sirve para multiplicar como en C
+/= --> sirve para dividir como en C
+** --> sirve para hacer potencias como en Python (no tiene su version como **=)
+x++ --> suma 1 como en C
+x-- --> resta 1 como en C
+(Nota: no añadamos ++x ni --x)
+() --> prioridad, jerarquia de operaciones. Calcula lo que está entre parentesis antes que lo demás.
