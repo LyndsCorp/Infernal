@@ -17,10 +17,9 @@
 
 #define MAX_LOCALS 256
 
-/* ---- Estructura para portales durante la compilación ---- */
 typedef struct CompilePortalEntry {
     char *name;
-    int offset;        // índice de instrucción donde comienza el portal (-1 si aún no compilado)
+    int offset;
 } CompilePortalEntry;
 
 typedef struct {
@@ -30,7 +29,7 @@ typedef struct {
     int local_count;
     bool in_function;
     bool top_level;
-    CompilePortalEntry *portals;   // tabla de portales recolectados
+    CompilePortalEntry *portals;
     int portal_count;
 } Compiler;
 
@@ -58,7 +57,6 @@ static int resolve_local(Compiler *c, const char *name) {
     return -1;
 }
 
-/* ---- emit con línea ---- */
 static void emit(Chunk *ch, OpCode op, int operand, int line) {
     if (ch->code_count >= ch->code_cap) {
         ch->code_cap = ch->code_cap == 0 ? 256 : ch->code_cap * 2;
@@ -80,7 +78,6 @@ static void patch_jump(Chunk *ch, int offset, int target) {
     ch->code[offset].operand = target - offset;
 }
 
-/* ---- Recolección de portales en el AST ---- */
 static void collect_portals_rec(ASTNode *node, Compiler *c) {
     if (!node) return;
     if (node->kind == NODE_PORTAL) {
@@ -181,7 +178,6 @@ static void collect_portals_rec(ASTNode *node, Compiler *c) {
     }
 }
 
-/* ---- Compilación de expresiones ---- */
 static void compile_expr(Compiler *c, ASTNode *expr);
 static void compile_block(Compiler *c, NodeList *block);
 
@@ -263,6 +259,7 @@ static void compile_expr(Compiler *c, ASTNode *expr) {
                                     case TOK_GT_OP: emit(c->chunk, OP_GT, 0, expr->line); break;
                                     case TOK_LE:    emit(c->chunk, OP_LE, 0, expr->line); break;
                                     case TOK_GE:    emit(c->chunk, OP_GE, 0, expr->line); break;
+                                    case TOK_POW:   emit(c->chunk, OP_POW, 0, expr->line); break;
                                     default: {
                                         int const_idx = add_constant(c, val_ptr(expr));
                                         emit(c->chunk, OP_INTERPRET_NODE, const_idx, expr->line);
@@ -329,6 +326,46 @@ static void compile_expr(Compiler *c, ASTNode *expr) {
                                         }
                                         break;
                                     }
+                                    case NODE_POST_INC:
+                                    case NODE_POST_DEC: {
+                                        ASTNode *var_node = expr->data.post_op.var;
+                                        if (var_node->kind != NODE_VAR) {
+                                            error(expr->line, "Incremento/decremento solo soportado para variables");
+                                        }
+                                        const char *raw_name = var_node->data.var.name;
+                                        const char *name = raw_name;
+                                        if (name[0] == '$' || name[0] == '?') name++;
+
+                                        int slot = resolve_local(c, name);
+                                        if (slot >= 0) {
+                                            emit(c->chunk, OP_LOAD_VAR, slot, expr->line);
+                                            emit(c->chunk, OP_DUP, 0, expr->line);
+                                            emit(c->chunk, OP_PUSH_INT, add_constant(c, val_int(1)), expr->line);
+                                            if (expr->kind == NODE_POST_INC)
+                                                emit(c->chunk, OP_ADD, 0, expr->line);
+                                            else
+                                                emit(c->chunk, OP_SUB, 0, expr->line);
+                                            emit(c->chunk, OP_STORE_VAR, slot, expr->line);
+                                        } else {
+                                            int gidx = vm_find_global_index(name);
+                                            if (gidx < 0) {
+                                                gidx = vm_register_global(name, GLOBAL_SCRIPT, 0);
+                                                if (gidx < 0) {
+                                                    error(expr->line, "No se pudo registrar la variable global '%s'", name);
+                                                }
+                                            }
+                                            emit(c->chunk, OP_LOAD_GLOBAL, gidx, expr->line);
+                                            emit(c->chunk, OP_DUP, 0, expr->line);
+                                            emit(c->chunk, OP_PUSH_INT, add_constant(c, val_int(1)), expr->line);
+                                            if (expr->kind == NODE_POST_INC)
+                                                emit(c->chunk, OP_ADD, 0, expr->line);
+                                            else
+                                                emit(c->chunk, OP_SUB, 0, expr->line);
+                                            emit(c->chunk, OP_STORE_GLOBAL, gidx, expr->line);
+                                            c->chunk->code[c->chunk->code_count - 1].operand2 = GLOBAL_SCRIPT;
+                                        }
+                                        break;
+                                    }
                                     default: {
                                         int const_idx = add_constant(c, val_ptr(expr));
                                         emit(c->chunk, OP_INTERPRET_NODE, const_idx, expr->line);
@@ -338,7 +375,6 @@ static void compile_expr(Compiler *c, ASTNode *expr) {
     }
 }
 
-/* ---- Compilación de sentencias ---- */
 static void compile_stmt(Compiler *c, ASTNode *stmt) {
     switch (stmt->kind) {
         case NODE_EXPR_STMT:
@@ -491,7 +527,6 @@ static void compile_block(Compiler *c, NodeList *block) {
     }
 }
 
-/* ---- Compilación del programa principal ---- */
 Chunk *compile_program(NodeList *program) {
     Compiler c;
     c.chunk = calloc(1, sizeof(Chunk));
@@ -506,7 +541,7 @@ Chunk *compile_program(NodeList *program) {
     }
 
     compile_block(&c, program);
-    emit(c.chunk, OP_RETURN, 0, 0); // línea 0 para el retorno final
+    emit(c.chunk, OP_RETURN, 0, 0);
 
     c.chunk->local_count = c.local_count;
     if (c.local_count > 0) {

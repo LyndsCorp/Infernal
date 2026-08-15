@@ -2,7 +2,7 @@
  * Infernal: orquestador de evaluación
  * Copyright (C) 2026, David Baña Szymaniak
  * Este software se distribuye bajo la licencia Apache 2.0
- * Código fuente de Infernal: runtime/evaluator.c
+ * Código fuente de Infernal: runtime/evaluator/evaluator.c
  *
  * Orquestador de evaluator
 */
@@ -19,8 +19,9 @@
 #include "runtime/evaluator/helpers.h"
 #include "runtime/error.h"
 #include "core/value.h"
+#include "runtime/scope.h"
+#include "runtime/globals.h"
 
-/* --- eval_expr: orquestador principal --- */
 Value eval_expr(ASTNode *expr) {
     switch (expr->kind) {
         case NODE_LITERAL:   return eval_literal(expr);
@@ -32,13 +33,36 @@ Value eval_expr(ASTNode *expr) {
         case NODE_BINOP:     return eval_binop(expr);
         case NODE_CALL:      return eval_call(expr);
         case NODE_UNARY:     return eval_unary(expr);
+        case NODE_POST_INC:
+        case NODE_POST_DEC: {
+            ASTNode *var_node = expr->data.post_op.var;
+            if (var_node->kind != NODE_VAR)
+                error(expr->line, "Incremento/decremento solo soportado para variables");
+            const char *raw_name = var_node->data.var.name;
+            const char *name = raw_name;
+            if (name[0] == '$' || name[0] == '?') name++;
+            VarEntry *e = scope_find(current_scope, name);
+            if (!e) error(expr->line, "Variable '%s' no definida", name);
+            Value old = e->value;
+            Value new_val;
+            if (expr->kind == NODE_POST_INC) {
+                if (old.type == VAL_INT) new_val = val_int(old.data.ival + 1);
+                else if (old.type == VAL_FLOAT) new_val = val_float(old.data.fval + 1.0);
+                else error(expr->line, "Incremento solo aplicable a números");
+            } else {
+                if (old.type == VAL_INT) new_val = val_int(old.data.ival - 1);
+                else if (old.type == VAL_FLOAT) new_val = val_float(old.data.fval - 1.0);
+                else error(expr->line, "Decremento solo aplicable a números");
+            }
+            scope_assign(current_scope, name, new_val, expr->line);
+            return old;
+        }
         default:
             error(expr->line, "Expresión no implementada (tipo %d)", expr->kind);
     }
     return val_make_null();
 }
 
-/* --- Funciones públicas que delegan en implementaciones --- */
 void exec_block(NodeList *block) {
     exec_block_impl(block);
 }
