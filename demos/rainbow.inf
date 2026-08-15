@@ -1,0 +1,16 @@
+#!../infernal
+texto = "██████████████████████████████████████████████████████████████████████████████████████████████"
+espera = 0.05
+
+print(color("red") + "Infernal " + texto)
+sleep $espera
+print(color("orange") + "Dailution" + texto)
+sleep $espera
+print(color("yellow") + "Light    " + texto)
+sleep $espera
+print(color("green") + "Casata   " + texto)
+sleep $espera
+print(color("blue") + "Diamond  " + texto)
+sleep $espera
+print(color("purple") + "Púrpura  " + texto)
+sleep $espera
