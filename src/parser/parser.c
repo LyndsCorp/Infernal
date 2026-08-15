@@ -142,6 +142,7 @@ NodeList parse_block(const char *terminator) {
         ASTNode *stmt = NULL;
 
         if (t.type == TOK_BANG) {
+            // ... (código existente para comandos ! ... !) ...
             ts_advance();
             char cmd[4096] = {0};
             Token prev_token = {TOK_EOF, "", 0, 0, 0};
@@ -229,6 +230,7 @@ NodeList parse_block(const char *terminator) {
         }
 
         if (t.type == TOK_STRING_LITERAL) {
+            // ... (código existente para comandos shell con cadenas) ...
             char cmd[4096] = {0};
             Token first = ts_advance();
             strcat(cmd, "\"");
@@ -370,6 +372,7 @@ NodeList parse_block(const char *terminator) {
             stmt->data.while_stmt.cond = cond;
             stmt->data.while_stmt.body = body;
         } else if (t.type == TOK_FOR) {
+            // ... (código existente para for) ...
             ts_advance();
             if (ts_peek().type == TOK_IDENT && ts.pos+1 < ts.count && ts.tokens[ts.pos+1].type == TOK_IN) {
                 char *varname = strdup(ts_advance().lexeme);
@@ -491,6 +494,7 @@ NodeList parse_block(const char *terminator) {
                 error(t.line, "Se esperaba 'line' o '@' después de 'repeat'");
             }
         } else if (t.type == TOK_IMPORT) {
+            // ... (código existente para import) ...
             ts_advance();
             Token nt = ts_peek();
             char *module_name = NULL;
@@ -587,6 +591,7 @@ NodeList parse_block(const char *terminator) {
             stmt->data.try_stmt.try_block = try_block;
             stmt->data.try_stmt.catch_block = catch_block;
         } else if (t.type == TOK_LOCAL || t.type == TOK_GLOBAL) {
+            // Manejo de local/global explícito
             bool is_local = ts_match(TOK_LOCAL);
             bool is_global = ts_match(TOK_GLOBAL);
 
@@ -671,6 +676,7 @@ NodeList parse_block(const char *terminator) {
 
         } else if (t.type == TOK_INT || t.type == TOK_FLOAT || t.type == TOK_BOOL ||
             t.type == TOK_STRING || t.type == TOK_LIST) {
+            // Declaración con tipo (sin local/global) -> global del script
             int vtype = ts_advance().type;
         if (ts_peek().type != TOK_IDENT) error(t.line, "Se esperaba nombre de variable");
         char *vname = strdup(ts_advance().lexeme);
@@ -727,21 +733,22 @@ NodeList parse_block(const char *terminator) {
             stmt->data.assign.cmd_str = cmd_str;
             stmt->data.assign.value = value;
             stmt->data.assign.vtype = vtype;
-            stmt->data.assign.is_local = false;
-            stmt->data.assign.is_global = false;
+            stmt->data.assign.is_local = false;   // global del script
+            stmt->data.assign.is_global = false;  // no superglobal
             stmt->data.assign.lhs_index = lhs_index;
 
             } else if (t.type == TOK_IDENT) {
+                // ====== BLOQUE PRINCIPAL CORREGIDO ======
                 Token saved_t = t;
                 ts_advance();
-
                 Token next_tok = ts_peek();
 
+                // CASO 1: Asignación o asignación compuesta
                 if (next_tok.type == TOK_EQ || next_tok.type == TOK_PLUS_EQ ||
                     next_tok.type == TOK_MINUS_EQ || next_tok.type == TOK_STAR_EQ ||
                     next_tok.type == TOK_SLASH_EQ) {
-                    ts_advance();
-                int op = next_tok.type;
+                    ts_advance(); // consumir el operador
+                    int op = next_tok.type;
                 char *vname = strdup(saved_t.lexeme);
                 validate_var_name(vname, saved_t.line);
 
@@ -801,10 +808,11 @@ NodeList parse_block(const char *terminator) {
                 stmt->data.assign.cmd_str = cmd_str;
                 stmt->data.assign.value = value;
                 stmt->data.assign.vtype = 0;
-                stmt->data.assign.is_local = false;
-                stmt->data.assign.is_global = false;
+                stmt->data.assign.is_local = false;   // global del script
+                stmt->data.assign.is_global = false;  // no superglobal
                 stmt->data.assign.lhs_index = NULL;
 
+                // CASO 2: Índice en el lado izquierdo (ej. a[1] = ...)
                     } else if (next_tok.type == TOK_LBRACKET) {
                         Token lb = ts_advance();
                         ASTNode *lhs_index = parse_index_or_slice(lb.line);
@@ -860,6 +868,15 @@ NodeList parse_block(const char *terminator) {
                         stmt->data.assign.is_global = false;
                         stmt->data.assign.lhs_index = lhs_index;
 
+                        // CASO 3: Post-incremento/decremento en línea suelta ($var++ o $var--)
+                    } else if (next_tok.type == TOK_INC || next_tok.type == TOK_DEC) {
+                        // Retrocedemos y parseamos como expresión
+                        ts.pos--;
+                        ASTNode *expr = parse_expression(0);
+                        stmt = node_create(NODE_EXPR_STMT, saved_t.line);
+                        stmt->data.expr_stmt.expr = expr;
+
+                        // CASO 4: Llamada a función o comando shell
                     } else {
                         if (ts_peek().type == TOK_LPAREN || ts_peek().type == TOK_LBRACKET) {
                             ts.pos--;
@@ -875,6 +892,7 @@ NodeList parse_block(const char *terminator) {
                                     error(t.line, "Expresión incompleta");
                                 }
                         } else {
+                            // Comando shell simple
                             ts.pos--;
                             int start_pos = ts.pos;
                             while (ts_peek().type != TOK_NEWLINE && ts_peek().type != TOK_EOF) {
