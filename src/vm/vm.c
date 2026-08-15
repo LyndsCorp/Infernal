@@ -11,7 +11,7 @@
 #include "runtime/error.h"
 #include "runtime/scope.h"
 #include "runtime/globals.h"
-#include "runtime/evaluator.h"
+#include "runtime/evaluator/evaluator.h"
 #include "core/ast.h"
 #include "lexer/lexer.h"
 #include <stdio.h>
@@ -336,19 +336,22 @@ Value vm_run(Chunk *chunk) {
                     double bv = (b.type == VAL_INT) ? b.data.ival : b.data.fval;
                     push(val_float(av + bv));
                 }
-                ip++; DISPATCH();
+                ip++;
+                DISPATCH();
             }
             OP_SUB: {
                 Value b = pop(), a = pop();
                 if (a.type == VAL_INT && b.type == VAL_INT) push(val_int(a.data.ival - b.data.ival));
                 else push(val_float((a.type==VAL_INT?a.data.ival:a.data.fval) - (b.type==VAL_INT?b.data.ival:b.data.fval)));
-                ip++; DISPATCH();
+                ip++;
+                DISPATCH();
             }
             OP_MUL: {
                 Value b = pop(), a = pop();
                 if (a.type == VAL_INT && b.type == VAL_INT) push(val_int(a.data.ival * b.data.ival));
                 else push(val_float((a.type==VAL_INT?a.data.ival:a.data.fval) * (b.type==VAL_INT?b.data.ival:b.data.fval)));
-                ip++; DISPATCH();
+                ip++;
+                DISPATCH();
             }
             OP_DIV: {
                 Value b = pop(), a = pop();
@@ -356,7 +359,8 @@ Value vm_run(Chunk *chunk) {
                 double bv = (b.type==VAL_INT) ? b.data.ival : b.data.fval;
                 if (bv == 0) error(current_eval_line, "División por cero");
                 push(val_float(av / bv));
-                ip++; DISPATCH();
+                ip++;
+                DISPATCH();
             }
             OP_MOD: {
                 Value b = pop(), a = pop();
@@ -364,14 +368,16 @@ Value vm_run(Chunk *chunk) {
                     if (b.data.ival == 0) error(current_eval_line, "Módulo por cero");
                     push(val_int(a.data.ival % b.data.ival));
                 } else error(current_eval_line, "Módulo sólo para enteros");
-                ip++; DISPATCH();
+                ip++;
+                DISPATCH();
             }
             OP_NEG: {
                 Value v = pop();
                 if (v.type == VAL_INT) push(val_int(-v.data.ival));
                 else if (v.type == VAL_FLOAT) push(val_float(-v.data.fval));
                 else error(current_eval_line, "Negación no aplicable");
-                ip++; DISPATCH();
+                ip++;
+                DISPATCH();
             }
 
             OP_EQ: {
@@ -387,7 +393,8 @@ Value vm_run(Chunk *chunk) {
                     }
                 }
                 push(val_bool(eq));
-                ip++; DISPATCH();
+                ip++;
+                DISPATCH();
             }
             OP_NEQ: {
                 Value b = pop(), a = pop();
@@ -402,35 +409,40 @@ Value vm_run(Chunk *chunk) {
                     }
                 }
                 push(val_bool(neq));
-                ip++; DISPATCH();
+                ip++;
+                DISPATCH();
             }
             OP_LT: {
                 Value b = pop(), a = pop();
                 double av = (a.type==VAL_INT) ? a.data.ival : a.data.fval;
                 double bv = (b.type==VAL_INT) ? b.data.ival : b.data.fval;
                 push(val_bool(av < bv));
-                ip++; DISPATCH();
+                ip++;
+                DISPATCH();
             }
             OP_GT: {
                 Value b = pop(), a = pop();
                 double av = (a.type==VAL_INT) ? a.data.ival : a.data.fval;
                 double bv = (b.type==VAL_INT) ? b.data.ival : b.data.fval;
                 push(val_bool(av > bv));
-                ip++; DISPATCH();
+                ip++;
+                DISPATCH();
             }
             OP_LE: {
                 Value b = pop(), a = pop();
                 double av = (a.type==VAL_INT) ? a.data.ival : a.data.fval;
                 double bv = (b.type==VAL_INT) ? b.data.ival : b.data.fval;
                 push(val_bool(av <= bv));
-                ip++; DISPATCH();
+                ip++;
+                DISPATCH();
             }
             OP_GE: {
                 Value b = pop(), a = pop();
                 double av = (a.type==VAL_INT) ? a.data.ival : a.data.fval;
                 double bv = (b.type==VAL_INT) ? b.data.ival : b.data.fval;
                 push(val_bool(av >= bv));
-                ip++; DISPATCH();
+                ip++;
+                DISPATCH();
             }
 
             OP_AND: {
@@ -438,20 +450,23 @@ Value vm_run(Chunk *chunk) {
                 int truthy_a = (a.type == VAL_BOOL && a.data.bval) || (a.type == VAL_INT && a.data.ival != 0) || (a.type == VAL_FLOAT && a.data.fval != 0.0) || (a.type == VAL_STRING && a.data.sval[0]);
                 int truthy_b = (b.type == VAL_BOOL && b.data.bval) || (b.type == VAL_INT && b.data.ival != 0) || (b.type == VAL_FLOAT && b.data.fval != 0.0) || (b.type == VAL_STRING && b.data.sval[0]);
                 push(val_bool(truthy_a && truthy_b));
-                ip++; DISPATCH();
+                ip++;
+                DISPATCH();
             }
             OP_OR: {
                 Value b = pop(), a = pop();
                 int truthy_a = (a.type == VAL_BOOL && a.data.bval) || (a.type == VAL_INT && a.data.ival != 0) || (a.type == VAL_FLOAT && a.data.fval != 0.0) || (a.type == VAL_STRING && a.data.sval[0]);
                 int truthy_b = (b.type == VAL_BOOL && b.data.bval) || (b.type == VAL_INT && b.data.ival != 0) || (b.type == VAL_FLOAT && b.data.fval != 0.0) || (b.type == VAL_STRING && b.data.sval[0]);
                 push(val_bool(truthy_a || truthy_b));
-                ip++; DISPATCH();
+                ip++;
+                DISPATCH();
             }
             OP_NOT: {
                 Value v = pop();
                 int truthy = (v.type == VAL_BOOL && v.data.bval) || (v.type == VAL_INT && v.data.ival != 0) || (v.type == VAL_FLOAT && v.data.fval != 0.0) || (v.type == VAL_STRING && v.data.sval[0]);
                 push(val_bool(!truthy));
-                ip++; DISPATCH();
+                ip++;
+                DISPATCH();
             }
 
             OP_CALL_BUILTIN: {

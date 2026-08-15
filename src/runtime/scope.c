@@ -11,7 +11,7 @@
 #include "core/value.h"
 #include "runtime/error.h"
 #include "core/memory.h"
-#include "runtime/evaluator.h"   // <-- añadir para try_convert_value
+#include "runtime/evaluator/evaluator.h"
 
 Scope *scope_new(Scope *parent, const char *function_name) {
     Scope *s = infernal_malloc(sizeof(Scope));

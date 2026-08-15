@@ -14,7 +14,7 @@ CC       := gcc
 # Por defecto: con debug info, sin logs
 CFLAGS   := -Wall -Wextra -g -std=c11 -D_GNU_SOURCE
 LDFLAGS  := -ldl
-INCDIRS  := -Isrc
+INCDIRS  := -Isrc -Isrc/runtime/evaluator
 
 SRCDIR       := src
 BUILDDIR     := build

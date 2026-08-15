@@ -1,9 +1,9 @@
-Infernal 1.24 (Main)
+Infernal 1.24 (Stable)
 ──────────────────────────────────────────────
 
 Versión:           1.24
-Edición:           Código fuente de Infernal
-Arquitectura:      En la que lo compiles
+Edición:           Distribuido mediante Casata
+Arquitectura:      amd64
 Sistema operativo: POSIX (Linux, macOS)
 
 Distribuido por:   David Baña Szymaniak
@@ -11,7 +11,7 @@ Proyecto:          Aros Legendarios
 Licencia:          Apache 2.0
 
 
-Código fuente:     https://github.com/LyndsCorp/Infernal/tree/main
+Código fuente:     https://github.com/LyndsCorp/Infernal/tree/casata
 Repositorio:       https://github.com/LyndsCorp/Infernal
 Documentación:     https://github.com/LyndsCorp/Infernal-Documentation
 

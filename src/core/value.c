@@ -3,7 +3,7 @@
  * Copyright (C) 2026, David Baña Szymaniak
  * Este software se distribuye bajo la licencia Apache 2.0
  * Código fuente de Infernal: core/value.c
-*/
+ */
 
 #include <stdlib.h>
 #include <string.h>
