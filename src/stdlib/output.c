@@ -20,7 +20,7 @@ static const struct {
 } color_map[] = {
     {"red",       "\033[31m"},
     {"orange",    "\033[38;5;208m"},
-    {"yellow",    "\033[33m"},
+    {"yellow",    "\033[93m"},
     {"green",     "\033[32m"},
     {"blue",      "\033[34m"},
     {"purple",    "\033[35m"},
