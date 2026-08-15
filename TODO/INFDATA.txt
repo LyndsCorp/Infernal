@@ -1,0 +1,44 @@
+#FILE: INFDATA.txt
+mira:
+user@lyndsos:~/infernal$ ls
+config  demos  LICENSE  Makefile  README.md  src  TODO
+user@lyndsos:~/infernal$ ls config
+add-all-colors.bool  gzip-embedded.bool  infernal
+user@lyndsos:~/infernal$ ls src/infdata
+colors
+user@lyndsos:~/infernal$ ls src/infdata/colors
+all-colors.infdata  base-colors.infdata
+user@lyndsos:~/infernal$ du -sh src/infdata/colors/*
+24K     src/infdata/colors/all-colors.infdata
+4,0K    src/infdata/colors/base-colors.infdata
+
+
+quiero que el archivo config/add-all-colors.bool tenga false si los colores que usará color() (funcion definida en output.c) son los de base-colors.infdata o si es true, usa los de all-colors.infdata. los infdata tienen esto:
+static const struct {
+    const char *name;
+    const char *code;
+} color_map[] = {
+    {"red",       "\033[31m"},
+    {"orange",    "\033[38;5;208m"},
+    {"yellow",    "\033[33m"},
+    {"green",     "\033[32m"},
+    {"blue",      "\033[34m"},
+    {"purple",    "\033[35m"},
+    {"cyan",      "\033[36m"},
+    {"magenta",   "\033[35m"},
+    {"black",     "\033[30m"},
+    {"white",     "\033[37m"},
+    {"gray",      "\033[90m"},
+    {"reset",     "\033[0m"},
+    {NULL, NULL}
+};
+
+el bloque exacto de static const struct. el ejemplo que te dí es el base, el all tiene 400 colores. entonces que te parece si el infdata en vez de verse así, se ve así:
+BLOCK: colors
+red-\033[31m
+orange-\033[38;5;208m
+yellow-\033[33m
+ENDBLOCK
+y que el Makefile detecte todos los infdata y así y busque bloques y los añada en el binario compilado de forma optimizada en peso y velocidad. y que en algun archivo tipo src/infdata.h se encuentre la definición de qué bloques de infdatas quiere el compilador y los que no quiere los ignora o si ignora alguno necesario, que el Makefile dé un error explícito en español en vez de los tipicos errores de sintaxis de GCC.
+esta mejora serviría para muchas cosas: base de datos de colores, base de datos Unicode, base de datos de código binario...
+que te parece
