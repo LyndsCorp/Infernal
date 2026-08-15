@@ -18,15 +18,18 @@ static const struct {
     const char *name;
     const char *code;
 } color_map[] = {
-    {"red",     "\033[31m"},
-    {"blue",    "\033[34m"},
-    {"green",   "\033[32m"},
-    {"yellow",  "\033[33m"},
-    {"orange",  "\033[38;5;208m"},
-    {"magenta", "\033[35m"},
-    {"black",   "\033[30m"},
-    {"white",   "\033[37m"},
-    {"reset",   "\033[0m"},
+    {"red",       "\033[31m"},
+    {"orange",    "\033[38;5;208m"},
+    {"yellow",    "\033[33m"},
+    {"green",     "\033[32m"},
+    {"blue",      "\033[34m"},
+    {"purple",    "\033[35m"},
+    {"cyan",      "\033[36m"},
+    {"magenta",   "\033[35m"},
+    {"black",     "\033[30m"},
+    {"white",     "\033[37m"},
+    {"gray",      "\033[90m"},
+    {"reset",     "\033[0m"},
     {NULL, NULL}
 };
 
