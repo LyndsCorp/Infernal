@@ -9,3 +9,8 @@ x++ --> suma 1 como en C
 x-- --> resta 1 como en C
 (Nota: no añadamos ++x ni --x)
 () --> prioridad, jerarquia de operaciones. Calcula lo que está entre parentesis antes que lo demás.
+
+Siguiendo la convención de las matemáticas, si pones:
+2 + 3 ** 2
+Se traduce a:
+2 + (3 ** 2)

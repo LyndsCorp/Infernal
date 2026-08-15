@@ -286,7 +286,7 @@ help:
 	@echo "Infernal Makefile"
 	@echo "-----------------"
 	@echo "Objetivos:"
-	@echo "              : (vacío; solo ejecuta 'make') hace lo mismo que 'make all'"
+	@echo "             : (vacío; solo ejecuta 'make') hace lo mismo que 'make all'"
 	@echo "  all        : compila el intérprete (por defecto)"
 	@echo "  clean      : elimina objetos (build/) y el ejecutable (infernal) (no toca config/)"
 	@echo "  debug      : compila con soporte de depuración (-DDEBUG)"
