@@ -1,0 +1,47 @@
+#FILE: CREAR_VARIABLES_VACIAS.txt
+En C, se suele hacer al inicio de las funciones:
+``` C
+int algo, resultado;
+```
+Para que así al leer el código fuente y sabes qué variables van a haber.
+En Infernal debería ser igual, pero que tengas que poner tipado explícito también:
+``` Infernal
+int algo, resultado
+global int compartido
+local float temporal
+```
+Y eso solo crea la variable con un valor base en ves de un valor aleatorio como en C.
+Es decir, la variable `algo` tiene el valor de 0 en vez de lo que daría en C.
+Y con strings igual, una cadena de texto vacía.
+Y con el resto de tipos también.
+Con float igual que con int, es un 0 la base.
+Con bool el valor por defecto es false.
+También puedes poner scopes igual que de normal.
+Se separan con una coma.
+
+NO se debería poder poner:
+``` Infernal
+algo = 31, otro = 21
+```
+Ya que falta poner el int al inicio de la línea, y definir más de una variable en la misma línea NO tiene tipado automático.
+Y no permitiría:
+``` Infernal
+global esto, local algo
+```
+Ya que la norma principal de definir más de una variable en una misma línea es:
+# Todas deben tener el mismo tipo y scope.
+Y el tipo y el scope se definen al inicio de la línea. Si no se define el scope, entonces es el normal.
+La estructura de definir variables siempre es:
+``` Pseudocódigo
+SCOPE TIPO NOMBRE = VALOR
+```
+O:
+``` Pseudocódigo
+TIPO NOMBRE = VALOR
+```
+Y entonces el scope es el global dentro del script (no el super global compartido entre scripts)
+O:
+``` Pseudocódigo
+NOMBRE = VALOR
+```
+Pero esto solo es para definir una sola variable en una línea con tipado automático.
