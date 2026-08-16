@@ -16,6 +16,15 @@
 #include "parser.h"
 #include "developer/debug.h"
 
+/* --- LIMPIEZA DE NOMBRE DE VARIABLE (elimina $ o ?) --- */
+static char *clean_var_name(const char *raw) {
+    if (!raw) return NULL;
+    if (raw[0] == '$' || raw[0] == '?') {
+        return strdup(raw + 1);
+    }
+    return strdup(raw);
+}
+
 /* --- Prototipos de funciones estáticas internas --- */
 static ASTNode *parse_map_literal(int line);
 static ASTNode *parse_postfix(void);
@@ -259,7 +268,9 @@ ASTNode *parse_primary() {
         } else {
             ts_advance();
             ASTNode *n = node_create(NODE_VAR, t.line);
-            n->data.var.name = strdup(t.lexeme);
+            /* --- CORRECCIÓN: limpiar prefijo $ o ? --- */
+            char *cleaned = clean_var_name(t.lexeme);
+            n->data.var.name = cleaned;
             while (ts_peek().type == TOK_LBRACKET) {
                 Token lb = ts_advance();
                 Token next = ts_peek();

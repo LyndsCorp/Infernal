@@ -10,8 +10,8 @@
 
 #include "core/types.h"
 
-/* Implementaciones internas */
 void exec_block_impl(NodeList *block);
 void exec_block_from_impl(NodeList *block, int start_index);
+void exec_stmt(ASTNode *stmt);
 
 #endif

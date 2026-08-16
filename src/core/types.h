@@ -140,7 +140,14 @@ struct ASTNode {
             bool is_local; bool is_global; ASTNode *lhs_index; } assign;
             struct { ASTNode *cond; NodeList then_block, else_block; } if_stmt;
             struct { ASTNode *cond; NodeList body; } while_stmt;
-            struct { char *var; int vtype; ASTNode *init, *cond, *incr; NodeList body; } for_stmt;
+            struct {
+                char *var;
+                int vtype;
+                bool is_local;
+                bool is_global;
+                ASTNode *init, *cond, *incr;
+                NodeList body;
+            } for_stmt;
             struct { char *name; char **params; int *ptypes; int param_count; NodeList body; } func;
             struct { ASTNode *expr; } ret;
             struct { char *path; NodeList module_block; } import;
@@ -166,7 +173,7 @@ struct ASTNode {
                 ASTNode *operand;
             } unary;
             struct {
-                ASTNode *var;  // la variable o índice a modificar
+                ASTNode *var;
             } post_op;
     } data;
 };

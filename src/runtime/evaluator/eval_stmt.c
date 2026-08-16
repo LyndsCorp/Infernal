@@ -3,6 +3,8 @@
  * Copyright (C) 2026, David Baña Szymaniak
  * Este software se distribuye bajo la licencia Apache 2.0
  * Código fuente de Infernal: runtime/evaluator/eval_stmt.c
+ *
+ * Implementación de la ejecución de sentencias.
 */
 
 #include "eval_stmt.h"
@@ -23,8 +25,7 @@
 #include <string.h>
 #include <unistd.h>
 
-static void exec_stmt(ASTNode *stmt);
-
+/* --- Funciones auxiliares de bloque --- */
 void exec_block_impl(NodeList *block) {
     exec_block_from_impl(block, 0);
 }
@@ -32,35 +33,49 @@ void exec_block_impl(NodeList *block) {
 void exec_block_from_impl(NodeList *block, int start_index) {
     for (int i = start_index; i < block->count; i++) {
         if (control_flow != CF_NONE) break;
-
         ASTNode *stmt = block->stmts[i];
-        DEBUG_INFO("Ejecutando sentencia tipo %d en línea %d", stmt->kind, stmt->line);
         current_eval_line = stmt->line;
+        DEBUG_INFO("exec_block: ejecutando sentencia tipo %d en línea %d", stmt->kind, stmt->line);
         exec_stmt(stmt);
-
         if (control_flow != CF_NONE) break;
     }
 }
 
-static void exec_stmt(ASTNode *stmt) {
+/* --- Implementación de exec_stmt --- */
+void exec_stmt(ASTNode *stmt) {
+    DEBUG_INFO("exec_stmt: kind=%d, line=%d", stmt->kind, stmt->line);
+
     switch (stmt->kind) {
+
         case NODE_EXPR_STMT:
             eval_expr(stmt->data.expr_stmt.expr);
             break;
+
+        case NODE_POST_INC:
+        case NODE_POST_DEC:
+            eval_expr(stmt);
+            break;
+
         case NODE_CMD_STMT: {
             char *expanded = expand_command(stmt->data.cmd_stmt.cmd);
             int ret = execute_embedded(expanded);
-            if (ret == -1) { free(expanded); error(stmt->line, "Comando embebido no encontrado: %s", stmt->data.cmd_stmt.cmd); }
+            if (ret == -1) {
+                free(expanded);
+                error(stmt->line, "Comando embebido no encontrado: %s", stmt->data.cmd_stmt.cmd);
+            }
             free(expanded);
             break;
         }
+
         case NODE_SHELL_CMD: {
             char *expanded = expand_command(stmt->data.shell_cmd.cmd);
             int ret = run_shell_command(expanded);
-            if (ret != 0) error(stmt->line, "falló: %s", stmt->data.shell_cmd.cmd);
+            if (ret != 0)
+                error(stmt->line, "falló: %s", stmt->data.shell_cmd.cmd);
             free(expanded);
             break;
         }
+
         case NODE_ASSIGN: {
             DEBUG_INFO("ASIGNACION: nombre='%s', is_cmd=%d", stmt->data.assign.name, stmt->data.assign.is_cmd);
             Value val;
@@ -185,14 +200,19 @@ static void exec_stmt(ASTNode *stmt) {
                 }
             }
 
+            DEBUG_INFO("NODE_ASSIGN: is_global=%d, is_local=%d, nombre='%s'",
+                       stmt->data.assign.is_global, stmt->data.assign.is_local, stmt->data.assign.name);
+
             if (stmt->data.assign.is_global) {
+                DEBUG_INFO("Definiendo global '%s' en super_global_scope", stmt->data.assign.name);
                 scope_define(super_global_scope, stmt->data.assign.name, vtype, val);
             } else if (stmt->data.assign.is_local) {
+                DEBUG_INFO("Definiendo local '%s' en current_scope", stmt->data.assign.name);
                 scope_define(current_scope, stmt->data.assign.name, vtype, val);
             } else {
-                VarEntry *var = scope_find(global_scope, stmt->data.assign.name);
+                VarEntry *var = scope_find(current_scope, stmt->data.assign.name);
                 if (var) {
-                    scope_assign(global_scope, stmt->data.assign.name, val, stmt->line);
+                    scope_assign(current_scope, stmt->data.assign.name, val, stmt->line);
                     if (var->vtype == 0 && vtype != 0) var->vtype = vtype;
                 } else {
                     scope_define(global_scope, stmt->data.assign.name, vtype, val);
@@ -200,6 +220,7 @@ static void exec_stmt(ASTNode *stmt) {
             }
             break;
         }
+
         case NODE_IF: {
             Value cond = eval_expr(stmt->data.if_stmt.cond);
             bool truthy = val_is_truthy(cond);
@@ -214,6 +235,7 @@ static void exec_stmt(ASTNode *stmt) {
             if (control_flow == CF_REPEAT_LINE) return;
             break;
         }
+
         case NODE_WHILE: {
             int iter_count = 0;
             while (1) {
@@ -234,29 +256,74 @@ static void exec_stmt(ASTNode *stmt) {
             }
             break;
         }
+
         case NODE_FOR: {
-            Value init_val = eval_expr(stmt->data.for_stmt.init);
-            Scope *for_scope = scope_new(current_scope, NULL);
+            DEBUG_INFO("=== EJECUTANDO NODE_FOR en línea %d ===", stmt->line);
+            DEBUG_INFO("for: is_global=%d, is_local=%d", stmt->data.for_stmt.is_global, stmt->data.for_stmt.is_local);
+
+            // 1. Guardar ámbito original
             Scope *old_scope = current_scope;
-            current_scope = for_scope;
-            scope_define(for_scope, stmt->data.for_stmt.var, stmt->data.for_stmt.vtype, init_val);
+
+            // 2. Crear ámbito para el bucle (para variables locales)
+            Scope *for_scope = scope_new(old_scope, NULL);
+
+            // 3. Inicialización: si es global, ejecutar en super_global_scope; si es local, en for_scope
+            if (stmt->data.for_stmt.is_global) {
+                DEBUG_INFO("for: inicialización global en super_global_scope");
+                current_scope = super_global_scope;
+                exec_stmt(stmt->data.for_stmt.init);
+                current_scope = for_scope;
+            } else {
+                DEBUG_INFO("for: inicialización local en for_scope");
+                current_scope = for_scope;
+                exec_stmt(stmt->data.for_stmt.init);
+            }
+
+            // 4. Bucle
             int iter_count = 0;
             while (1) {
-                if (iter_count >= max_loop_iterations)
-                    error(stmt->line, "Límite de iteraciones (%d) alcanzado en bucle for", max_loop_iterations);
+                if (iter_count >= max_loop_iterations) {
+                    error(stmt->line, "Límite de iteraciones (%d) alcanzado en el bucle for", max_loop_iterations);
+                }
                 iter_count++;
+
+                // Condición (en for_scope)
                 Value cond = eval_expr(stmt->data.for_stmt.cond);
                 if (!val_is_truthy(cond)) break;
+
+                // Cuerpo: ejecutar en un ámbito hijo
+                Scope *body_scope = scope_new(for_scope, NULL);
+                Scope *old_body = current_scope;
+                current_scope = body_scope;
                 exec_block_impl(&stmt->data.for_stmt.body);
-                if (control_flow == CF_BREAK) { control_flow = CF_NONE; break; }
-                if (control_flow == CF_CONTINUE) { control_flow = CF_NONE; }
-                if (control_flow == CF_REPEAT_LINE) { current_scope = old_scope; return; }
-                if (control_flow == CF_RETURN) { current_scope = old_scope; return; }
-                eval_expr(stmt->data.for_stmt.incr);
+                current_scope = old_body;
+
+                if (control_flow == CF_BREAK) {
+                    control_flow = CF_NONE;
+                    break;
+                }
+                if (control_flow == CF_CONTINUE) {
+                    control_flow = CF_NONE;
+                }
+                if (control_flow == CF_REPEAT_LINE) {
+                    current_scope = old_scope;
+                    return;
+                }
+                if (control_flow == CF_RETURN) {
+                    current_scope = old_scope;
+                    return;
+                }
+
+                // Incremento: ejecutar como sentencia
+                if (stmt->data.for_stmt.incr) {
+                    exec_stmt(stmt->data.for_stmt.incr);
+                }
             }
+
             current_scope = old_scope;
             break;
         }
+
         case NODE_FOR_IN: {
             Value list_val = eval_expr(stmt->data.for_in.list_expr);
             if (list_val.type != VAL_LIST) error(stmt->line, "Se esperaba una lista en for-in");
@@ -274,18 +341,23 @@ static void exec_stmt(ASTNode *stmt) {
             }
             break;
         }
+
         case NODE_FUNC_DEF:
             break;
+
         case NODE_RETURN:
             return_value = stmt->data.ret.expr ? eval_expr(stmt->data.ret.expr) : val_make_null();
             control_flow = CF_RETURN;
             return;
+
         case NODE_BREAK:
             control_flow = CF_BREAK;
             return;
+
         case NODE_CONTINUE:
             control_flow = CF_CONTINUE;
             return;
+
         case NODE_PORTAL: {
             const char *name = stmt->data.portal.name;
             bool is_local = stmt->data.portal.is_local;
@@ -294,11 +366,10 @@ static void exec_stmt(ASTNode *stmt) {
                 error(stmt->line, "Portal '%s' ya existe en este ámbito", name);
             }
             int next_line = stmt->line + 1;
-            // notar: no podemos acceder al bloque externo aquí, se resuelve en ejecución
-            // en realidad, el portal se define con la línea siguiente, pero esto es solo un ejemplo
             portal_define(target_scope, name, next_line);
             break;
         }
+
         case NODE_REPEAT: {
             if (stmt->data.repeat.portal_name) {
                 PortalEntry *p = portal_find(current_scope, stmt->data.repeat.portal_name);
@@ -313,6 +384,7 @@ static void exec_stmt(ASTNode *stmt) {
             control_flow = CF_REPEAT_LINE;
             return;
         }
+
         case NODE_IMPORT: {
             Scope *old_scope = current_scope; current_scope = global_scope;
             exec_block_impl(&stmt->data.import.module_block);
@@ -320,6 +392,7 @@ static void exec_stmt(ASTNode *stmt) {
             if (control_flow == CF_REPEAT_LINE) return;
             break;
         }
+
         case NODE_TRY: {
             jmp_buf saved_env; memcpy(&saved_env, &exception_env, sizeof(jmp_buf));
             int saved_raised = exception_raised; exception_raised = 0;
@@ -334,6 +407,7 @@ static void exec_stmt(ASTNode *stmt) {
             if (control_flow == CF_REPEAT_LINE) return;
             break;
         }
+
         case NODE_EXECUTE: {
             Value path_val = eval_expr(stmt->data.execute.path_expr);
             if (stmt->data.execute.path_expr && stmt->data.execute.path_expr->kind == NODE_VAR) {
@@ -412,11 +486,14 @@ static void exec_stmt(ASTNode *stmt) {
 
             break;
         }
+
         case NODE_FLAGS: {
             exec_flags(stmt);
             break;
         }
+
         default:
-            error(stmt->line, "Sentencia no implementada");
+            DEBUG_ERROR("Nodo desconocido en exec_stmt: kind=%d, line=%d", stmt->kind, stmt->line);
+            error(stmt->line, "Error interno: nodo no reconocido (tipo %d). Asegúrate de que la sintaxis sea correcta.", stmt->kind);
     }
 }

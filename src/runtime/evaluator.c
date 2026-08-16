@@ -22,6 +22,7 @@
 #include "runtime/scope.h"
 #include "runtime/globals.h"
 
+/* --- eval_expr (orquestador de expresiones) --- */
 Value eval_expr(ASTNode *expr) {
     switch (expr->kind) {
         case NODE_LITERAL:   return eval_literal(expr);
@@ -58,11 +59,14 @@ Value eval_expr(ASTNode *expr) {
             return old;
         }
         default:
-            error(expr->line, "Expresión no implementada (tipo %d)", expr->kind);
+            error(expr->line, "Se encontró una sentencia donde se esperaba una expresión. "
+            "Revisa el incremento del bucle for: debe ser una expresión simple "
+            "como 'i = i + 1' o 'i += 1'.");
+            return val_make_null();
     }
-    return val_make_null();
 }
 
+/* --- exec_block (orquestador de bloques) --- */
 void exec_block(NodeList *block) {
     exec_block_impl(block);
 }

@@ -12,6 +12,7 @@
 #include "runtime/scope.h"
 #include "runtime/globals.h"
 #include "runtime/error.h"
+#include "developer/debug.h"
 #include <string.h>
 #include <stdlib.h>
 
@@ -29,6 +30,8 @@ Value eval_var(ASTNode *expr) {
     if (*name == '\0')
         error(expr->line, "Nombre de variable vacío");
 
+    DEBUG_INFO("eval_var: buscando variable '%s' en current_scope=%p", name, (void*)current_scope);
+
     if (strchr(name, '/') != NULL) {
         VarEntry *e = scope_find(current_scope, name);
         if (!e) {
@@ -43,8 +46,10 @@ Value eval_var(ASTNode *expr) {
 
     VarEntry *e = scope_find(current_scope, name);
     if (!e) {
+        DEBUG_INFO("eval_var: variable '%s' no encontrada, devolviendo NULL", name);
         return val_make_null();
     }
+    DEBUG_INFO("eval_var: variable '%s' encontrada, valor tipo %d", name, e->value.type);
     return copy_value_secure(e->value);
 }
 

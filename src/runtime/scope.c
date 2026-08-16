@@ -12,7 +12,13 @@
 #include "runtime/error.h"
 #include "core/memory.h"
 #include "runtime/evaluator/evaluator.h"
+#include "developer/debug.h"
 
+/* --- Declaraciones de ámbitos globales (definidos en globals.c) --- */
+extern Scope *global_scope;
+extern Scope *super_global_scope;
+
+/* --- Creación de un nuevo ámbito --- */
 Scope *scope_new(Scope *parent, const char *function_name) {
     Scope *s = infernal_malloc(sizeof(Scope));
     s->vars = NULL;
@@ -22,16 +28,75 @@ Scope *scope_new(Scope *parent, const char *function_name) {
     return s;
 }
 
+/* ================================================================
+ * BÚSQUEDA DE VARIABLE: prioriza valores reales sobre NULL
+ * ================================================================ */
 VarEntry *scope_find(Scope *scope, const char *name) {
-    while (scope) {
-        for (VarEntry *e = scope->vars; e; e = e->next) {
-            if (strcmp(e->name, name) == 0) return e;
+    DEBUG_INFO("scope_find: buscando '%s'", name);
+
+    VarEntry *found_null = NULL;   // guardar la primera variable NULL encontrada en la cadena
+    Scope *s = scope;
+
+    // 1) Recorrer la cadena de ámbitos (desde el actual hacia arriba)
+    while (s) {
+        DEBUG_INFO("scope_find: revisando scope %p", (void*)s);
+        for (VarEntry *e = s->vars; e; e = e->next) {
+            if (strcmp(e->name, name) == 0) {
+                if (e->value.type == VAL_NULL) {
+                    // Si es NULL, la recordamos pero no devolvemos aún
+                    if (!found_null) found_null = e;
+                    DEBUG_INFO("scope_find: encontrado NULL en scope %p", (void*)s);
+                } else {
+                    // Si tiene valor real, ¡es la ganadora! (prioridad máxima)
+                    DEBUG_INFO("scope_find: encontrado valor REAL en scope %p, devolviendo", (void*)s);
+                    return e;
+                }
+            }
         }
-        scope = scope->parent;
+        s = s->parent;
     }
+
+    // 2) Si no encontramos valor real en la cadena, buscar en super_global_scope
+    if (super_global_scope) {
+        DEBUG_INFO("scope_find: buscando en super_global_scope");
+        for (VarEntry *e = super_global_scope->vars; e; e = e->next) {
+            if (strcmp(e->name, name) == 0) {
+                if (e->value.type != VAL_NULL) {
+                    DEBUG_INFO("scope_find: encontrado valor REAL en super_global_scope");
+                    return e;
+                } else {
+                    DEBUG_INFO("scope_find: encontrado NULL en super_global_scope (ignorado)");
+                }
+            }
+        }
+    }
+
+    // 3) Si no, buscar en global_scope (si es diferente de super_global_scope)
+    if (global_scope && global_scope != super_global_scope) {
+        DEBUG_INFO("scope_find: buscando en global_scope");
+        for (VarEntry *e = global_scope->vars; e; e = e->next) {
+            if (strcmp(e->name, name) == 0) {
+                if (e->value.type != VAL_NULL) {
+                    DEBUG_INFO("scope_find: encontrado valor REAL en global_scope");
+                    return e;
+                } else {
+                    DEBUG_INFO("scope_find: encontrado NULL en global_scope (ignorado)");
+                }
+            }
+        }
+    }
+
+    // 4) Si todo falló, pero teníamos una variable NULL en la cadena, la devolvemos
+    if (found_null) {
+        DEBUG_INFO("scope_find: devolviendo variable NULL de la cadena (sin alternativa)");
+        return found_null;
+    }
+
+    DEBUG_INFO("scope_find: NO encontrado '%s'", name);
     return NULL;
 }
 
+/* --- Búsqueda solo en el ámbito actual (no sube por la cadena) --- */
 VarEntry *scope_find_current(Scope *scope, const char *name) {
     if (!scope) return NULL;
     for (VarEntry *e = scope->vars; e; e = e->next) {
@@ -40,8 +105,8 @@ VarEntry *scope_find_current(Scope *scope, const char *name) {
     return NULL;
 }
 
+/* --- Búsqueda en la cadena de ámbitos excluyendo super_global_scope --- */
 VarEntry *scope_find_script(Scope *scope, const char *name) {
-    extern Scope *super_global_scope;
     while (scope && scope != super_global_scope) {
         for (VarEntry *e = scope->vars; e; e = e->next) {
             if (strcmp(e->name, name) == 0) return e;
@@ -51,11 +116,16 @@ VarEntry *scope_find_script(Scope *scope, const char *name) {
     return NULL;
 }
 
+/* --- Definir una nueva variable en un ámbito dado --- */
 void scope_define(Scope *scope, const char *name, int vtype, Value val) {
-    // Si se define como string y el valor es lista, convertir
+    // Si el valor es NULL, no asignar un tipo fijo para evitar conflictos
+    if (val.type == VAL_NULL) {
+        vtype = 0;
+    }
+    DEBUG_INFO("scope_define: definiendo '%s' en scope %p (vtype=%d)", name, (void*)scope, vtype);
     if (vtype == TOK_STRING && val.type == VAL_LIST) {
         if (!try_convert_value(&val, TOK_STRING)) {
-            // En caso de fallo, mantener el valor original (se mostrará error más adelante)
+            // Si falla la conversión, se mantiene el valor original
         }
     }
     VarEntry *e = infernal_malloc(sizeof(VarEntry));
@@ -64,12 +134,18 @@ void scope_define(Scope *scope, const char *name, int vtype, Value val) {
     e->value = val;
     e->next = scope->vars;
     scope->vars = e;
+    DEBUG_INFO("scope_define: '%s' definida en scope %p", name, (void*)scope);
 }
 
+/* --- Asignar un valor a una variable existente en el ámbito (o crear si no existe) --- */
 void scope_assign(Scope *scope, const char *name, Value val, int line) {
     VarEntry *e = scope_find(scope, name);
     if (e) {
-        // Si la variable es de tipo string y el valor es lista, convertir
+        // Si el nuevo valor es NULL, permitir la asignación sin verificación de tipo
+        if (val.type == VAL_NULL) {
+            e->value = val;
+            return;
+        }
         if (e->vtype == TOK_STRING && val.type == VAL_LIST) {
             if (!try_convert_value(&val, TOK_STRING)) {
                 error(line, "No se pudo convertir lista a string en la asignación a '%s'", name);
@@ -93,6 +169,7 @@ void scope_assign(Scope *scope, const char *name, Value val, int line) {
     }
 }
 
+/* --- Búsqueda de portal en la cadena de ámbitos --- */
 PortalEntry *portal_find(Scope *scope, const char *name) {
     while (scope) {
         for (PortalEntry *p = scope->portals; p; p = p->next) {
@@ -103,6 +180,7 @@ PortalEntry *portal_find(Scope *scope, const char *name) {
     return NULL;
 }
 
+/* --- Búsqueda de portal solo en el ámbito actual --- */
 PortalEntry *portal_find_in_scope(Scope *scope, const char *name) {
     for (PortalEntry *p = scope->portals; p; p = p->next) {
         if (strcmp(p->name, name) == 0) return p;
@@ -110,6 +188,7 @@ PortalEntry *portal_find_in_scope(Scope *scope, const char *name) {
     return NULL;
 }
 
+/* --- Definir un portal en el ámbito dado --- */
 void portal_define(Scope *scope, const char *name, int line) {
     PortalEntry *p = infernal_malloc(sizeof(PortalEntry));
     p->name = infernal_strdup(name);
@@ -118,8 +197,8 @@ void portal_define(Scope *scope, const char *name, int line) {
     scope->portals = p;
 }
 
+/* --- Liberar un ámbito (se desactiva la liberación de variables para evitar double-free) --- */
 void scope_free(Scope *s) {
     if (!s) return;
-    // Desactivamos la liberación de variables para evitar double-free
     free(s);
 }
