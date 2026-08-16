@@ -81,6 +81,7 @@ void exec_stmt(ASTNode *stmt) {
 
             Value val;
             if (stmt->data.assign.is_cmd) {
+                // ... (código de comandos, sin cambios) ...
                 char *cmd = stmt->data.assign.cmd_str;
                 int exit_code = 0;
 
@@ -182,10 +183,10 @@ void exec_stmt(ASTNode *stmt) {
                 val = eval_expr(stmt->data.assign.value);
             }
 
-            // --- Obtener el tipo fijo declarado (puede ser 0 si no se especificó) ---
+            // --- Obtener el tipo fijo declarado ---
             int vtype = stmt->data.assign.vtype;
 
-            // --- Conversión de tipos (si el destino es string y el valor es lista) ---
+            // --- Conversión de tipos ---
             if (vtype == TOK_STRING && val.type == VAL_LIST) {
                 if (!try_convert_value(&val, TOK_STRING)) {
                     error(stmt->line, "No se pudo convertir la lista a string en la asignación a '%s'",
@@ -193,7 +194,6 @@ void exec_stmt(ASTNode *stmt) {
                 }
             }
 
-            // --- Verificación y conversión forzada según el tipo fijo ---
             if (vtype != 0) {
                 int actual_type = valtype_to_tokentype(val.type);
                 if (vtype != actual_type) {
@@ -218,14 +218,14 @@ void exec_stmt(ASTNode *stmt) {
                 // Asignación sin calificador: buscar la variable en la cadena de ámbitos
                 VarEntry *var = scope_find(current_scope, stmt->data.assign.name);
                 if (var) {
-                    // Si existe, asignar (actualizar) en el ámbito donde se encontró
-                    scope_assign(current_scope, stmt->data.assign.name, val, stmt->line);
-                    // Si la variable tenía tipo fijo y vtype es 0, mantener el tipo original
-                    if (var->vtype == 0 && vtype != 0) {
+                    DEBUG_INFO("Variable '%s' encontrada en ámbito %p, actualizando", stmt->data.assign.name, (void*)var);
+                    var->value = copy_value_secure(val);
+                    if (vtype != 0) {
                         var->vtype = vtype;
                     }
                 } else {
-                    // Si no existe, definir en global_scope (ámbito del script, no superglobal)
+                    // Si no existe, definir en global_scope (ámbito del script)
+                    DEBUG_INFO("Variable '%s' no encontrada, definiendo en global_scope", stmt->data.assign.name);
                     scope_define(global_scope, stmt->data.assign.name, vtype, val);
                 }
             }
@@ -235,14 +235,11 @@ void exec_stmt(ASTNode *stmt) {
         case NODE_IF: {
             Value cond = eval_expr(stmt->data.if_stmt.cond);
             bool truthy = val_is_truthy(cond);
-            Scope *block_scope = scope_new(current_scope, NULL);
-            Scope *old_scope = current_scope;
-            current_scope = block_scope;
-            if (truthy)
+            if (truthy) {
                 exec_block_impl(&stmt->data.if_stmt.then_block);
-            else
+            } else {
                 exec_block_impl(&stmt->data.if_stmt.else_block);
-            current_scope = old_scope;
+            }
             if (control_flow == CF_REPEAT_LINE) return;
             break;
         }
@@ -260,6 +257,7 @@ void exec_stmt(ASTNode *stmt) {
                 current_scope = block_scope;
                 exec_block_impl(&stmt->data.while_stmt.body);
                 current_scope = old_scope;
+                scope_free(block_scope);
                 if (control_flow == CF_BREAK) { control_flow = CF_NONE; break; }
                 if (control_flow == CF_CONTINUE) { control_flow = CF_NONE; continue; }
                 if (control_flow == CF_REPEAT_LINE) return;
@@ -273,27 +271,23 @@ void exec_stmt(ASTNode *stmt) {
 
             Scope *old_scope = current_scope;
 
-            // 1) Inicialización
+            // 1) Evaluar la inicialización en el ámbito actual (old_scope)
             Value init_val = val_make_null();
             if (stmt->data.for_stmt.init && stmt->data.for_stmt.init->kind == NODE_ASSIGN) {
                 ASTNode *init_expr = stmt->data.for_stmt.init->data.assign.value;
                 if (init_expr) {
                     current_scope = old_scope;
                     init_val = eval_expr(init_expr);
+                    DEBUG_INFO("NODE_FOR: init_val = %d", init_val.data.ival);
                 }
             }
 
-            // 2) Ámbito del for
+            // 2) Crear el ámbito del for (hereda de old_scope)
             Scope *for_scope = scope_new(old_scope, NULL);
-            if (stmt->data.for_stmt.init && stmt->data.for_stmt.init->kind == NODE_ASSIGN) {
-                const char *var_name = stmt->data.for_stmt.init->data.assign.name;
-                int vtype = stmt->data.for_stmt.init->data.assign.vtype;
-                scope_define(for_scope, var_name, vtype, init_val);
-                DEBUG_INFO("Variable '%s' definida en for_scope %p con valor inicial", var_name, (void*)for_scope);
-            } else {
-                current_scope = for_scope;
-                exec_stmt(stmt->data.for_stmt.init);
-            }
+            const char *var_name = stmt->data.for_stmt.init ? stmt->data.for_stmt.init->data.assign.name : "?";
+            int vtype = stmt->data.for_stmt.init ? stmt->data.for_stmt.init->data.assign.vtype : 0;
+            scope_define(for_scope, var_name, vtype, init_val);
+            DEBUG_INFO("Variable '%s' definida en for_scope con valor %d", var_name, init_val.data.ival);
 
             current_scope = for_scope;
             int iter_count = 0;
@@ -304,20 +298,17 @@ void exec_stmt(ASTNode *stmt) {
                 }
                 iter_count++;
 
-                // 3) Condición
+                // 3) Condición (se evalúa en for_scope)
                 Value cond = eval_expr(stmt->data.for_stmt.cond);
-                DEBUG_INFO("Condición: i=%d, limite=%d, resultado=%d",
-                           eval_expr(stmt->data.for_stmt.init->data.assign.value).data.ival,
-                           eval_expr(stmt->data.for_stmt.cond->data.binop.right).data.ival,
-                           cond.data.bval);
                 if (!val_is_truthy(cond)) break;
 
-                // 4) Cuerpo (en ámbito hijo)
+                // 4) Cuerpo: ejecutar en un ámbito hijo (body_scope)
                 Scope *body_scope = scope_new(for_scope, NULL);
                 Scope *old_body = current_scope;
                 current_scope = body_scope;
                 exec_block_impl(&stmt->data.for_stmt.body);
-                current_scope = old_body; // restauramos a for_scope
+                current_scope = old_body; // restaurar a for_scope
+                scope_free(body_scope);
 
                 // 5) Control de flujo
                 if (control_flow == CF_BREAK) {
@@ -329,70 +320,19 @@ void exec_stmt(ASTNode *stmt) {
                 }
                 if (control_flow == CF_REPEAT_LINE || control_flow == CF_RETURN) {
                     current_scope = old_scope;
+                    scope_free(for_scope);
                     return;
                 }
 
-                // 6) INCREMENTO (se ejecuta en for_scope)
-                DEBUG_INFO("INCREMENTO: verificando si hay incr, puntero = %p", (void*)stmt->data.for_stmt.incr);
+                // 6) Incremento (se ejecuta en for_scope)
                 if (stmt->data.for_stmt.incr) {
-                    DEBUG_INFO("INCREMENTO: hay incr, procediendo");
                     current_scope = for_scope;
-                    ASTNode *incr = stmt->data.for_stmt.incr;
-                    ASTNode *real_incr = incr;
-
-                    DEBUG_INFO("INCREMENTO: incr->kind=%d, incr->line=%d", incr->kind, incr->line);
-
-                    // Desempaquetar si está envuelto en NODE_EXPR_STMT
-                    if (incr->kind == NODE_EXPR_STMT) {
-                        real_incr = incr->data.expr_stmt.expr;
-                        DEBUG_INFO("INCREMENTO: desempaquetado, real_incr->kind=%d", real_incr->kind);
-                    }
-
-                    // Verificar si es post-incremento/decremento de la variable del for
-                    if (real_incr->kind == NODE_POST_INC || real_incr->kind == NODE_POST_DEC) {
-                        ASTNode *var_node = real_incr->data.post_op.var;
-                        DEBUG_INFO("INCREMENTO: var_node->kind=%d", var_node->kind);
-                        if (var_node->kind == NODE_VAR) {
-                            const char *raw_name = var_node->data.var.name;
-                            const char *name = (raw_name[0] == '$' || raw_name[0] == '?') ? raw_name + 1 : raw_name;
-                            DEBUG_INFO("INCREMENTO: variable '%s' (raw='%s'), for_var='%s'", name, raw_name, stmt->data.for_stmt.var);
-                            if (strcmp(name, stmt->data.for_stmt.var) == 0) {
-                                DEBUG_INFO("INCREMENTO: coincide, actualizando en for_scope");
-                                VarEntry *e = scope_find_current(for_scope, name);
-                                if (!e) {
-                                    scope_define(for_scope, name, 0, val_int(0));
-                                    e = scope_find_current(for_scope, name);
-                                }
-                                if (!e) {
-                                    error(real_incr->line, "Variable '%s' no encontrada en el ámbito del for", name);
-                                }
-                                Value old = e->value;
-                                Value new_val;
-                                if (real_incr->kind == NODE_POST_INC) {
-                                    if (old.type == VAL_INT) new_val = val_int(old.data.ival + 1);
-                                    else if (old.type == VAL_FLOAT) new_val = val_float(old.data.fval + 1.0);
-                                    else error(real_incr->line, "Incremento solo aplicable a números");
-                                } else { // NODE_POST_DEC
-                                    if (old.type == VAL_INT) new_val = val_int(old.data.ival - 1);
-                                    else if (old.type == VAL_FLOAT) new_val = val_float(old.data.fval - 1.0);
-                                    else error(real_incr->line, "Decremento solo aplicable a números");
-                                }
-                                e->value = copy_value_secure(new_val);
-                                DEBUG_INFO("INCREMENTO: variable '%s' actualizada a %d en for_scope", name, new_val.data.ival);
-                                continue; // Saltar ejecución normal
-                            }
-                        }
-                    }
-
-                    // Si no se procesó como post-incremento, ejecutar normalmente
-                    DEBUG_INFO("INCREMENTO: ejecutando por exec_stmt");
-                    exec_stmt(incr);
-                } else {
-                    DEBUG_INFO("INCREMENTO: NO HAY INCREMENTO (incr es NULL)");
+                    exec_stmt(stmt->data.for_stmt.incr);
                 }
             }
 
             current_scope = old_scope;
+            scope_free(for_scope);
             break;
         }
 
@@ -406,6 +346,7 @@ void exec_stmt(ASTNode *stmt) {
                 scope_define(iter_scope, stmt->data.for_in.var, 0, copy_value_secure(list_val.data.list.items[i]));
                 exec_block_impl(&stmt->data.for_in.body);
                 current_scope = old_scope;
+                scope_free(iter_scope);
                 if (control_flow == CF_BREAK) { control_flow = CF_NONE; break; }
                 if (control_flow == CF_CONTINUE) { control_flow = CF_NONE; continue; }
                 if (control_flow == CF_REPEAT_LINE) return;
@@ -546,6 +487,7 @@ void exec_stmt(ASTNode *stmt) {
             exec_block_impl(&script_block);
 
             current_scope = old_scope;
+            scope_free(child_scope);
 
             script_argc = saved_argc;
             script_argv = saved_argv;

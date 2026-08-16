@@ -228,11 +228,13 @@ print(i)
 
 print("=== TEST 27: for después de cambiar variable ===")
 
-local x = 10
+local z = 10
 
-x = 0
+print("z antes: ", z)   # debe mostrar 10
+z = 0
+print("z después: ", z) # debe mostrar 0
 
-for local i = x, i < 5, $i++ then
+for local i = z, i < 5, $i++ then
     print(i)
 fi
 

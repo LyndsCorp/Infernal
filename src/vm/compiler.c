@@ -421,20 +421,36 @@ static void compile_stmt(Compiler *c, ASTNode *stmt) {
                     emit(c->chunk, OP_STORE_VAR, slot, stmt->line);
                 }
             } else {
-                if (stmt->data.assign.is_cmd) {
-                    int const_node = add_constant(c, val_ptr(stmt));
-                    emit(c->chunk, OP_INTERPRET_NODE, const_node, stmt->line);
-                    c->chunk->code[c->chunk->code_count - 1].operand2 = 0;
+                // Asignación sin calificador: primero resolver como local
+                int slot = resolve_local(c, name);
+                if (slot >= 0) {
+                    // Es una variable local → actualizar local
+                    if (vtype != 0) c->local_types[slot] = vtype;
+                    if (stmt->data.assign.is_cmd) {
+                        int const_idx = add_constant(c, val_string(stmt->data.assign.cmd_str));
+                        emit(c->chunk, OP_CMD_ASSIGN, const_idx, stmt->line);
+                        c->chunk->code[c->chunk->code_count - 1].operand2 = slot;
+                    } else {
+                        compile_expr(c, stmt->data.assign.value);
+                        emit(c->chunk, OP_STORE_VAR, slot, stmt->line);
+                    }
                 } else {
+                    // No es local → tratarlo como global
                     int gidx = vm_find_global_index(name);
                     if (gidx < 0) {
                         gidx = vm_register_global(name, GLOBAL_SCRIPT, vtype);
                     } else if (vtype != 0) {
                         vm_global_types[gidx] = vtype;
                     }
-                    compile_expr(c, stmt->data.assign.value);
-                    emit(c->chunk, OP_STORE_GLOBAL, gidx, stmt->line);
-                    c->chunk->code[c->chunk->code_count - 1].operand2 = GLOBAL_SCRIPT;
+                    if (stmt->data.assign.is_cmd) {
+                        int const_node = add_constant(c, val_ptr(stmt));
+                        emit(c->chunk, OP_INTERPRET_NODE, const_node, stmt->line);
+                        c->chunk->code[c->chunk->code_count - 1].operand2 = 0;
+                    } else {
+                        compile_expr(c, stmt->data.assign.value);
+                        emit(c->chunk, OP_STORE_GLOBAL, gidx, stmt->line);
+                        c->chunk->code[c->chunk->code_count - 1].operand2 = GLOBAL_SCRIPT;
+                    }
                 }
             }
             break;
