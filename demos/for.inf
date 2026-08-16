@@ -1,0 +1,254 @@
+# FILE: test-for.inf
+# Stress test de FOR
+# Objetivo: intentar romper el parser, runtime y scopes de for.
+
+print("=== TEST 1: for local básico ===")
+
+for local i = 0, i < 10, $i++ then
+    print(i)
+fi
+
+
+print("=== TEST 2: for local int ===")
+
+for local int i = 0, i < 10, $i++ then
+    print(i)
+fi
+
+
+print("=== TEST 3: for global ===")
+
+for global i = 0, i < 5, $i++ then
+    print(i)
+fi
+
+print("i después del for:")
+print(i)
+
+
+print("=== TEST 4: for sin especificar scope ===")
+
+for i = 0, i < 5, $i++ then
+    print(i)
+fi
+
+
+print("=== TEST 5: incremento con += ===")
+
+for local i = 0, i < 10, $i += 2 then
+    print(i)
+fi
+
+
+print("=== TEST 6: decremento ===")
+
+for local i = 10, i > 0, $i-- then
+    print(i)
+fi
+
+
+print("=== TEST 7: decremento con -= ===")
+
+for local i = 10, i > 0, $i -= 2 then
+    print(i)
+fi
+
+
+print("=== TEST 8: float ===")
+
+for local float i = 0.0, i < 5.0, $i += 0.5 then
+    print(i)
+fi
+
+
+print("=== TEST 9: incremento de variable diferente ===")
+
+local i = 0
+local limite = 100
+
+for local x = 0, x < limite, $i++ then
+    print(x)
+    print(i)
+    $x += 1
+fi
+
+
+print("=== TEST 10: variable externa en condicion ===")
+
+local limite = 5
+
+for local i = 0, i < limite, $i++ then
+    print(i)
+fi
+
+
+print("=== TEST 11: condición falsa desde el principio ===")
+
+for local i = 100, i < 10, $i++ then
+    print("ESTO NO DEBERÍA APARECER")
+fi
+
+
+print("=== TEST 12: una sola iteración ===")
+
+for local i = 0, i < 1, $i++ then
+    print(i)
+fi
+
+
+print("=== TEST 13: cero ===")
+
+for local i = 0, i < 0, $i++ then
+    print("ESTO NO DEBERÍA APARECER")
+fi
+
+
+print("=== TEST 14: límite exacto ===")
+
+for local i = 0, i <= 10, $i++ then
+    print(i)
+fi
+
+
+print("=== TEST 15: condición != ===")
+
+for local i = 0, i != 10, $i++ then
+    print(i)
+fi
+
+
+print("=== TEST 16: incremento grande ===")
+
+for local i = 0, i < 100, $i += 25 then
+    print(i)
+fi
+
+
+print("=== TEST 17: decremento float ===")
+
+for local float i = 5.0, i > 0.0, $i -= 0.5 then
+    print(i)
+fi
+
+
+print("=== TEST 18: for anidado ===")
+
+for local i = 0, i < 5, $i++ then
+    print("externo:")
+    print(i)
+
+    for local j = 0, j < 3, $j++ then
+        print("interno:")
+        print(j)
+    fi
+fi
+
+
+print("=== TEST 19: scopes independientes ===")
+
+for local i = 0, i < 3, $i++ then
+    for local i = 10, i < 13, $i++ then
+        print(i)
+    fi
+
+    print(i)
+fi
+
+
+print("=== TEST 20: modificar variable externa ===")
+
+local contador = 0
+
+for local i = 0, i < 10, $i++ then
+    $contador++
+fi
+
+print(contador)
+
+
+print("=== TEST 21: condición modificada desde dentro ===")
+
+local limite = 10
+
+for local i = 0, i < limite, $i++ then
+    print(i)
+
+    if i == 5 then
+        limite = 7
+    fi
+fi
+
+
+print("=== TEST 22: muchas iteraciones ===")
+
+for local i = 0, i < 1000, $i++ then
+    # Intencionadamente vacío
+fi
+
+
+print("=== TEST 23: dos for consecutivos ===")
+
+for local i = 0, i < 5, $i++ then
+    print(i)
+fi
+
+for local j = 10, j < 15, $j++ then
+    print(j)
+fi
+
+
+print("=== TEST 24: for con expresión compleja ===")
+
+local limite = 20
+
+for local i = 0, i < limite + 5, $i += 2 then
+    print(i)
+fi
+
+
+print("=== TEST 25: variable externa usada como incremento ===")
+
+local paso = 2
+
+for local i = 0, i < 10, $i += paso then
+    print(i)
+fi
+
+
+print("=== TEST 26: mismo nombre en scopes ===")
+
+local i = 999
+
+for local i = 0, i < 3, $i++ then
+    print(i)
+fi
+
+print(i)
+
+
+print("=== TEST 27: for después de cambiar variable ===")
+
+local x = 10
+
+x = 0
+
+for local i = x, i < 5, $i++ then
+    print(i)
+fi
+
+###
+print("=== TEST 28: nested + variable externa ===")
+
+local total = 0
+
+for local i = 0, i < 5, $i++ then
+    for local j = 0, j < 5, $j++ then
+        $total++
+    fi
+fi
+
+print(total)
+
+
+print("=== TESTS TERMINADOS ===")
+###

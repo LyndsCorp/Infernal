@@ -55,7 +55,8 @@ Value eval_expr(ASTNode *expr) {
                 else if (old.type == VAL_FLOAT) new_val = val_float(old.data.fval - 1.0);
                 else error(expr->line, "Decremento solo aplicable a números");
             }
-            scope_assign(current_scope, name, new_val, expr->line);
+            // Actualizar directamente la entrada encontrada
+            e->value = copy_value_secure(new_val);
             return old;
         }
         default:
