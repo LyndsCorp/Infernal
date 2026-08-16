@@ -18,15 +18,18 @@ static const struct {
     const char *name;
     const char *code;
 } color_map[] = {
-    {"red",     "\033[31m"},
-    {"blue",    "\033[34m"},
-    {"green",   "\033[32m"},
-    {"yellow",  "\033[33m"},
-    {"orange",  "\033[38;5;208m"},
-    {"magenta", "\033[35m"},
-    {"black",   "\033[30m"},
-    {"white",   "\033[37m"},
-    {"reset",   "\033[0m"},
+    {"red",       "\033[31m"},
+    {"orange",    "\033[38;5;208m"},
+    {"yellow",    "\033[93m"},
+    {"green",     "\033[32m"},
+    {"blue",      "\033[34m"},
+    {"purple",    "\033[35m"},
+    {"cyan",      "\033[36m"},
+    {"magenta",   "\033[35m"},
+    {"black",     "\033[30m"},
+    {"white",     "\033[37m"},
+    {"gray",      "\033[90m"},
+    {"reset",     "\033[0m"},
     {NULL, NULL}
 };
 
@@ -75,45 +78,109 @@ static Value builtin_color(int argc, Value *args) {
 
 /* --- print() --- */
 static Value builtin_print(int argc, Value *args) {
+    int suppress_newline = 0;
+    if (argc > 0 && args[argc-1].type == VAL_STRING) {
+        char *s = args[argc-1].data.sval;
+        size_t len = strlen(s);
+        if (len > 0 && s[len-1] == 0x1A) {
+            char *new_s = malloc(len); // sin el último byte
+            if (new_s) {
+                memcpy(new_s, s, len - 1);
+                new_s[len - 1] = '\0';
+                args[argc-1].data.sval = new_s;
+                suppress_newline = 1;
+            }
+        }
+    }
+
     for (int i = 0; i < argc; i++) {
         if (i > 0) printf(" ");
         print_value(args[i]);
     }
-    printf("\033[0m\n");
+    printf("\033[0m");
+    if (!suppress_newline) printf("\n");
     fflush(stdout);
     return val_make_null();
 }
 
 /* --- warn, error, success --- */
 static Value builtin_warn(int argc, Value *args) {
+    int suppress_newline = 0;
+    if (argc > 0 && args[argc-1].type == VAL_STRING) {
+        char *s = args[argc-1].data.sval;
+        size_t len = strlen(s);
+        if (len > 0 && s[len-1] == 0x1A) {
+            char *new_s = malloc(len);
+            if (new_s) {
+                memcpy(new_s, s, len - 1);
+                new_s[len - 1] = '\0';
+                args[argc-1].data.sval = new_s;
+                suppress_newline = 1;
+            }
+        }
+    }
+
     printf("\033[33m");
     for (int i = 0; i < argc; i++) {
         if (i > 0) printf(" ");
         print_value(args[i]);
     }
-    printf("\033[0m\n");
+    printf("\033[0m");
+    if (!suppress_newline) printf("\n");
     fflush(stdout);
     return val_make_null();
 }
 
 static Value builtin_error(int argc, Value *args) {
+    int suppress_newline = 0;
+    if (argc > 0 && args[argc-1].type == VAL_STRING) {
+        char *s = args[argc-1].data.sval;
+        size_t len = strlen(s);
+        if (len > 0 && s[len-1] == 0x1A) {
+            char *new_s = malloc(len);
+            if (new_s) {
+                memcpy(new_s, s, len - 1);
+                new_s[len - 1] = '\0';
+                args[argc-1].data.sval = new_s;
+                suppress_newline = 1;
+            }
+        }
+    }
+
     printf("\033[31m");
     for (int i = 0; i < argc; i++) {
         if (i > 0) printf(" ");
         print_value(args[i]);
     }
-    printf("\033[0m\n");
+    printf("\033[0m");
+    if (!suppress_newline) printf("\n");
     fflush(stdout);
     return val_make_null();
 }
 
 static Value builtin_success(int argc, Value *args) {
+    int suppress_newline = 0;
+    if (argc > 0 && args[argc-1].type == VAL_STRING) {
+        char *s = args[argc-1].data.sval;
+        size_t len = strlen(s);
+        if (len > 0 && s[len-1] == 0x1A) {
+            char *new_s = malloc(len);
+            if (new_s) {
+                memcpy(new_s, s, len - 1);
+                new_s[len - 1] = '\0';
+                args[argc-1].data.sval = new_s;
+                suppress_newline = 1;
+            }
+        }
+    }
+
     printf("\033[32m");
     for (int i = 0; i < argc; i++) {
         if (i > 0) printf(" ");
         print_value(args[i]);
     }
-    printf("\033[0m\n");
+    printf("\033[0m");
+    if (!suppress_newline) printf("\n");
     fflush(stdout);
     return val_make_null();
 }

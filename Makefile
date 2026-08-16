@@ -4,8 +4,10 @@
 #   make debug    - compila con logs de depuración (-DDEBUG)
 #   make release  - compila optimizado para distribución (-O2, sin debug)
 #   make config   - crea/edita los metadatos (VERSION, HELP, WELCOME, EDITION)
+#   make test     - compila Infernal si es necesario y ejecuta los demos uno por uno
 #   make clean    - elimina objetos y ejecutable (NO borra nada en config/)
-#   make distclean- limpia también los archivos generados de .fire y metadatos (NO borra config/)
+#   make sanitize - compila Infernal con AddressSanitizer y UBSan
+#   make install  - instala Infernal
 #   make help     - muestra esta ayuda
 # --------------------------------------------------------------------
 # Configuración
@@ -13,7 +15,7 @@
 CC       := gcc
 # Por defecto: con debug info, sin logs
 CFLAGS   := -Wall -Wextra -g -std=c11 -D_GNU_SOURCE
-LDFLAGS  := -ldl
+LDFLAGS  := -ldl -lm
 INCDIRS  := -Isrc
 
 SRCDIR       := src
@@ -24,6 +26,9 @@ FIRE_GEN_DIR := $(BUILDDIR)/gen_fire
 BIN_GEN_DIR  := $(BUILDDIR)/gen_bins
 META_DIR     := src/metadata
 TARGET       := infernal
+
+PREFIX ?= /
+BINDIR ?= $(PREFIX)usr/bin
 
 # --------------------------------------------------------------------
 # Valores por defecto
@@ -99,7 +104,7 @@ DEPS := $(ALL_OBJS:.o=.d)
 # --------------------------------------------------------------------
 # Reglas principales
 # --------------------------------------------------------------------
-.PHONY: all clean distclean help test sanitize debug release config
+.PHONY: all clean help test sanitize debug release config install
 
 all: $(TARGET)
 
@@ -277,23 +282,31 @@ clean:
 	@echo " [CLEAN]"
 	rm -rf $(BUILDDIR) $(TARGET)
 
-distclean: clean
-	@echo " [DISTCLEAN]"
-	rm -f src/metadata/*
-
 help:
 	@echo "Infernal Makefile"
 	@echo "-----------------"
 	@echo "Objetivos:"
 	@echo "             : (vacío; solo ejecuta 'make') hace lo mismo que 'make all'"
 	@echo "  all        : compila el intérprete (por defecto)"
+	@echo "  clean      : elimina objetos (build/) y el ejecutable (infernal) (no toca config/)"
 	@echo "  debug      : compila con soporte de depuración (-DDEBUG)"
 	@echo "  release    : compila optimizado para distribución (-O2, sin debug)"
 	@echo "  config     : crea o edita los metadatos (VERSION, HELP, WELCOME, EDITION)"
-	@echo "  clean      : elimina objetos y el ejecutable (no toca config/)"
-	@echo "  distclean  : elimina todo src/metadata para que hagas make config limpio"
+	@echo "  test       : compila Infernal si es necesario y ejecuta los demos uno por uno"
+	@echo "  sanitize   : compila Infernal con AddressSanitizer y UBSan"
 	@echo "  help       : muestra esta ayuda"
-	@echo ""
+	@echo
+	@echo
+	@echo "Instalación:"
+	@echo "  make install                       : instala Infernal para el usuario"
+	@echo "  sudo make install                  : instala Infernal para el sistema"
+	@echo "  sudo make install PREFIX=/mnt/ROOT/: instala Infernal en un sitio personalizado"
+	@echo
+	@echo "· Sin sudo, se instala para el usuario."
+	@echo "· Con sudo, se instala para el sistema o el PREFIX indicado."
+	@echo "· Recuerda poner la / final en PREFIX."
+	@echo
+	@echo
 	@echo "Estadísticas:"
 	@printf "  Archivos fuente (.c): %d\n" $(words $(SOURCES))
 	@printf "  Módulos .fire embebidos: %d\n" $(words $(FIRE_FILES))
@@ -312,3 +325,16 @@ sanitize:
 	$(MAKE) CFLAGS='$(CFLAGS) -fsanitize=address,undefined -fno-omit-frame-pointer' \
 	        LDFLAGS='$(LDFLAGS) -fsanitize=address,undefined' all
 	$(MAKE) test
+
+install: $(TARGET)
+	@if [ "$$(id -u)" -eq 0 ]; then \
+		echo " [INSTALL ROOT] $(BINDIR)/$(TARGET)"; \
+		install -Dm755 $(TARGET) $(BINDIR)/$(TARGET); \
+		echo "Infernal instalado para el sistema."; \
+	else \
+		echo " [INSTALL USER] $$HOME/.local/bin/$(TARGET)"; \
+		mkdir -p "$$HOME/.local/bin"; \
+		install -Dm755 $(TARGET) "$$HOME/.local/bin/$(TARGET)"; \
+		echo "Infernal instalado para el usuario."; \
+		echo "Asegúrate de que $$HOME/.local/bin está en tu PATH."; \
+	fi

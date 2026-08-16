@@ -121,51 +121,68 @@ void tokenize_file(FILE *fp) {
 
             int start_col = (int)(p - line);
 
-            // Operadores de dos caracteres
+            // --- NUEVOS OPERADORES DE VARIOS CARACTERES ---
+            if (*p == '+' && *(p+1) == '=') {
+                Token t = {TOK_PLUS_EQ, "+=", lineno, start_col, start_col + 2};
+                ts_add(t); p += 2; continue;
+            }
+            if (*p == '-' && *(p+1) == '=') {
+                Token t = {TOK_MINUS_EQ, "-=", lineno, start_col, start_col + 2};
+                ts_add(t); p += 2; continue;
+            }
+            if (*p == '*' && *(p+1) == '=') {
+                Token t = {TOK_STAR_EQ, "*=", lineno, start_col, start_col + 2};
+                ts_add(t); p += 2; continue;
+            }
+            if (*p == '/' && *(p+1) == '=') {
+                Token t = {TOK_SLASH_EQ, "/=", lineno, start_col, start_col + 2};
+                ts_add(t); p += 2; continue;
+            }
+            if (*p == '*' && *(p+1) == '*') {
+                Token t = {TOK_POW, "**", lineno, start_col, start_col + 2};
+                ts_add(t); p += 2; continue;
+            }
+            if (*p == '+' && *(p+1) == '+') {
+                Token t = {TOK_INC, "++", lineno, start_col, start_col + 2};
+                ts_add(t); p += 2; continue;
+            }
+            if (*p == '-' && *(p+1) == '-') {
+                Token t = {TOK_DEC, "--", lineno, start_col, start_col + 2};
+                ts_add(t); p += 2; continue;
+            }
+
+            // Operadores de dos caracteres existentes
             if (*p == '&' && *(p+1) == '&') {
                 Token t = {TOK_AND, "&&", lineno, start_col, start_col + 2};
-                ts_add(t);
-                p += 2;
-                continue;
+                ts_add(t); p += 2; continue;
             }
             if (*p == '|' && *(p+1) == '|') {
                 Token t = {TOK_OR, "||", lineno, start_col, start_col + 2};
-                ts_add(t);
-                p += 2;
-                continue;
+                ts_add(t); p += 2; continue;
             }
             if (*p == '=' && *(p+1) == '=') {
                 Token t = {TOK_EEQ, "==", lineno, start_col, start_col + 2};
-                ts_add(t);
-                p += 2;
-                continue;
+                ts_add(t); p += 2; continue;
             }
             if (*p == '!' && *(p+1) == '=') {
                 Token t = {TOK_NEQ, "!=", lineno, start_col, start_col + 2};
-                ts_add(t);
-                p += 2;
-                continue;
+                ts_add(t); p += 2; continue;
             }
+            // CORRECCIÓN: <= debe ser '<' seguido de '=', no '<' seguido de '<'
             if (*p == '<' && *(p+1) == '=') {
                 Token t = {TOK_LE, "<=", lineno, start_col, start_col + 2};
-                ts_add(t);
-                p += 2;
-                continue;
+                ts_add(t); p += 2; continue;
             }
             if (*p == '>' && *(p+1) == '=') {
                 Token t = {TOK_GE, ">=", lineno, start_col, start_col + 2};
-                ts_add(t);
-                p += 2;
-                continue;
+                ts_add(t); p += 2; continue;
             }
             if (*p == '>' && *(p+1) == '>') {
                 Token t = {TOK_GGT, ">>", lineno, start_col, start_col + 2};
-                ts_add(t);
-                p += 2;
-                continue;
+                ts_add(t); p += 2; continue;
             }
 
-            // Operadores de un carácter
+            // Operadores de un carácter (resto igual)
             if (*p == '|') { Token t = {TOK_PIPE, "|", lineno, start_col, start_col + 1}; ts_add(t); p++; continue; }
             if (*p == '>') { Token t = {TOK_GT_OP, ">", lineno, start_col, start_col + 1}; ts_add(t); p++; continue; }
             if (*p == '<') { Token t = {TOK_LT_OP, "<", lineno, start_col, start_col + 1}; ts_add(t); p++; continue; }
@@ -232,8 +249,35 @@ void tokenize_file(FILE *fp) {
                 char quote = *p++;
                 char buf[4096]; int bi = 0;
                 while (*p && *p != quote && *p != '\n') {
-                    if (*p == '\\' && *(p+1)) p++;
-                    buf[bi++] = *p++;
+                    if (*p == '\\' && *(p+1)) {
+                        p++;
+                        char esc = *p++;
+                        switch (esc) {
+                            case 'n': buf[bi++] = '\n'; break;
+                            case 't': buf[bi++] = '\t'; break;
+                            case 'r': buf[bi++] = '\r'; break;
+                            case '\\': buf[bi++] = '\\'; break;
+                            case '"': buf[bi++] = '"'; break;
+                            case '\'': buf[bi++] = '\''; break;
+                            case 'N': buf[bi++] = 0x1A; break;
+                            case '0': case '1': case '2': case '3':
+                            case '4': case '5': case '6': case '7': {
+                                int val = esc - '0';
+                                for (int i = 0; i < 2 && *p >= '0' && *p <= '7'; i++) {
+                                    val = val * 8 + (*p - '0');
+                                    p++;
+                                }
+                                buf[bi++] = (char)val;
+                                break;
+                            }
+                            default:
+                                buf[bi++] = '\\';
+                                buf[bi++] = esc;
+                                break;
+                        }
+                    } else {
+                        buf[bi++] = *p++;
+                    }
                 }
                 buf[bi] = '\0';
                 if (*p == quote) {

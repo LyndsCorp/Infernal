@@ -13,6 +13,6 @@
 ASTNode *parse_expression(int dummy);
 ASTNode *parse_primary(void);
 ASTNode *parse_slice_content(int line);
-ASTNode *parse_index_or_slice(int line);  // <-- NUEVO
+ASTNode *parse_index_or_slice(int line);
 
 #endif

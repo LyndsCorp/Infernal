@@ -38,13 +38,15 @@ typedef enum {
     OP_REPEAT_LINE,
     OP_LIST_INSERT,
     OP_NEW_MAP,
-    OP_MAP_SET
+    OP_MAP_SET,
+    OP_POW
 } OpCode;
 
 typedef struct {
     OpCode op;
     int operand;
     int operand2;
+    int line;
 } Instruction;
 
 typedef struct Chunk {

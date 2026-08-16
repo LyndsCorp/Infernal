@@ -16,7 +16,27 @@
 #include "parser.h"
 #include "developer/debug.h"
 
-/* --- Función auxiliar para parsear el contenido de un slice -- */
+/* --- LIMPIEZA DE NOMBRE DE VARIABLE (elimina $ o ?) --- */
+static char *clean_var_name(const char *raw) {
+    if (!raw) return NULL;
+    if (raw[0] == '$' || raw[0] == '?') {
+        return strdup(raw + 1);
+    }
+    return strdup(raw);
+}
+
+/* --- Prototipos de funciones estáticas internas --- */
+static ASTNode *parse_map_literal(int line);
+static ASTNode *parse_postfix(void);
+static ASTNode *parse_power(void);
+static ASTNode *parse_unary(void);
+static ASTNode *parse_term(void);
+static ASTNode *parse_expr(void);
+static ASTNode *parse_comparison(void);
+static ASTNode *parse_logic_and(void);
+static ASTNode *parse_logic_or(void);
+
+/* --- parse_slice_content (no static, declarada en .h) --- */
 ASTNode *parse_slice_content(int line) {
     Token t = ts_peek();
     int mode = -1;
@@ -106,7 +126,7 @@ ASTNode *parse_slice_content(int line) {
     return node;
 }
 
-/* --- parse_index_or_slice: parsea el contenido dentro de [ ] y devuelve NODE_INDEX o NODE_SLICE -- */
+/* --- parse_index_or_slice (declarada en .h) --- */
 ASTNode *parse_index_or_slice(int line) {
     Token t = ts_peek();
     ASTNode *node = NULL;
@@ -122,7 +142,7 @@ ASTNode *parse_index_or_slice(int line) {
     return node;
 }
 
-/* --- parse_map_literal: lee un literal de mapa -------------- */
+/* --- parse_map_literal (interna) --- */
 static ASTNode *parse_map_literal(int line) {
     ASTNode *node = node_create(NODE_MAP, line);
     node->data.map.pairs = NULL;
@@ -131,12 +151,11 @@ static ASTNode *parse_map_literal(int line) {
     ts_skip_newlines();
     if (ts_peek().type == TOK_RBRACKET) {
         ts_advance();
-        return node;  // mapa vacío
+        return node;
     }
 
     do {
         ts_skip_newlines();
-        // Clave: puede ser identificador (se convierte a string) o string literal
         ASTNode *key = parse_expression(0);
         if (!ts_match(TOK_EQ)) {
             error(line, "Se esperaba '=' en par clave-valor de mapa");
@@ -156,7 +175,7 @@ static ASTNode *parse_map_literal(int line) {
     return node;
 }
 
-/* --- parse_primary ---------------------------------------------- */
+/* --- parse_primary (declarada en .h) --- */
 ASTNode *parse_primary() {
     Token t = ts_peek();
     DEBUG_INFO("parse_primary: token '%s' (tipo %d)", t.lexeme, t.type);
@@ -249,7 +268,9 @@ ASTNode *parse_primary() {
         } else {
             ts_advance();
             ASTNode *n = node_create(NODE_VAR, t.line);
-            n->data.var.name = strdup(t.lexeme);
+            /* --- CORRECCIÓN: limpiar prefijo $ o ? --- */
+            char *cleaned = clean_var_name(t.lexeme);
+            n->data.var.name = cleaned;
             while (ts_peek().type == TOK_LBRACKET) {
                 Token lb = ts_advance();
                 Token next = ts_peek();
@@ -273,26 +294,21 @@ ASTNode *parse_primary() {
         ts_advance();
         ts_skip_newlines();
 
-        /* --- Detectar si es mapa o lista --- */
         int saved_pos = ts.pos;
         int is_map = 0;
 
-        // Si el primer token después de '[' es un IDENT o STRING_LITERAL
         Token first = ts_peek();
         if (first.type == TOK_IDENT || first.type == TOK_STRING_LITERAL) {
-            ts_advance();  // consumir la clave
-            // Si el siguiente token es '=' -> mapa
+            ts_advance();
             if (ts_peek().type == TOK_EQ) {
                 is_map = 1;
             }
         }
-        // Restaurar posición
         ts.pos = saved_pos;
 
         if (is_map) {
             return parse_map_literal(t.line);
         } else {
-            /* --- Parsear lista normal --- */
             ASTNode *n = node_create(NODE_LIST, t.line);
             n->data.list_lit.items = NULL;
             n->data.list_lit.count = 0;
@@ -329,61 +345,63 @@ ASTNode *parse_primary() {
     return NULL;
 }
 
-/* --- parse_member_access ---------------------------------------- */
-static ASTNode *parse_member_access() {
-    ASTNode *left = parse_primary();
-    if (left->kind == NODE_VAR && strchr(left->data.var.name, '.') != NULL) {
-        if (ts_peek().type == TOK_LPAREN) {
-            char *fullname = left->data.var.name;
-            ts_advance();
-            ASTNode *call = node_create(NODE_CALL, left->line);
-            call->data.call.name = strdup(fullname);
-            call->data.call.argc = 0;
-            call->data.call.args = NULL;
-            if (!ts_match(TOK_RPAREN)) {
-                do {
-                    call->data.call.args = realloc(call->data.call.args,
-                                                   (call->data.call.argc + 1) * sizeof(ASTNode*));
-                    call->data.call.args[call->data.call.argc++] = parse_expression(0);
-                } while (ts_match(TOK_COMMA));
-                if (!ts_match(TOK_RPAREN))
-                    error(left->line, "Se esperaba ')' en la llamada a '%s'", fullname);
+/* --- parse_postfix (interna) --- */
+static ASTNode *parse_postfix(void) {
+    ASTNode *expr = parse_primary();
+    while (1) {
+        if (ts_peek().type == TOK_INC || ts_peek().type == TOK_DEC) {
+            Token op = ts_advance();
+            if (expr->kind != NODE_VAR) {
+                error(expr->line, "Solo se puede incrementar/decrementar una variable");
             }
-            free(left->data.var.name);
-            free(left);
-            return call;
+            /* Se permite cualquier nombre de variable, incluyendo $ y ? */
+            ASTNode *node = node_create((op.type == TOK_INC) ? NODE_POST_INC : NODE_POST_DEC, expr->line);
+            node->data.post_op.var = expr;
+            expr = node;
+        } else {
+            break;
         }
+    }
+    return expr;
+}
+
+/* --- parse_power (interna) --- */
+static ASTNode *parse_power(void) {
+    ASTNode *left = parse_postfix();
+    if (ts_match(TOK_POW)) {
+        ASTNode *right = parse_unary();  // asociatividad derecha
+        ASTNode *node = node_create(NODE_BINOP, left->line);
+        node->data.binop.op = TOK_POW;
+        node->data.binop.left = left;
+        node->data.binop.right = right;
+        left = node;
     }
     return left;
 }
 
-/* --- Unary minus y not ------------------------------------------------ */
+/* --- parse_unary (interna) --- */
 static ASTNode *parse_unary() {
-    Token t = ts_peek();
-
     if (ts_match(TOK_MINUS)) {
-        ASTNode *right = parse_unary();
-        ASTNode *n = node_create(NODE_BINOP, t.line);
-        n->data.binop.op = TOK_MINUS;
-        n->data.binop.left = node_create(NODE_LITERAL, t.line);
-        n->data.binop.left->data.lit.type = TOK_INT;
-        n->data.binop.left->data.lit.ival = 0;
-        n->data.binop.right = right;
-        return n;
+        ASTNode *operand = parse_unary();
+        ASTNode *node = node_create(NODE_BINOP, operand->line);
+        node->data.binop.op = TOK_MINUS;
+        node->data.binop.left = node_create(NODE_LITERAL, operand->line);
+        node->data.binop.left->data.lit.type = TOK_INT;
+        node->data.binop.left->data.lit.ival = 0;
+        node->data.binop.right = operand;
+        return node;
     }
-
     if (ts_match(TOK_NOT)) {
         ASTNode *operand = parse_unary();
-        ASTNode *n = node_create(NODE_UNARY, t.line);
-        n->data.unary.op = TOK_NOT;
-        n->data.unary.operand = operand;
-        return n;
+        ASTNode *node = node_create(NODE_UNARY, operand->line);
+        node->data.unary.op = TOK_NOT;
+        node->data.unary.operand = operand;
+        return node;
     }
-
-    return parse_member_access();
+    return parse_power();
 }
 
-/* --- Term -------------------------------------------------- */
+/* --- parse_term (interna) --- */
 static ASTNode *parse_term() {
     ASTNode *left = parse_unary();
     while (ts_peek().type == TOK_STAR || ts_peek().type == TOK_SLASH || ts_peek().type == TOK_PERCENT) {
@@ -398,7 +416,7 @@ static ASTNode *parse_term() {
     return left;
 }
 
-/* --- Expression (suma, resta) ---------------------------------- */
+/* --- parse_expr (interna) --- */
 static ASTNode *parse_expr() {
     ASTNode *left = parse_term();
     while (ts_peek().type == TOK_PLUS || ts_peek().type == TOK_MINUS) {
@@ -430,7 +448,7 @@ static ASTNode *parse_expr() {
     return left;
 }
 
-/* --- Comparaciones --------------------------------------------- */
+/* --- parse_comparison (interna) --- */
 static ASTNode *parse_comparison() {
     ASTNode *left = parse_expr();
     TokenType op = ts_peek().type;
@@ -447,7 +465,7 @@ static ASTNode *parse_comparison() {
         return left;
 }
 
-/* --- AND ------------------------------------------------- */
+/* --- parse_logic_and (interna) --- */
 static ASTNode *parse_logic_and() {
     ASTNode *left = parse_comparison();
     while (ts_peek().type == TOK_AND) {
@@ -462,7 +480,7 @@ static ASTNode *parse_logic_and() {
     return left;
 }
 
-/* --- OR -------------------------------------------------- */
+/* --- parse_logic_or (interna) --- */
 static ASTNode *parse_logic_or() {
     ASTNode *left = parse_logic_and();
     while (ts_peek().type == TOK_OR) {
@@ -477,7 +495,7 @@ static ASTNode *parse_logic_or() {
     return left;
 }
 
-/* --- Expresión principal ------------------------------------ */
+/* --- parse_expression (punto de entrada, declarada en .h) --- */
 ASTNode *parse_expression(int dummy) {
     (void)dummy;
     return parse_logic_or();

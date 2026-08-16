@@ -2,7 +2,7 @@
  * Infernal: el intérprete de Aro Infernal.
  * Copyright (C) 2026, David Baña Szymaniak
  * Este software se distribuye bajo la licencia Apache 2.0
- * Código fuente de Infernal: core/types.c
+ * Código fuente de Infernal: core/types.h
 */
 
 #ifndef CORE_TYPES_H
@@ -11,10 +11,8 @@
 #include <stdbool.h>
 #include <setjmp.h>
 
-/* --- Forward declarations ---------------------------------- */
 typedef struct Chunk Chunk;
 
-/* --- Token types ------------------------------------------ */
 typedef enum {
     TOK_EOF, TOK_NEWLINE, TOK_IDENT, TOK_NUMBER, TOK_STRING_LITERAL,
     TOK_EQ, TOK_PLUS, TOK_MINUS, TOK_STAR, TOK_SLASH, TOK_PERCENT,
@@ -38,10 +36,16 @@ typedef enum {
     TOK_LINE,
     TOK_COLON,
     TOK_EXECUTE,
-    TOK_MAP
+    TOK_MAP,
+    TOK_PLUS_EQ,
+    TOK_MINUS_EQ,
+    TOK_STAR_EQ,
+    TOK_SLASH_EQ,
+    TOK_POW,
+    TOK_INC,
+    TOK_DEC
 } TokenType;
 
-/* --- Token ------------------------------------------------ */
 typedef struct {
     TokenType type;
     char *lexeme;
@@ -50,7 +54,6 @@ typedef struct {
     int end_col;
 } Token;
 
-/* --- AST nodes -------------------------------------------- */
 typedef struct ASTNode ASTNode;
 typedef struct {
     ASTNode **stmts;
@@ -69,7 +72,6 @@ typedef struct {
     bool is_global;
 } FlagSpec;
 
-/* --- Value types ------------------------------------------ */
 #define VAL_NULL      0
 #define VAL_INT       1
 #define VAL_FLOAT     2
@@ -80,9 +82,7 @@ typedef struct {
 #define VAL_PTR       7
 #define VAL_MAP       8
 
-/* --- Estructura opaca para datos de mapa ------------------ */
 typedef struct MapData MapData;
-
 typedef struct Value Value;
 
 struct Value {
@@ -107,7 +107,6 @@ struct Value {
 
 typedef Value (*BuiltinFunc)(int argc, Value *args);
 
-/* --- Función objeto ---------------------------------------- */
 typedef struct FuncObject {
     enum { FUNC_USER, FUNC_BUILTIN } kind;
     union {
@@ -117,7 +116,6 @@ typedef struct FuncObject {
     Chunk *code;
 } FuncObject;
 
-/* --- AST node structure ------------------------------------ */
 struct ASTNode {
     int line;
     enum {
@@ -129,7 +127,9 @@ struct ASTNode {
         NODE_SLICE,
         NODE_EXECUTE,
         NODE_MAP,
-        NODE_UNARY
+        NODE_UNARY,
+        NODE_POST_INC,
+        NODE_POST_DEC
     } kind;
     union {
         struct { NodeList stmts; } prog;
@@ -140,7 +140,14 @@ struct ASTNode {
             bool is_local; bool is_global; ASTNode *lhs_index; } assign;
             struct { ASTNode *cond; NodeList then_block, else_block; } if_stmt;
             struct { ASTNode *cond; NodeList body; } while_stmt;
-            struct { char *var; int vtype; ASTNode *init, *cond, *incr; NodeList body; } for_stmt;
+            struct {
+                char *var;
+                int vtype;
+                bool is_local;
+                bool is_global;
+                ASTNode *init, *cond, *incr;
+                NodeList body;
+            } for_stmt;
             struct { char *name; char **params; int *ptypes; int param_count; NodeList body; } func;
             struct { ASTNode *expr; } ret;
             struct { char *path; NodeList module_block; } import;
@@ -161,11 +168,13 @@ struct ASTNode {
                 struct { ASTNode *key; ASTNode *value; } *pairs;
                 int pair_count;
             } map;
-            /* --- UNARY -------------------------------------------- */
             struct {
-                int op; // operador (TOK_NOT)
+                int op;
                 ASTNode *operand;
             } unary;
+            struct {
+                ASTNode *var;
+            } post_op;
     } data;
 };
 
