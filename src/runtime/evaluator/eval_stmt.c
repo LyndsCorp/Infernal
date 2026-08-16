@@ -270,70 +270,213 @@ void exec_stmt(ASTNode *stmt) {
             DEBUG_INFO("=== EJECUTANDO NODE_FOR en línea %d ===", stmt->line);
 
             Scope *old_scope = current_scope;
+            bool is_global_for = stmt->data.for_stmt.is_global;
 
-            // 1) Evaluar la inicialización en el ámbito actual (old_scope)
+            /*
+             * 1) Evaluar la expresión inicial.
+             *
+             * NO ejecutamos el NODE_ASSIGN completo porque eso podría
+             * crear la variable en el scope incorrecto.
+             */
             Value init_val = val_make_null();
-            if (stmt->data.for_stmt.init && stmt->data.for_stmt.init->kind == NODE_ASSIGN) {
-                ASTNode *init_expr = stmt->data.for_stmt.init->data.assign.value;
-                if (init_expr) {
-                    current_scope = old_scope;
-                    init_val = eval_expr(init_expr);
-                    DEBUG_INFO("NODE_FOR: init_val = %d", init_val.data.ival);
-                }
+
+            if (stmt->data.for_stmt.init &&
+                stmt->data.for_stmt.init->kind == NODE_ASSIGN) {
+
+                ASTNode *init_expr =
+                stmt->data.for_stmt.init->data.assign.value;
+
+            if (init_expr) {
+                current_scope = old_scope;
+                init_val = eval_expr(init_expr);
+
+                DEBUG_INFO(
+                    "NODE_FOR: init_val = %d",
+                    init_val.data.ival
+                );
             }
-
-            // 2) Crear el ámbito del for (hereda de old_scope)
-            Scope *for_scope = scope_new(old_scope, NULL);
-            const char *var_name = stmt->data.for_stmt.init ? stmt->data.for_stmt.init->data.assign.name : "?";
-            int vtype = stmt->data.for_stmt.init ? stmt->data.for_stmt.init->data.assign.vtype : 0;
-            scope_define(for_scope, var_name, vtype, init_val);
-            DEBUG_INFO("Variable '%s' definida en for_scope con valor %d", var_name, init_val.data.ival);
-
-            current_scope = for_scope;
-            int iter_count = 0;
-
-            while (1) {
-                if (iter_count >= max_loop_iterations) {
-                    error(stmt->line, "Límite de iteraciones (%d) alcanzado en el bucle for", max_loop_iterations);
-                }
-                iter_count++;
-
-                // 3) Condición (se evalúa en for_scope)
-                Value cond = eval_expr(stmt->data.for_stmt.cond);
-                if (!val_is_truthy(cond)) break;
-
-                // 4) Cuerpo: ejecutar en un ámbito hijo (body_scope)
-                Scope *body_scope = scope_new(for_scope, NULL);
-                Scope *old_body = current_scope;
-                current_scope = body_scope;
-                exec_block_impl(&stmt->data.for_stmt.body);
-                current_scope = old_body; // restaurar a for_scope
-                scope_free(body_scope);
-
-                // 5) Control de flujo
-                if (control_flow == CF_BREAK) {
-                    control_flow = CF_NONE;
-                    break;
-                }
-                if (control_flow == CF_CONTINUE) {
-                    control_flow = CF_NONE;
-                }
-                if (control_flow == CF_REPEAT_LINE || control_flow == CF_RETURN) {
-                    current_scope = old_scope;
-                    scope_free(for_scope);
-                    return;
                 }
 
-                // 6) Incremento (se ejecuta en for_scope)
-                if (stmt->data.for_stmt.incr) {
+                /*
+                 * 2) Elegir el scope.
+                 *
+                 * for global:
+                 *     usa directamente super_global_scope
+                 *
+                 * for local / normal:
+                 *     crea su propio scope temporal
+                 */
+                Scope *for_scope;
+
+                if (is_global_for) {
+                    for_scope = super_global_scope;
+
+                    DEBUG_INFO(
+                        "NODE_FOR: usando super_global_scope"
+                    );
+                } else {
+                    for_scope = scope_new(old_scope, NULL);
+
+                    DEBUG_INFO(
+                        "NODE_FOR: creado for_scope"
+                    );
+                }
+
+                /*
+                 * 3) Definir la variable del for.
+                 *
+                 * Usamos los datos del NODE_FOR, no los del NODE_ASSIGN.
+                 */
+                const char *var_name =
+                stmt->data.for_stmt.var;
+
+                int vtype =
+                stmt->data.for_stmt.vtype;
+
+                /*
+                 * Si ya existe una variable con ese nombre EN ESTE MISMO
+                 * scope, actualizarla en lugar de crear otra.
+                 *
+                 * Esto es importante cuando el archivo ya utilizó 'i'
+                 * anteriormente.
+                 */
+                VarEntry *existing =
+                scope_find_current(for_scope, var_name);
+
+                if (existing) {
+                    existing->value = copy_value_secure(init_val);
+
+                    if (vtype != 0) {
+                        existing->vtype = vtype;
+                    }
+
+                    DEBUG_INFO(
+                        "NODE_FOR: variable '%s' ya existía; actualizada",
+                        var_name
+                    );
+                } else {
+                    scope_define(
+                        for_scope,
+                            var_name,
+                            vtype,
+                            init_val
+                    );
+
+                    DEBUG_INFO(
+                        "NODE_FOR: variable '%s' definida en %s con valor %d",
+                        var_name,
+                        is_global_for
+                        ? "super_global_scope"
+                        : "for_scope",
+                        init_val.data.ival
+                    );
+                }
+
+                current_scope = for_scope;
+
+                int iter_count = 0;
+
+                while (1) {
+
+                    /*
+                     * 4) Límite de seguridad.
+                     */
+                    if (iter_count >= max_loop_iterations) {
+                        error(
+                            stmt->line,
+                            "Límite de iteraciones (%d) alcanzado en bucle for",
+                              max_loop_iterations
+                        );
+                    }
+
+                    iter_count++;
+
+                    /*
+                     * 5) Evaluar condición.
+                     */
                     current_scope = for_scope;
-                    exec_stmt(stmt->data.for_stmt.incr);
-                }
-            }
 
-            current_scope = old_scope;
-            scope_free(for_scope);
-            break;
+                    Value cond =
+                    eval_expr(stmt->data.for_stmt.cond);
+
+                    if (!val_is_truthy(cond)) {
+                        break;
+                    }
+
+                    /*
+                     * 6) Ejecutar cuerpo en un scope hijo.
+                     */
+                    Scope *body_scope =
+                    scope_new(for_scope, NULL);
+
+                    Scope *old_body =
+                    current_scope;
+
+                    current_scope =
+                    body_scope;
+
+                    exec_block_impl(
+                        &stmt->data.for_stmt.body
+                    );
+
+                    current_scope =
+                    old_body;
+
+                    scope_free(body_scope);
+
+                    /*
+                     * 7) Control de flujo.
+                     */
+                    if (control_flow == CF_BREAK) {
+                        control_flow = CF_NONE;
+                        break;
+                    }
+
+                    if (control_flow == CF_CONTINUE) {
+                        control_flow = CF_NONE;
+                    }
+
+                    if (control_flow == CF_REPEAT_LINE ||
+                        control_flow == CF_RETURN) {
+
+                        current_scope = old_scope;
+
+                    /*
+                     * Nunca liberar super_global_scope.
+                     */
+                    if (!is_global_for) {
+                        scope_free(for_scope);
+                    }
+
+                    return;
+                        }
+
+                        /*
+                         * 8) Incremento.
+                         */
+                        if (stmt->data.for_stmt.incr) {
+                            current_scope = for_scope;
+
+                            exec_stmt(
+                                stmt->data.for_stmt.incr
+                            );
+                        }
+                }
+
+                /*
+                 * 9) Restaurar scope anterior.
+                 */
+                current_scope = old_scope;
+
+                /*
+                 * Un for global usa super_global_scope,
+                 * así que NO se libera.
+                 */
+                if (!is_global_for) {
+                    scope_free(for_scope);
+                }
+
+                break;
         }
 
         case NODE_FOR_IN: {

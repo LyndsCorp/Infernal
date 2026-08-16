@@ -39,55 +39,136 @@ Scope *scope_new(Scope *parent, const char *function_name) {
 VarEntry *scope_find(Scope *scope, const char *name) {
     DEBUG_INFO("scope_find: buscando '%s'", name);
 
+    VarEntry *null_candidate = NULL;
+
     Scope *s = scope;
 
     while (s) {
         DEBUG_INFO("scope_find: revisando scope %p", (void *)s);
 
         for (VarEntry *e = s->vars; e; e = e->next) {
-            if (strcmp(e->name, name) == 0) {
+            if (strcmp(e->name, name) != 0)
+                continue;
+
+            /*
+             * Guardamos una coincidencia NULL como candidato,
+             * pero seguimos buscando por si existe una variable
+             * REAL en un ámbito superior.
+             */
+            if (e->value.type == VAL_NULL) {
+                if (!null_candidate) {
+                    null_candidate = e;
+                }
+
                 DEBUG_INFO(
-                    "scope_find: encontrado '%s' en scope %p (type=%d)",
-                           name,
-                           (void *)s,
-                           e->value.type
+                    "scope_find: encontrado '%s' en scope %p "
+                    "pero su valor es NULL; continuando búsqueda",
+                    name,
+                    (void *)s
                 );
-                return e;
+
+                continue;
             }
+
+            DEBUG_INFO(
+                "scope_find: encontrado '%s' en scope %p "
+                "(type=%d)",
+                       name,
+                       (void *)s,
+                       e->value.type
+            );
+
+            return e;
         }
 
         s = s->parent;
     }
 
+    /*
+     * Buscar también explícitamente en global_scope.
+     */
     if (global_scope && global_scope != super_global_scope) {
         DEBUG_INFO("scope_find: buscando en global_scope");
 
         for (VarEntry *e = global_scope->vars; e; e = e->next) {
-            if (strcmp(e->name, name) == 0) {
+            if (strcmp(e->name, name) != 0)
+                continue;
+
+            if (e->value.type == VAL_NULL) {
+                if (!null_candidate) {
+                    null_candidate = e;
+                }
+
                 DEBUG_INFO(
-                    "scope_find: encontrado '%s' en global_scope",
+                    "scope_find: '%s' existe en global_scope "
+                    "pero es NULL; continuando búsqueda",
                     name
                 );
-                return e;
+
+                continue;
             }
+
+            DEBUG_INFO(
+                "scope_find: encontrado '%s' en global_scope",
+                name
+            );
+
+            return e;
         }
     }
 
+    /*
+     * Buscar en super_global_scope.
+     */
     if (super_global_scope) {
         DEBUG_INFO("scope_find: buscando en super_global_scope");
 
         for (VarEntry *e = super_global_scope->vars; e; e = e->next) {
-            if (strcmp(e->name, name) == 0) {
+            if (strcmp(e->name, name) != 0)
+                continue;
+
+            if (e->value.type == VAL_NULL) {
+                if (!null_candidate) {
+                    null_candidate = e;
+                }
+
                 DEBUG_INFO(
-                    "scope_find: encontrado '%s' en super_global_scope",
+                    "scope_find: '%s' existe en super_global_scope "
+                    "pero es NULL",
                     name
                 );
-                return e;
+
+                continue;
             }
+
+            DEBUG_INFO(
+                "scope_find: encontrado '%s' en super_global_scope",
+                name
+            );
+
+            return e;
         }
     }
 
-    DEBUG_INFO("scope_find: NO encontrado '%s'", name);
+    /*
+     * Si solo encontramos una variable NULL, devolverla.
+     * Así mantenemos la semántica existente cuando no hay
+     * ninguna versión con valor real.
+     */
+    if (null_candidate) {
+        DEBUG_INFO(
+            "scope_find: usando candidato NULL para '%s'",
+            name
+        );
+
+        return null_candidate;
+    }
+
+    DEBUG_INFO(
+        "scope_find: NO encontrado '%s'",
+        name
+    );
+
     return NULL;
 }
 
