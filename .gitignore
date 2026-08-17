@@ -1,4 +1,5 @@
 /build/
+/ignore/
 /infernal
 /.infernal_tmp/
 /stress.inf
