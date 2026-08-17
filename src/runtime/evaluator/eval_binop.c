@@ -141,6 +141,22 @@ Value eval_binop(ASTNode *expr) {
         Value right = eval_expr(expr->data.binop.right);
         DEBUG_INFO("Tipo de right: %d", right.type);
 
+        if (expr->data.binop.op == TOK_AND || expr->data.binop.op == TOK_OR) {
+            if (left.type != VAL_BOOL || right.type != VAL_BOOL) {
+                value_free(&left);
+                value_free(&right);
+                error(expr->line, "Los operadores lógicos 'and'/'or' requieren valores bool");
+            }
+
+            bool result = (expr->data.binop.op == TOK_AND)
+                ? (left.data.bval && right.data.bval)
+                : (left.data.bval || right.data.bval);
+            Value result_value = val_bool(result);
+            value_free(&left);
+            value_free(&right);
+            return result_value;
+        }
+
         if (expr->data.binop.op == TOK_EEQ || expr->data.binop.op == TOK_NEQ) {
             bool equal = false;
             if (left.type == right.type) {
