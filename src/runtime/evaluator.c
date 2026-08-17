@@ -56,7 +56,9 @@ Value eval_expr(ASTNode *expr) {
                 else error(expr->line, "Decremento solo aplicable a números");
             }
             // Actualizar directamente la entrada encontrada
-            e->value = copy_value_secure(new_val);
+            Value copied = copy_value_secure(new_val);
+            value_free(&e->value);
+            e->value = copied;
             return old;
         }
         default:

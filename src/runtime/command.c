@@ -436,8 +436,14 @@ int execute_embedded(const char *full_cmd) {
     if (rest && *rest) len += strlen(rest) + 1;
     char *exec_cmd = malloc(len);
     if (!exec_cmd) { unlink(binary_path); free(binary_path); free(cmd_copy); return -1; }
-    strcpy(exec_cmd, binary_path);
-    if (rest && *rest) { strcat(exec_cmd, " "); strcat(exec_cmd, rest); }
+    int written = snprintf(exec_cmd, len, "%s%s%s", binary_path, (rest && *rest) ? " " : "", (rest && *rest) ? rest : "");
+    if (written < 0 || (size_t)written >= len) {
+        unlink(binary_path);
+        free(binary_path);
+        free(exec_cmd);
+        free(cmd_copy);
+        return -1;
+    }
 
     int ret = system(exec_cmd);
     unlink(binary_path);
@@ -463,8 +469,14 @@ FILE *popen_embedded_with_path(const char *full_cmd, const char *mode, char **te
     if (rest && *rest) len += strlen(rest) + 1;
     char *exec_cmd = malloc(len);
     if (!exec_cmd) { unlink(binary_path); free(binary_path); free(cmd_copy); return NULL; }
-    strcpy(exec_cmd, binary_path);
-    if (rest && *rest) { strcat(exec_cmd, " "); strcat(exec_cmd, rest); }
+    int written = snprintf(exec_cmd, len, "%s%s%s", binary_path, (rest && *rest) ? " " : "", (rest && *rest) ? rest : "");
+    if (written < 0 || (size_t)written >= len) {
+        unlink(binary_path);
+        free(binary_path);
+        free(exec_cmd);
+        free(cmd_copy);
+        return NULL;
+    }
     FILE *fp = popen(exec_cmd, mode);
     if (fp) { *temp_path = binary_path; }
     else { unlink(binary_path); free(binary_path); }

@@ -427,7 +427,10 @@ static ASTNode *parse_expr() {
             DEBUG_INFO("parse_expr: detectado '- [' -> slice");
             ts_advance();
             ASTNode *slice = parse_slice_content(op.line);
-            slice->data.slice.list = left;
+            /* El operando izquierdo pertenece al NODE_BINOP. El slice solo
+             * describe el rango de borrado y no debe poseer una segunda
+             * referencia al mismo AST, para evitar double-free al destruirlo. */
+            slice->data.slice.list = NULL;
             ASTNode *n = node_create(NODE_BINOP, op.line);
             n->data.binop.op = TOK_MINUS;
             n->data.binop.left = left;

@@ -34,6 +34,7 @@ int   valtype_to_tokentype(int vtype);
 Value val_reference(const char *list_name, int index);
 Value val_ptr(void *ptr);
 Value copy_value_secure(Value src);
+void  value_free(Value *value);
 
 /* --- Funciones para mapas ---------------------------------- */
 Value val_map_empty(void);

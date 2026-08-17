@@ -11,6 +11,7 @@
 #include "bytecode.h"
 
 Value vm_run(Chunk *chunk);
+void vm_cleanup_state(void);
 
 #define MAX_GLOBALS 256
 extern Value vm_globals[MAX_GLOBALS];

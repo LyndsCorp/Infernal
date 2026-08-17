@@ -51,7 +51,7 @@ static Value builtin_delete(int argc, Value *args) {
     if (args[1].type != VAL_STRING) error(0, "delete() espera una cadena como segundo argumento");
 
     val_map_delete(&args[0], args[1].data.sval);
-    return args[0];
+    return copy_value_secure(args[0]);
 }
 
 /* --- size() --- */

@@ -20,6 +20,7 @@
 #include <unistd.h>
 #include <ctype.h>
 #include <math.h>
+#include <stdint.h>
 
 extern int current_eval_line;
 
@@ -27,9 +28,29 @@ extern int current_eval_line;
 Value stack[STACK_MAX];
 static Value *sp = stack;
 
-static inline void push(Value v) { *sp++ = v; }
-static inline Value pop(void)  { return *--sp; }
-static inline Value peek(int dist) { return *(sp - 1 - dist); }
+static inline size_t vm_stack_depth(void) { return (size_t)(sp - stack); }
+
+static void push(Value v) {
+    if (sp >= stack + STACK_MAX)
+        error(current_eval_line, "Desbordamiento de la pila de la VM");
+    *sp++ = v;
+}
+
+static Value pop(void) {
+    if (sp <= stack) {
+        error(current_eval_line, "Underflow de la pila de la VM");
+        return val_make_null();
+    }
+    return *--sp;
+}
+
+static Value peek(int dist) {
+    if (dist < 0 || (size_t)dist >= vm_stack_depth()) {
+        error(current_eval_line, "Acceso fuera de rango a la pila de la VM");
+        return val_make_null();
+    }
+    return *(sp - 1 - dist);
+}
 
 typedef struct {
     char *name;
@@ -129,9 +150,21 @@ Chunk *vm_get_user_function(int index) {
 }
 
 static int call_builtin(int index, int arg_count) {
-    if (index >= vm_builtin_count) error(current_eval_line, "Índice de builtin inválido");
+    if (index < 0 || index >= vm_builtin_count)
+        error(current_eval_line, "Índice de builtin inválido");
+    if (arg_count < 0 || (size_t)arg_count > vm_stack_depth())
+        error(current_eval_line, "Cantidad de argumentos inválida para builtin");
+
     Value *args = sp - arg_count;
     Value ret = vm_builtins[index](arg_count, args);
+
+    /*
+     * Los argumentos pertenecen a la pila VM. El resultado de un builtin debe
+     * ser independiente de ellos; los builtins que necesiten devolver un
+     * argumento compuesto deben devolver una copia profunda.
+     */
+    for (int i = 0; i < arg_count; i++)
+        value_free(&args[i]);
     sp -= arg_count;
     push(ret);
     return 1;
@@ -204,6 +237,7 @@ extern Scope *super_global_scope;
 Value vm_run(Chunk *chunk) {
     if (!chunk || chunk->code_count == 0) return val_make_null();
 
+    Value *frame_sp = sp;
     Value locals[256] = {{0}};
     Instruction *ip = chunk->code;
 
@@ -223,7 +257,7 @@ Value vm_run(Chunk *chunk) {
                 ip++;
                 break;
             case OP_PUSH_STRING:
-                push(chunk->constants[ip->operand]);
+                push(copy_value_secure(chunk->constants[ip->operand]));
                 ip++;
                 break;
             case OP_PUSH_BOOL:
@@ -261,7 +295,10 @@ Value vm_run(Chunk *chunk) {
                         val = vm_convert_value(val, target_type);
                     }
                 }
-                locals[slot] = val;
+                if (slot >= 0 && slot < 256) {
+                    value_free(&locals[slot]);
+                    locals[slot] = val;
+                }
                 if (slot < chunk->local_count && chunk->local_names[slot]) {
                     const char *name = chunk->local_names[slot];
                     VarEntry *e = scope_find(current_scope, name);
@@ -310,6 +347,7 @@ Value vm_run(Chunk *chunk) {
                     }
                 }
 
+                value_free(&vm_globals[idx]);
                 vm_globals[idx] = copy_value_secure(val);
 
                 const char *gname = vm_global_entries[idx].name;
@@ -317,11 +355,14 @@ Value vm_run(Chunk *chunk) {
                     Scope *target_scope = (scope_type == GLOBAL_SUPER) ? super_global_scope : global_scope;
                     VarEntry *e = scope_find(target_scope, gname);
                     if (e) {
-                        scope_assign(target_scope, gname, copy_value_secure(val), current_eval_line);
+                        scope_assign(target_scope, gname, val, current_eval_line);
+                        value_free(&val);
                     } else {
                         int vtype = valtype_to_tokentype(val.type);
-                        scope_define(target_scope, gname, vtype, copy_value_secure(val));
+                        scope_define(target_scope, gname, vtype, val);
                     }
+                } else {
+                    value_free(&val);
                 }
 
                 ip++;
@@ -331,19 +372,37 @@ Value vm_run(Chunk *chunk) {
             case OP_ADD: {
                 Value b = pop(), a = pop();
                 if (a.type == VAL_STRING || b.type == VAL_STRING) {
-                    char buf[128];
-                    const char *sa = (a.type == VAL_STRING) ? a.data.sval : (snprintf(buf, sizeof(buf), "%d", a.data.ival), buf);
-                    const char *sb = (b.type == VAL_STRING) ? b.data.sval : (snprintf(buf, sizeof(buf), "%d", b.data.ival), buf);
-                    char *cat = malloc(strlen(sa) + strlen(sb) + 1);
-                    strcpy(cat, sa); strcat(cat, sb);
+                    char buf_a[128];
+                    char buf_b[128];
+                    const char *sa = (a.type == VAL_STRING)
+                        ? a.data.sval
+                        : (snprintf(buf_a, sizeof(buf_a), "%d", a.data.ival), buf_a);
+                    const char *sb = (b.type == VAL_STRING)
+                        ? b.data.sval
+                        : (snprintf(buf_b, sizeof(buf_b), "%d", b.data.ival), buf_b);
+                    size_t sa_len = strlen(sa);
+                    size_t sb_len = strlen(sb);
+                    if (sa_len > SIZE_MAX - sb_len - 1)
+                        error(current_eval_line, "Resultado de concatenación demasiado grande");
+                    char *cat = malloc(sa_len + sb_len + 1);
+                    if (!cat) error(current_eval_line, "Memoria insuficiente para concatenación");
+                    memcpy(cat, sa, sa_len);
+                    memcpy(cat + sa_len, sb, sb_len + 1);
                     Value res = val_string(cat);
                     free(cat);
+                    value_free(&a);
+                    value_free(&b);
                     push(res);
                 } else if (a.type == VAL_INT && b.type == VAL_INT) {
-                    push(val_int(a.data.ival + b.data.ival));
+                    int result = a.data.ival + b.data.ival;
+                    value_free(&a);
+                    value_free(&b);
+                    push(val_int(result));
                 } else {
                     double av = (a.type == VAL_INT) ? a.data.ival : a.data.fval;
                     double bv = (b.type == VAL_INT) ? b.data.ival : b.data.fval;
+                    value_free(&a);
+                    value_free(&b);
                     push(val_float(av + bv));
                 }
                 ip++;
@@ -353,6 +412,7 @@ Value vm_run(Chunk *chunk) {
                 Value b = pop(), a = pop();
                 if (a.type == VAL_INT && b.type == VAL_INT) push(val_int(a.data.ival - b.data.ival));
                 else push(val_float((a.type==VAL_INT?a.data.ival:a.data.fval) - (b.type==VAL_INT?b.data.ival:b.data.fval)));
+                value_free(&a); value_free(&b);
                 ip++;
                 break;
             }
@@ -360,6 +420,7 @@ Value vm_run(Chunk *chunk) {
                 Value b = pop(), a = pop();
                 if (a.type == VAL_INT && b.type == VAL_INT) push(val_int(a.data.ival * b.data.ival));
                 else push(val_float((a.type==VAL_INT?a.data.ival:a.data.fval) * (b.type==VAL_INT?b.data.ival:b.data.fval)));
+                value_free(&a); value_free(&b);
                 ip++;
                 break;
             }
@@ -369,6 +430,7 @@ Value vm_run(Chunk *chunk) {
                 double bv = (b.type==VAL_INT) ? b.data.ival : b.data.fval;
                 if (bv == 0) error(current_eval_line, "División por cero");
                 push(val_float(av / bv));
+                value_free(&a); value_free(&b);
                 ip++;
                 break;
             }
@@ -378,6 +440,7 @@ Value vm_run(Chunk *chunk) {
                     if (b.data.ival == 0) error(current_eval_line, "Módulo por cero");
                     push(val_int(a.data.ival % b.data.ival));
                 } else error(current_eval_line, "Módulo sólo para enteros");
+                value_free(&a); value_free(&b);
                 ip++;
                 break;
             }
@@ -386,6 +449,7 @@ Value vm_run(Chunk *chunk) {
                 if (v.type == VAL_INT) push(val_int(-v.data.ival));
                 else if (v.type == VAL_FLOAT) push(val_float(-v.data.fval));
                 else error(current_eval_line, "Negación no aplicable");
+                value_free(&v);
                 ip++;
                 break;
             }
@@ -403,6 +467,7 @@ Value vm_run(Chunk *chunk) {
                     }
                 }
                 push(val_bool(eq));
+                value_free(&a); value_free(&b);
                 ip++;
                 break;
             }
@@ -419,6 +484,7 @@ Value vm_run(Chunk *chunk) {
                                 }
                             }
                             push(val_bool(neq));
+                            value_free(&a); value_free(&b);
                             ip++;
                             break;
                         }
@@ -427,6 +493,7 @@ Value vm_run(Chunk *chunk) {
                                         double av = (a.type==VAL_INT) ? a.data.ival : a.data.fval;
                                         double bv = (b.type==VAL_INT) ? b.data.ival : b.data.fval;
                                         push(val_bool(av < bv));
+                                        value_free(&a); value_free(&b);
                                         ip++;
                                         break;
                                     }
@@ -435,6 +502,7 @@ Value vm_run(Chunk *chunk) {
                                         double av = (a.type==VAL_INT) ? a.data.ival : a.data.fval;
                                         double bv = (b.type==VAL_INT) ? b.data.ival : b.data.fval;
                                         push(val_bool(av > bv));
+                                        value_free(&a); value_free(&b);
                                         ip++;
                                         break;
                                     }
@@ -443,6 +511,7 @@ Value vm_run(Chunk *chunk) {
                                         double av = (a.type==VAL_INT) ? a.data.ival : a.data.fval;
                                         double bv = (b.type==VAL_INT) ? b.data.ival : b.data.fval;
                                         push(val_bool(av <= bv));
+                                        value_free(&a); value_free(&b);
                                         ip++;
                                         break;
                                     }
@@ -451,6 +520,7 @@ Value vm_run(Chunk *chunk) {
                                         double av = (a.type==VAL_INT) ? a.data.ival : a.data.fval;
                                         double bv = (b.type==VAL_INT) ? b.data.ival : b.data.fval;
                                         push(val_bool(av >= bv));
+                                        value_free(&a); value_free(&b);
                                         ip++;
                                         break;
                                     }
@@ -460,6 +530,7 @@ Value vm_run(Chunk *chunk) {
                                         int truthy_a = (a.type == VAL_BOOL && a.data.bval) || (a.type == VAL_INT && a.data.ival != 0) || (a.type == VAL_FLOAT && a.data.fval != 0.0) || (a.type == VAL_STRING && a.data.sval[0]);
                                         int truthy_b = (b.type == VAL_BOOL && b.data.bval) || (b.type == VAL_INT && b.data.ival != 0) || (b.type == VAL_FLOAT && b.data.fval != 0.0) || (b.type == VAL_STRING && b.data.sval[0]);
                                         push(val_bool(truthy_a && truthy_b));
+                                        value_free(&a); value_free(&b);
                                         ip++;
                                         break;
                                     }
@@ -468,6 +539,7 @@ Value vm_run(Chunk *chunk) {
                                         int truthy_a = (a.type == VAL_BOOL && a.data.bval) || (a.type == VAL_INT && a.data.ival != 0) || (a.type == VAL_FLOAT && a.data.fval != 0.0) || (a.type == VAL_STRING && a.data.sval[0]);
                                         int truthy_b = (b.type == VAL_BOOL && b.data.bval) || (b.type == VAL_INT && b.data.ival != 0) || (b.type == VAL_FLOAT && b.data.fval != 0.0) || (b.type == VAL_STRING && b.data.sval[0]);
                                         push(val_bool(truthy_a || truthy_b));
+                                        value_free(&a); value_free(&b);
                                         ip++;
                                         break;
                                     }
@@ -475,6 +547,7 @@ Value vm_run(Chunk *chunk) {
                                         Value v = pop();
                                         int truthy = (v.type == VAL_BOOL && v.data.bval) || (v.type == VAL_INT && v.data.ival != 0) || (v.type == VAL_FLOAT && v.data.fval != 0.0) || (v.type == VAL_STRING && v.data.sval[0]);
                                         push(val_bool(!truthy));
+                                        value_free(&v);
                                         ip++;
                                         break;
                                     }
@@ -500,8 +573,16 @@ Value vm_run(Chunk *chunk) {
                                         break;
                                     }
 
-                                    case OP_RETURN: {
-                                        Value ret = peek(0);
+                                                            case OP_RETURN: {
+                                        Value ret = vm_stack_depth() > (size_t)(frame_sp - stack)
+                                            ? copy_value_secure(peek(0)) : val_make_null();
+                                        while (sp > frame_sp) {
+                                            --sp;
+                                            value_free(sp);
+                                        }
+                                        for (int i = 0; i < chunk->local_count && i < 256; i++)
+                                            value_free(&locals[i]);
+                                        sp = frame_sp;
                                         return ret;
                                     }
 
@@ -510,6 +591,7 @@ Value vm_run(Chunk *chunk) {
                                         int truthy = (v.type == VAL_BOOL && v.data.bval) || (v.type == VAL_INT && v.data.ival != 0) || (v.type == VAL_FLOAT && v.data.fval != 0.0) || (v.type == VAL_STRING && v.data.sval[0]);
                                         if (!truthy) ip += ip->operand;
                                         else ip++;
+                                        value_free(&v);
                                         break;
                                     }
                                     case OP_JUMP:
@@ -517,13 +599,15 @@ Value vm_run(Chunk *chunk) {
                                         break;
 
                                     case OP_DUP:
-                                        push(peek(0));
+                                        push(copy_value_secure(peek(0)));
                                         ip++;
                                         break;
-                                    case OP_POP:
-                                        pop();
+                                    case OP_POP: {
+                                        Value v = pop();
+                                        value_free(&v);
                                         ip++;
                                         break;
+                                    }
 
                                     case OP_NEW_LIST:
                                         push(val_list_empty());
@@ -552,6 +636,8 @@ Value vm_run(Chunk *chunk) {
                                             error(current_eval_line, "La clave de un mapa debe ser string");
                                         }
                                         val_map_set(&map, key.data.sval, val);
+                                        value_free(&key);
+                                        value_free(&val);
                                         ip++;
                                         break;
                                     }
@@ -563,7 +649,7 @@ Value vm_run(Chunk *chunk) {
                                             if (idx.type != VAL_INT) error(current_eval_line, "Índice de lista debe ser entero");
                                             int i = idx.data.ival;
                                             if (i < 1 || i > base.data.list.count) error(current_eval_line, "Índice fuera de rango");
-                                            push(base.data.list.items[i-1]);
+                                            push(copy_value_secure(base.data.list.items[i-1]));
                                         } else if (base.type == VAL_STRING) {
                                             if (idx.type != VAL_INT) error(current_eval_line, "Índice de string debe ser entero");
                                             int i = idx.data.ival;
@@ -577,6 +663,8 @@ Value vm_run(Chunk *chunk) {
                                             push(result);
                                         } else
                                             error(current_eval_line, "Indexación no soportada");
+                                        value_free(&base);
+                                        value_free(&idx);
                                         ip++;
                                         break;
                                     }
@@ -600,7 +688,11 @@ Value vm_run(Chunk *chunk) {
                                         const char *cmd = cmd_val.data.sval;
                                         char *expanded = expand_command_vm(chunk, locals, cmd);
                                         int ret = run_shell_command(expanded);
-                                        if (ret != 0) error(current_eval_line, "Comando shell falló (código %d)", ret);
+                                        if (ret != 0) {
+                                            int saved_ret = ret;
+                                            free(expanded);
+                                            error(current_eval_line, "Comando shell falló (código %d)", saved_ret);
+                                        }
                                         free(expanded);
                                         ip++;
                                         break;
@@ -632,8 +724,23 @@ Value vm_run(Chunk *chunk) {
                                         char buf[4096];
                                         char *out = strdup("");
                                         while (fgets(buf, sizeof(buf), fp)) {
-                                            out = realloc(out, strlen(out) + strlen(buf) + 1);
-                                            strcat(out, buf);
+                                            size_t old_len = strlen(out);
+                                            size_t add_len = strlen(buf);
+                                            if (old_len > SIZE_MAX - add_len - 1) {
+                                                free(out);
+                                                pclose(fp);
+                                                if (temp_path) { unlink(temp_path); free(temp_path); }
+                                                error(current_eval_line, "Salida de comando demasiado grande");
+                                            }
+                                            char *tmp_out = realloc(out, old_len + add_len + 1);
+                                            if (!tmp_out) {
+                                                free(out);
+                                                pclose(fp);
+                                                if (temp_path) { unlink(temp_path); free(temp_path); }
+                                                error(current_eval_line, "Memoria insuficiente para salida de comando");
+                                            }
+                                            out = tmp_out;
+                                            memcpy(out + old_len, buf, add_len + 1);
                                         }
                                         int status = pclose(fp);
                                         if (status != 0) error(current_eval_line, "Comando falló: %s", cmd);
@@ -690,7 +797,7 @@ Value vm_run(Chunk *chunk) {
                                         for (int i = 0; i < chunk->local_count; i++) {
                                             if (chunk->local_names[i]) {
                                                 scope_define(temp_scope, chunk->local_names[i],
-                                                             valtype_to_tokentype(locals[i].type), locals[i]);
+                                                             valtype_to_tokentype(locals[i].type), copy_value_secure(locals[i]));
                                             }
                                         }
                                         Scope *old_scope = current_scope;
@@ -704,7 +811,10 @@ Value vm_run(Chunk *chunk) {
                                         }
                                         for (int i = 0; i < chunk->local_count; i++) {
                                             VarEntry *var = scope_find(temp_scope, chunk->local_names[i]);
-                                            if (var) locals[i] = var->value;
+                                            if (var) {
+                                                value_free(&locals[i]);
+                                                locals[i] = copy_value_secure(var->value);
+                                            }
                                         }
 
                                         for (VarEntry *var = temp_scope->vars; var; var = var->next) {
@@ -716,6 +826,7 @@ Value vm_run(Chunk *chunk) {
                                             }
                                             int gidx = vm_find_global_index(var->name);
                                             if (gidx >= 0) {
+                                                value_free(&vm_globals[gidx]);
                                                 vm_globals[gidx] = copy_value_secure(var->value);
                                             }
                                         }
@@ -726,6 +837,7 @@ Value vm_run(Chunk *chunk) {
                                                 gidx = vm_register_global(var->name, GLOBAL_SCRIPT, var->vtype);
                                             }
                                             if (gidx >= 0) {
+                                                value_free(&vm_globals[gidx]);
                                                 vm_globals[gidx] = copy_value_secure(var->value);
                                             }
                                         }
@@ -736,6 +848,7 @@ Value vm_run(Chunk *chunk) {
                                                 gidx = vm_register_global(var->name, GLOBAL_SUPER, var->vtype);
                                             }
                                             if (gidx >= 0) {
+                                                value_free(&vm_globals[gidx]);
                                                 vm_globals[gidx] = copy_value_secure(var->value);
                                             }
                                         }
@@ -781,6 +894,8 @@ Value vm_run(Chunk *chunk) {
                                             double bv = (b.type == VAL_INT) ? b.data.ival : b.data.fval;
                                             push(val_float(pow(av, bv)));
                                         }
+                                        value_free(&a);
+                                        value_free(&b);
                                         ip++;
                                         break;
                                     }
@@ -795,4 +910,37 @@ Value vm_run(Chunk *chunk) {
                                         return val_make_null();
         }
     }
+}
+
+
+static void vm_chunk_free(Chunk *ch) {
+    if (!ch) return;
+    for (int i = 0; i < ch->const_count; i++) value_free(&ch->constants[i]);
+    free(ch->constants);
+    for (int i = 0; i < ch->local_count; i++) free(ch->local_names[i]);
+    free(ch->local_names);
+    free(ch->local_types);
+    free(ch->code);
+    free(ch);
+}
+
+void vm_cleanup_state(void) {
+    while (sp > stack) {
+        --sp;
+        value_free(sp);
+    }
+    for (int i = 0; i < vm_global_count; i++) {
+        value_free(&vm_globals[i]);
+        free(vm_global_names[i]);
+        vm_global_names[i] = NULL;
+        vm_global_entries[i].name = NULL;
+    }
+    vm_global_count = 0;
+    for (int i = 0; i < user_function_count; i++) {
+        free(user_functions[i].name);
+        vm_chunk_free(user_functions[i].code);
+        user_functions[i].name = NULL;
+        user_functions[i].code = NULL;
+    }
+    user_function_count = 0;
 }

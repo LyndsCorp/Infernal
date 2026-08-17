@@ -95,5 +95,7 @@ Value eval_index(ASTNode *expr) {
         default:
             error(line, "No se puede indexar este tipo de valor");
     }
+    value_free(&base);
+    value_free(&idx);
     return result;
 }

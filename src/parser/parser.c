@@ -9,6 +9,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <stdint.h>
 #include "parser.h"
 #include "core/ast.h"
 #include "lexer/lexer.h"
@@ -21,6 +22,7 @@
 #include "embedded/embedded.h"
 #include "vm/compiler.h"
 #include "developer/debug.h"
+#include "core/memory.h"
 
 /* --- Funciones auxiliares --- */
 static char *strip_quotes(const char *s) {
@@ -72,7 +74,49 @@ static bool valid_module_name(const char *name) {
 }
 
 static bool safe_module_path(const char *path) {
-    return path && *path && !strstr(path, "..") && !strchr(path, '\n') && !strchr(path, '\r');
+    if (!path || !*path || strchr(path, '\n') || strchr(path, '\r'))
+        return false;
+
+    const char *p = path;
+    while (*p) {
+        while (*p == '/' || *p == '\\') p++;
+        const char *start = p;
+        while (*p && *p != '/' && *p != '\\') p++;
+        size_t len = (size_t)(p - start);
+        if (len == 2 && start[0] == '.' && start[1] == '.')
+            return false;
+    }
+    return true;
+}
+
+static void command_append(char **cmd, size_t *len, size_t *cap, const char *text) {
+    if (!text) return;
+    size_t add = strlen(text);
+    if (add > SIZE_MAX - *len - 1)
+        error(0, "Comando demasiado largo");
+    size_t needed = *len + add + 1;
+    if (needed > *cap) {
+        size_t new_cap = *cap ? *cap : 64;
+        while (new_cap < needed) {
+            if (new_cap > SIZE_MAX / 2) {
+                new_cap = needed;
+                break;
+            }
+            new_cap *= 2;
+        }
+        *cmd = infernal_realloc(*cmd, new_cap);
+        *cap = new_cap;
+    }
+    memcpy(*cmd + *len, text, add);
+    *len += add;
+    (*cmd)[*len] = '\0';
+}
+
+static void command_append_token(char **cmd, size_t *len, size_t *cap, Token tok, bool add_space) {
+    if (add_space && *len > 0) command_append(cmd, len, cap, " ");
+    if (tok.type == TOK_STRING_LITERAL) command_append(cmd, len, cap, "\"");
+    command_append(cmd, len, cap, tok.lexeme);
+    if (tok.type == TOK_STRING_LITERAL) command_append(cmd, len, cap, "\"");
 }
 
 char *build_command_from_tokens(int start_pos, int end_pos) {
@@ -251,78 +295,48 @@ NodeList parse_block(const char *terminator) {
         /* --- Comando embebido con ! --- */
         if (t.type == TOK_BANG) {
             ts_advance();
-            char cmd[4096] = {0};
+            char *cmd = infernal_strdup("");
+            size_t cmd_len = 0, cmd_cap = 1;
             Token prev_token = {TOK_EOF, "", 0, 0, 0};
             while (ts_peek().type != TOK_BANG && ts_peek().type != TOK_NEWLINE && ts_peek().type != TOK_EOF) {
                 Token ct = ts_advance();
-                bool hay_espacio = false;
-                if (prev_token.type != TOK_EOF) {
-                    if (ct.start_col > prev_token.end_col) {
-                        hay_espacio = true;
-                    }
-                }
-                if (hay_espacio && cmd[0] != '\0') strcat(cmd, " ");
-                if (ct.type == TOK_STRING_LITERAL) {
-                    strcat(cmd, "\"");
-                    strcat(cmd, ct.lexeme);
-                    strcat(cmd, "\"");
-                } else {
-                    strcat(cmd, ct.lexeme);
-                }
+                bool hay_espacio = prev_token.type != TOK_EOF && ct.start_col > prev_token.end_col;
+                command_append_token(&cmd, &cmd_len, &cmd_cap, ct, hay_espacio);
                 prev_token = ct;
             }
             if (ts_peek().type == TOK_BANG) ts_advance();
             stmt = node_create(NODE_CMD_STMT, t.line);
-            stmt->data.cmd_stmt.cmd = strdup(cmd);
+            stmt->data.cmd_stmt.cmd = cmd;
+
             while (ts_match(TOK_OR)) {
                 ASTNode *next_stmt = NULL;
                 Token next = ts_peek();
                 if (next.type == TOK_BANG) {
                     ts_advance();
-                    char cmd2[4096] = {0};
-                    Token prev2 = {TOK_EOF, "", 0, 0, 0};
+                    cmd = infernal_strdup("");
+                    cmd_len = 0; cmd_cap = 1;
+                    prev_token = (Token){TOK_EOF, "", 0, 0, 0};
                     while (ts_peek().type != TOK_BANG && ts_peek().type != TOK_NEWLINE && ts_peek().type != TOK_EOF) {
                         Token ct2 = ts_advance();
-                        bool hay_espacio2 = false;
-                        if (prev2.type != TOK_EOF) {
-                            if (ct2.start_col > prev2.end_col) hay_espacio2 = true;
-                        }
-                        if (hay_espacio2 && cmd2[0] != '\0') strcat(cmd2, " ");
-                        if (ct2.type == TOK_STRING_LITERAL) {
-                            strcat(cmd2, "\"");
-                            strcat(cmd2, ct2.lexeme);
-                            strcat(cmd2, "\"");
-                        } else {
-                            strcat(cmd2, ct2.lexeme);
-                        }
-                        prev2 = ct2;
+                        bool hay_espacio2 = prev_token.type != TOK_EOF && ct2.start_col > prev_token.end_col;
+                        command_append_token(&cmd, &cmd_len, &cmd_cap, ct2, hay_espacio2);
+                        prev_token = ct2;
                     }
                     if (ts_peek().type == TOK_BANG) ts_advance();
                     next_stmt = node_create(NODE_CMD_STMT, next.line);
-                    next_stmt->data.cmd_stmt.cmd = strdup(cmd2);
+                    next_stmt->data.cmd_stmt.cmd = cmd;
                 } else {
-                    char cmd2[4096] = {0};
-                    Token first2 = ts_advance();
-                    strcpy(cmd2, first2.lexeme);
-                    Token prev2 = first2;
+                    cmd = infernal_strdup("");
+                    cmd_len = 0; cmd_cap = 1;
+                    Token prev2 = (Token){TOK_EOF, "", 0, 0, 0};
                     while (ts_peek().type != TOK_NEWLINE && ts_peek().type != TOK_EOF && ts_peek().type != TOK_OR) {
                         Token ct2 = ts_advance();
-                        bool hay_espacio2 = false;
-                        if (prev2.type != TOK_EOF) {
-                            if (ct2.start_col > prev2.end_col) hay_espacio2 = true;
-                        }
-                        if (hay_espacio2) strcat(cmd2, " ");
-                        if (ct2.type == TOK_STRING_LITERAL) {
-                            strcat(cmd2, "\"");
-                            strcat(cmd2, ct2.lexeme);
-                            strcat(cmd2, "\"");
-                        } else {
-                            strcat(cmd2, ct2.lexeme);
-                        }
+                        bool hay_espacio2 = prev2.type != TOK_EOF && ct2.start_col > prev2.end_col;
+                        command_append_token(&cmd, &cmd_len, &cmd_cap, ct2, hay_espacio2);
                         prev2 = ct2;
                     }
                     next_stmt = node_create(NODE_SHELL_CMD, next.line);
-                    next_stmt->data.shell_cmd.cmd = strdup(cmd2);
+                    next_stmt->data.shell_cmd.cmd = cmd;
                 }
                 ASTNode *try_node = node_create(NODE_TRY, t.line);
                 try_node->data.try_stmt.try_block = (NodeList){NULL, 0, 0};
@@ -339,79 +353,45 @@ NodeList parse_block(const char *terminator) {
 
         /* --- Comando shell con cadena literal --- */
         if (t.type == TOK_STRING_LITERAL) {
-            char cmd[4096] = {0};
+            char *cmd = infernal_strdup("");
+            size_t cmd_len = 0, cmd_cap = 1;
             Token first = ts_advance();
-            strcat(cmd, "\"");
-            strcat(cmd, first.lexeme);
-            strcat(cmd, "\"");
+            command_append_token(&cmd, &cmd_len, &cmd_cap, first, false);
             Token prev_token = first;
             while (ts_peek().type != TOK_NEWLINE && ts_peek().type != TOK_EOF) {
                 Token ct = ts_advance();
-                bool hay_espacio = false;
-                if (prev_token.type != TOK_EOF) {
-                    if (ct.start_col > prev_token.end_col) hay_espacio = true;
-                }
-                if (hay_espacio) strcat(cmd, " ");
-                if (ct.type == TOK_STRING_LITERAL) {
-                    strcat(cmd, "\"");
-                    strcat(cmd, ct.lexeme);
-                    strcat(cmd, "\"");
-                } else {
-                    strcat(cmd, ct.lexeme);
-                }
+                bool hay_espacio = prev_token.type != TOK_EOF && ct.start_col > prev_token.end_col;
+                command_append_token(&cmd, &cmd_len, &cmd_cap, ct, hay_espacio);
                 prev_token = ct;
             }
             stmt = node_create(NODE_SHELL_CMD, t.line);
-            stmt->data.shell_cmd.cmd = strdup(cmd);
+            stmt->data.shell_cmd.cmd = cmd;
             while (ts_match(TOK_OR)) {
                 ASTNode *next_stmt = NULL;
                 Token next = ts_peek();
+                cmd = infernal_strdup("");
+                cmd_len = 0; cmd_cap = 1;
+                Token prev2 = (Token){TOK_EOF, "", 0, 0, 0};
                 if (next.type == TOK_BANG) {
                     ts_advance();
-                    char cmd2[4096] = {0};
-                    Token prev2 = {TOK_EOF, "", 0, 0, 0};
                     while (ts_peek().type != TOK_BANG && ts_peek().type != TOK_NEWLINE && ts_peek().type != TOK_EOF) {
                         Token ct2 = ts_advance();
-                        bool hay_espacio2 = false;
-                        if (prev2.type != TOK_EOF) {
-                            if (ct2.start_col > prev2.end_col) hay_espacio2 = true;
-                        }
-                        if (hay_espacio2 && cmd2[0] != '\0') strcat(cmd2, " ");
-                        if (ct2.type == TOK_STRING_LITERAL) {
-                            strcat(cmd2, "\"");
-                            strcat(cmd2, ct2.lexeme);
-                            strcat(cmd2, "\"");
-                        } else {
-                            strcat(cmd2, ct2.lexeme);
-                        }
+                        bool hay_espacio2 = prev2.type != TOK_EOF && ct2.start_col > prev2.end_col;
+                        command_append_token(&cmd, &cmd_len, &cmd_cap, ct2, hay_espacio2);
                         prev2 = ct2;
                     }
                     if (ts_peek().type == TOK_BANG) ts_advance();
                     next_stmt = node_create(NODE_CMD_STMT, next.line);
-                    next_stmt->data.cmd_stmt.cmd = strdup(cmd2);
+                    next_stmt->data.cmd_stmt.cmd = cmd;
                 } else {
-                    char cmd2[4096] = {0};
-                    Token first2 = ts_advance();
-                    strcpy(cmd2, first2.lexeme);
-                    Token prev2 = first2;
                     while (ts_peek().type != TOK_NEWLINE && ts_peek().type != TOK_EOF && ts_peek().type != TOK_OR) {
                         Token ct2 = ts_advance();
-                        bool hay_espacio2 = false;
-                        if (prev2.type != TOK_EOF) {
-                            if (ct2.start_col > prev2.end_col) hay_espacio2 = true;
-                        }
-                        if (hay_espacio2) strcat(cmd2, " ");
-                        if (ct2.type == TOK_STRING_LITERAL) {
-                            strcat(cmd2, "\"");
-                            strcat(cmd2, ct2.lexeme);
-                            strcat(cmd2, "\"");
-                        } else {
-                            strcat(cmd2, ct2.lexeme);
-                        }
+                        bool hay_espacio2 = prev2.type != TOK_EOF && ct2.start_col > prev2.end_col;
+                        command_append_token(&cmd, &cmd_len, &cmd_cap, ct2, hay_espacio2);
                         prev2 = ct2;
                     }
                     next_stmt = node_create(NODE_SHELL_CMD, next.line);
-                    next_stmt->data.shell_cmd.cmd = strdup(cmd2);
+                    next_stmt->data.shell_cmd.cmd = cmd;
                 }
                 ASTNode *try_node = node_create(NODE_TRY, t.line);
                 try_node->data.try_stmt.try_block = (NodeList){NULL, 0, 0};
@@ -542,7 +522,7 @@ NodeList parse_block(const char *terminator) {
 
             ASTNode *init_expr = parse_expression(0);
             ASTNode *init = node_create(NODE_ASSIGN, t.line);
-            init->data.assign.name = varname;
+            init->data.assign.name = strdup(varname);
             init->data.assign.value = init_expr;
             init->data.assign.vtype = vtype;
             init->data.assign.is_local = is_local;
@@ -647,15 +627,6 @@ NodeList parse_block(const char *terminator) {
                 func_register(strdup(prefixed), stmt);
             }
 
-            if (stmt) {
-                Chunk *func_chunk = compile_function(stmt);
-                if (func_chunk) {
-                    FuncObject *fobj = func_lookup(stmt->data.func.name);
-                    if (fobj && fobj->kind == FUNC_USER) {
-                        fobj->code = func_chunk;
-                    }
-                }
-            }
             nodelist_add(&block, stmt);
             DEBUG_INFO("parse_block: añadido NODE_FUNC_DEF en línea %d", stmt->line);
             ts_skip_newlines();

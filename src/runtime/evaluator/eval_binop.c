@@ -54,6 +54,7 @@ Value eval_binop(ASTNode *expr) {
 
         if (right_node->kind == NODE_SLICE) {
             Value result = remove_slice(left, right_node);
+            value_free(&left);
             return result;
         }
 
@@ -83,6 +84,7 @@ Value eval_binop(ASTNode *expr) {
                 val_list_append(&new_list, copy_value_secure(left.data.list.items[i]));
             }
             DEBUG_VAR("lista resultado", new_list);
+            value_free(&left);
             return new_list;
         }
 
@@ -125,6 +127,9 @@ Value eval_binop(ASTNode *expr) {
     new_list.data.list.items[pos - 1] = copy_value_secure(base);
     DEBUG_VAR("nueva lista", new_list);
     DEBUG_INFO("Devolviendo lista (tipo %d)", new_list.type);
+    value_free(&base);
+    value_free(&index_val);
+    value_free(&left);
     return new_list;
         }
 
@@ -147,7 +152,10 @@ Value eval_binop(ASTNode *expr) {
                     default: equal = false;
                 }
             }
-            return val_bool(expr->data.binop.op == TOK_EEQ ? equal : !equal);
+            Value result = val_bool(expr->data.binop.op == TOK_EEQ ? equal : !equal);
+            value_free(&left);
+            value_free(&right);
+            return result;
         }
 
         if (expr->data.binop.op == TOK_LT_OP || expr->data.binop.op == TOK_GT_OP ||
@@ -162,18 +170,27 @@ Value eval_binop(ASTNode *expr) {
             case TOK_GE:    result = (lv >= rv); break;
             default: break;
         }
-        return val_bool(result);
+        Value cmp_result = val_bool(result);
+        value_free(&left);
+        value_free(&right);
+        return cmp_result;
             }
 
             if (expr->data.binop.op == TOK_POW) {
                 if (left.type == VAL_INT && right.type == VAL_INT && right.data.ival >= 0) {
                     long result = 1;
                     for (long i = 0; i < right.data.ival; i++) result *= left.data.ival;
-                    return val_int((int)result);
+                    Value out = val_int((int)result);
+                    value_free(&left);
+                    value_free(&right);
+                    return out;
                 }
                 double lv = (left.type == VAL_INT) ? left.data.ival : left.data.fval;
                 double rv = (right.type == VAL_INT) ? right.data.ival : right.data.fval;
-                return val_float(pow(lv, rv));
+                Value out = val_float(pow(lv, rv));
+                value_free(&left);
+                value_free(&right);
+                return out;
             }
 
             if (left.type == VAL_STRING || right.type == VAL_STRING) {
@@ -192,6 +209,8 @@ Value eval_binop(ASTNode *expr) {
                 snprintf(buf, total, "%s%s", ls, rs);
                 Value result = val_string(buf);
                 free(buf);
+                value_free(&left);
+                value_free(&right);
                 return result;
             }
 
@@ -206,6 +225,8 @@ Value eval_binop(ASTNode *expr) {
                     case TOK_PERCENT: if (rv == 0) error(expr->line, "Módulo por cero"); result = val_int(lv % rv); break;
                     default: error(expr->line, "Operador no soportado");
                 }
+                value_free(&left);
+                value_free(&right);
                 return result;
             }
 

@@ -218,7 +218,9 @@ void scope_assign(Scope *scope, const char *name, Value val, int line) {
     if (e) {
         // Si el tipo fijo es 0 o inválido (>= TOK_EOF), permitir cualquier valor
         if (e->vtype == 0 || e->vtype >= TOK_EOF) {
-            e->value = copy_value_secure(val);
+            Value copied = copy_value_secure(val);
+            value_free(&e->value);
+            e->value = copied;
             return;
         }
         // Conversión si el destino es string y el valor es lista
@@ -233,7 +235,9 @@ void scope_assign(Scope *scope, const char *name, Value val, int line) {
             error(line, "Tipado fijo: la variable '%s' es de tipo %s, no se puede asignar un valor de tipo %s",
                   name, type_name(expected), type_name(new_type));
         }
-        e->value = copy_value_secure(val);
+        Value copied = copy_value_secure(val);
+        value_free(&e->value);
+        e->value = copied;
         return;
     }
     // Si no existe, definir en el ámbito actual
@@ -271,5 +275,21 @@ void portal_define(Scope *scope, const char *name, int line) {
 /* --- Liberar un ámbito (se desactiva la liberación de variables para evitar double-free) --- */
 void scope_free(Scope *s) {
     if (!s) return;
+    VarEntry *e = s->vars;
+    while (e) {
+        VarEntry *next = e->next;
+        free(e->name);
+        value_free(&e->value);
+        free(e);
+        e = next;
+    }
+    PortalEntry *p = s->portals;
+    while (p) {
+        PortalEntry *next = p->next;
+        free(p->name);
+        free(p);
+        p = next;
+    }
+    free(s->function_name);
     free(s);
 }

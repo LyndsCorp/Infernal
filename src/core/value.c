@@ -117,8 +117,7 @@ void val_map_set(Value *map, const char *key, Value value) {
     MapData *md = map->data.map;
     for (int i = 0; i < md->count; i++) {
         if (strcmp(md->pairs[i].key, key) == 0) {
-            if (md->pairs[i].value.type == VAL_STRING)
-                free(md->pairs[i].value.data.sval);
+            value_free(&md->pairs[i].value);
             md->pairs[i].value = copy_value_secure(value);
             return;
         }
@@ -161,8 +160,7 @@ void val_map_delete(Value *map, const char *key) {
     for (int i = 0; i < md->count; i++) {
         if (strcmp(md->pairs[i].key, key) == 0) {
             free(md->pairs[i].key);
-            if (md->pairs[i].value.type == VAL_STRING)
-                free(md->pairs[i].value.data.sval);
+            value_free(&md->pairs[i].value);
             for (int j = i; j < md->count - 1; j++) {
                 md->pairs[j] = md->pairs[j + 1];
             }
@@ -180,4 +178,35 @@ Value val_map_copy(Value *src) {
         val_map_set(&dst, md_src->pairs[i].key, md_src->pairs[i].value);
     }
     return dst;
+}
+
+
+void value_free(Value *value) {
+    if (!value) return;
+    switch (value->type) {
+        case VAL_STRING:
+            free(value->data.sval);
+            break;
+        case VAL_LIST:
+            for (int i = 0; i < value->data.list.count; i++)
+                value_free(&value->data.list.items[i]);
+            free(value->data.list.items);
+            break;
+        case VAL_MAP:
+            if (value->data.map) {
+                for (int i = 0; i < value->data.map->count; i++) {
+                    free(value->data.map->pairs[i].key);
+                    value_free(&value->data.map->pairs[i].value);
+                }
+                free(value->data.map->pairs);
+                free(value->data.map);
+            }
+            break;
+        case VAL_REFERENCE:
+            free(value->data.ref.list_name);
+            break;
+        default:
+            break;
+    }
+    *value = val_make_null();
 }

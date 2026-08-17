@@ -22,6 +22,8 @@
 #include "developer/debug.h"
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
+#include <stdarg.h>
 #include <string.h>
 #include <unistd.h>
 
@@ -47,14 +49,18 @@ void exec_stmt(ASTNode *stmt) {
 
     switch (stmt->kind) {
 
-        case NODE_EXPR_STMT:
-            eval_expr(stmt->data.expr_stmt.expr);
+        case NODE_EXPR_STMT: {
+            Value result = eval_expr(stmt->data.expr_stmt.expr);
+            value_free(&result);
             break;
+        }
 
         case NODE_POST_INC:
-        case NODE_POST_DEC:
-            eval_expr(stmt);
+        case NODE_POST_DEC: {
+            Value result = eval_expr(stmt);
+            value_free(&result);
             break;
+        }
 
         case NODE_CMD_STMT: {
             char *expanded = expand_command(stmt->data.cmd_stmt.cmd);
@@ -123,12 +129,32 @@ void exec_stmt(ASTNode *stmt) {
                     char buf[4096];
                     char *out = strdup("");
                     while (fgets(buf, sizeof(buf), fp)) {
-                        out = realloc(out, strlen(out) + strlen(buf) + 1);
-                        strcat(out, buf);
+                        size_t old_len = strlen(out);
+                        size_t add_len = strlen(buf);
+                        if (old_len > SIZE_MAX - add_len - 1) {
+                            free(out); pclose(fp);
+                            if (temp_path) { unlink(temp_path); free(temp_path); }
+                            free(expanded_cmd);
+                            error(stmt->line, "Salida de comando demasiado grande");
+                        }
+                        char *tmp_out = realloc(out, old_len + add_len + 1);
+                        if (!tmp_out) {
+                            free(out); pclose(fp);
+                            if (temp_path) { unlink(temp_path); free(temp_path); }
+                            free(expanded_cmd);
+                            error(stmt->line, "Memoria insuficiente para salida de comando");
+                        }
+                        out = tmp_out;
+                        memcpy(out + old_len, buf, add_len + 1);
                     }
                     int status = pclose(fp);
                     if (status != 0) {
-                        error(stmt->line, "Comando falló: %s", expanded_cmd);
+                        char command_error[512];
+                        snprintf(command_error, sizeof(command_error), "Comando falló: %.440s", expanded_cmd);
+                        if (temp_path) { unlink(temp_path); free(temp_path); temp_path = NULL; }
+                        free(out);
+                        free(expanded_cmd);
+                        error(stmt->line, "%s", command_error);
                     }
 
                     if (temp_path) {
@@ -169,11 +195,16 @@ void exec_stmt(ASTNode *stmt) {
                         int idx = idx_val.data.ival;
                         if (idx < 1 || idx > var->value.data.list.count) error(stmt->line, "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
                         Value new_val = eval_expr(stmt->data.assign.value);
+                        value_free(&var->value.data.list.items[idx - 1]);
                         var->value.data.list.items[idx - 1] = copy_value_secure(new_val);
+                        value_free(&new_val);
+                        value_free(&idx_val);
                     } else if (var->value.type == VAL_MAP) {
                         if (idx_val.type != VAL_STRING) error(stmt->line, "Clave de mapa debe ser string");
                         Value new_val = eval_expr(stmt->data.assign.value);
                         val_map_set(&var->value, idx_val.data.sval, new_val);
+                        value_free(&new_val);
+                        value_free(&idx_val);
                     } else {
                         error(stmt->line, "No se puede indexar este tipo de variable");
                     }
@@ -219,7 +250,10 @@ void exec_stmt(ASTNode *stmt) {
                 VarEntry *var = scope_find(current_scope, stmt->data.assign.name);
                 if (var) {
                     DEBUG_INFO("Variable '%s' encontrada en ámbito %p, actualizando", stmt->data.assign.name, (void*)var);
-                    var->value = copy_value_secure(val);
+                    Value copied = copy_value_secure(val);
+                    value_free(&var->value);
+                    var->value = copied;
+                    value_free(&val);
                     if (vtype != 0) {
                         var->vtype = vtype;
                     }
@@ -240,6 +274,7 @@ void exec_stmt(ASTNode *stmt) {
             } else {
                 exec_block_impl(&stmt->data.if_stmt.else_block);
             }
+            value_free(&cond);
             if (control_flow == CF_REPEAT_LINE) return;
             break;
         }
@@ -251,7 +286,11 @@ void exec_stmt(ASTNode *stmt) {
                     error(stmt->line, "Límite de iteraciones (%d) alcanzado en bucle while", max_loop_iterations);
                 iter_count++;
                 Value cond = eval_expr(stmt->data.while_stmt.cond);
-                if (!val_is_truthy(cond)) break;
+                if (!val_is_truthy(cond)) {
+                    value_free(&cond);
+                    break;
+                }
+                value_free(&cond);
                 Scope *block_scope = scope_new(current_scope, NULL);
                 Scope *old_scope = current_scope;
                 current_scope = block_scope;
@@ -344,7 +383,10 @@ void exec_stmt(ASTNode *stmt) {
                 scope_find_current(for_scope, var_name);
 
                 if (existing) {
-                    existing->value = copy_value_secure(init_val);
+                    Value copied = copy_value_secure(init_val);
+                    value_free(&existing->value);
+                    existing->value = copied;
+                    value_free(&init_val);
 
                     if (vtype != 0) {
                         existing->vtype = vtype;
@@ -492,9 +534,16 @@ void exec_stmt(ASTNode *stmt) {
                 scope_free(iter_scope);
                 if (control_flow == CF_BREAK) { control_flow = CF_NONE; break; }
                 if (control_flow == CF_CONTINUE) { control_flow = CF_NONE; continue; }
-                if (control_flow == CF_REPEAT_LINE) return;
-                if (control_flow == CF_RETURN) return;
+                if (control_flow == CF_REPEAT_LINE) {
+                    value_free(&list_val);
+                    return;
+                }
+                if (control_flow == CF_RETURN) {
+                    value_free(&list_val);
+                    return;
+                }
             }
+            value_free(&list_val);
             break;
         }
 

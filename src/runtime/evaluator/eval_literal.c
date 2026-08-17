@@ -70,6 +70,8 @@ Value eval_map(ASTNode *expr) {
             error(expr->line, "La clave de un mapa debe ser string (obtenido tipo %d)", key.type);
         }
         val_map_set(&map, key.data.sval, val);
+        value_free(&key);
+        value_free(&val);
     }
     return map;
 }

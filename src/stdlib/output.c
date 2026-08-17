@@ -79,24 +79,24 @@ static Value builtin_color(int argc, Value *args) {
 /* --- print() --- */
 static Value builtin_print(int argc, Value *args) {
     int suppress_newline = 0;
-    if (argc > 0 && args[argc-1].type == VAL_STRING) {
-        char *s = args[argc-1].data.sval;
-        size_t len = strlen(s);
-        if (len > 0 && s[len-1] == 0x1A) {
-            char *new_s = malloc(len); // sin el último byte
-            if (new_s) {
-                memcpy(new_s, s, len - 1);
-                new_s[len - 1] = '\0';
-                args[argc-1].data.sval = new_s;
-                suppress_newline = 1;
-            }
-        }
-    }
 
     for (int i = 0; i < argc; i++) {
         if (i > 0) printf(" ");
+
+        if (i == argc - 1 && args[i].type == VAL_STRING) {
+            const char *s = args[i].data.sval;
+            size_t len = strlen(s);
+            if (len > 0 && (unsigned char)s[len - 1] == 0x1A) {
+                /* Imprimir sin el marcador de "no newline" sin modificar ni duplicar el Value. */
+                if (len > 1) fwrite(s, 1, len - 1, stdout);
+                suppress_newline = 1;
+                continue;
+            }
+        }
+
         print_value(args[i]);
     }
+
     printf("\033[0m");
     if (!suppress_newline) printf("\n");
     fflush(stdout);
@@ -107,23 +107,22 @@ static Value builtin_print(int argc, Value *args) {
 static Value builtin_warn(int argc, Value *args) {
     int suppress_newline = 0;
     if (argc > 0 && args[argc-1].type == VAL_STRING) {
-        char *s = args[argc-1].data.sval;
+        const char *s = args[argc-1].data.sval;
         size_t len = strlen(s);
-        if (len > 0 && s[len-1] == 0x1A) {
-            char *new_s = malloc(len);
-            if (new_s) {
-                memcpy(new_s, s, len - 1);
-                new_s[len - 1] = '\0';
-                args[argc-1].data.sval = new_s;
-                suppress_newline = 1;
-            }
-        }
+        if (len > 0 && (unsigned char)s[len-1] == 0x1A)
+            suppress_newline = 1;
     }
 
     printf("\033[33m");
     for (int i = 0; i < argc; i++) {
         if (i > 0) printf(" ");
-        print_value(args[i]);
+        if (i == argc - 1 && args[i].type == VAL_STRING && suppress_newline) {
+            const char *s = args[i].data.sval;
+            size_t len = strlen(s);
+            if (len > 1) fwrite(s, 1, len - 1, stdout);
+        } else {
+            print_value(args[i]);
+        }
     }
     printf("\033[0m");
     if (!suppress_newline) printf("\n");
@@ -134,23 +133,22 @@ static Value builtin_warn(int argc, Value *args) {
 static Value builtin_error(int argc, Value *args) {
     int suppress_newline = 0;
     if (argc > 0 && args[argc-1].type == VAL_STRING) {
-        char *s = args[argc-1].data.sval;
+        const char *s = args[argc-1].data.sval;
         size_t len = strlen(s);
-        if (len > 0 && s[len-1] == 0x1A) {
-            char *new_s = malloc(len);
-            if (new_s) {
-                memcpy(new_s, s, len - 1);
-                new_s[len - 1] = '\0';
-                args[argc-1].data.sval = new_s;
-                suppress_newline = 1;
-            }
-        }
+        if (len > 0 && (unsigned char)s[len-1] == 0x1A)
+            suppress_newline = 1;
     }
 
     printf("\033[31m");
     for (int i = 0; i < argc; i++) {
         if (i > 0) printf(" ");
-        print_value(args[i]);
+        if (i == argc - 1 && args[i].type == VAL_STRING && suppress_newline) {
+            const char *s = args[i].data.sval;
+            size_t len = strlen(s);
+            if (len > 1) fwrite(s, 1, len - 1, stdout);
+        } else {
+            print_value(args[i]);
+        }
     }
     printf("\033[0m");
     if (!suppress_newline) printf("\n");
@@ -161,23 +159,22 @@ static Value builtin_error(int argc, Value *args) {
 static Value builtin_success(int argc, Value *args) {
     int suppress_newline = 0;
     if (argc > 0 && args[argc-1].type == VAL_STRING) {
-        char *s = args[argc-1].data.sval;
+        const char *s = args[argc-1].data.sval;
         size_t len = strlen(s);
-        if (len > 0 && s[len-1] == 0x1A) {
-            char *new_s = malloc(len);
-            if (new_s) {
-                memcpy(new_s, s, len - 1);
-                new_s[len - 1] = '\0';
-                args[argc-1].data.sval = new_s;
-                suppress_newline = 1;
-            }
-        }
+        if (len > 0 && (unsigned char)s[len-1] == 0x1A)
+            suppress_newline = 1;
     }
 
     printf("\033[32m");
     for (int i = 0; i < argc; i++) {
         if (i > 0) printf(" ");
-        print_value(args[i]);
+        if (i == argc - 1 && args[i].type == VAL_STRING && suppress_newline) {
+            const char *s = args[i].data.sval;
+            size_t len = strlen(s);
+            if (len > 1) fwrite(s, 1, len - 1, stdout);
+        } else {
+            print_value(args[i]);
+        }
     }
     printf("\033[0m");
     if (!suppress_newline) printf("\n");

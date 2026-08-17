@@ -10,6 +10,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <limits.h>
+#include <stdbool.h>
 #include "core/value.h"
 #include "lexer/lexer.h"
 #include "parser/parser.h"
@@ -26,11 +27,31 @@ extern const char* get_metadata(const char *type);
 
 void chunk_free(Chunk *ch) {
     if (!ch) return;
+    for (int i = 0; i < ch->const_count; i++) value_free(&ch->constants[i]);
     free(ch->constants);
     for (int i = 0; i < ch->local_count; i++) free(ch->local_names[i]);
     free(ch->local_names);
+    free(ch->local_types);
     free(ch->code);
     free(ch);
+}
+
+static void cleanup_runtime_state(void) {
+    while (current_scope && current_scope != global_scope) {
+        Scope *parent = current_scope->parent;
+        scope_free(current_scope);
+        current_scope = parent;
+    }
+    if (global_scope) { scope_free(global_scope); global_scope = NULL; current_scope = NULL; }
+    if (super_global_scope) { scope_free(super_global_scope); super_global_scope = NULL; }
+    while (func_table) {
+        FuncEntry *next = func_table->next;
+        free(func_table->name);
+        free(func_table->obj);
+        free(func_table);
+        func_table = next;
+    }
+    if (infernal_shell) { free(infernal_shell); infernal_shell = NULL; }
 }
 
 int main(int argc, char **argv) {
@@ -168,23 +189,49 @@ int main(int argc, char **argv) {
         return 1;
     }
 
+    NodeList program = {NULL, 0, 0};
+    Chunk *main_chunk = NULL;
+    bool file_open = true;
+
     if (!setjmp(exception_env)) {
         ts_init();
         tokenize_file(fp);
         fclose(fp);
+        file_open = false;
 
-        NodeList program = parse_block(NULL);
+        program = parse_block(NULL);
 
-        Chunk *main_chunk = compile_program(&program);
+        main_chunk = compile_program(&program);
         Value result = vm_run(main_chunk);
-        (void)result;
+        value_free(&result);
 
         chunk_free(main_chunk);
+        main_chunk = NULL;
+        vm_cleanup_state();
+        nodelist_free(&program);
+        if (ts.tokens) {
+            for (int i = 0; i < ts.count; i++) free(ts.tokens[i].lexeme);
+            free(ts.tokens); ts.tokens = NULL; ts.count = ts.cap = ts.pos = 0;
+        }
+        for (int i = 0; i < source_line_count; i++) free(source_lines[i]);
+        free(source_lines); source_lines = NULL; source_line_count = 0;
+        cleanup_runtime_state();
 
         cleanup_embedded_temp_dir();
         free(script_dir);
         return 0;
     } else {
+        if (file_open) fclose(fp);
+        if (main_chunk) { chunk_free(main_chunk); main_chunk = NULL; }
+        vm_cleanup_state();
+        nodelist_free(&program);
+        if (ts.tokens) {
+            for (int i = 0; i < ts.count; i++) free(ts.tokens[i].lexeme);
+            free(ts.tokens); ts.tokens = NULL; ts.count = ts.cap = ts.pos = 0;
+        }
+        for (int i = 0; i < source_line_count; i++) free(source_lines[i]);
+        free(source_lines); source_lines = NULL; source_line_count = 0;
+        cleanup_runtime_state();
         fprintf(stderr, "%s\n", exception_msg);
         cleanup_embedded_temp_dir();
         free(script_dir);

@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <stdint.h>
 #include "flags.h"
 #include "core/ast.h"
 #include "lexer/lexer.h"
@@ -37,24 +38,45 @@ static void add_flag_name(FlagSpec *spec, const char *name, int line) {
 
 /* --- Función auxiliar para parsear el nombre de un flag --- */
 static char *parse_flag_name(int line) {
-    char name_buf[128] = "";
+    char *name = strdup("");
+    size_t len = 0;
+    size_t cap = 1;
+
+    const char *pieces[3];
+    int piece_count = 0;
     if (ts_peek().type == TOK_MINUS) {
         Token tok = ts_advance();
-        strcat(name_buf, tok.lexeme);                  // "-"
+        pieces[piece_count++] = tok.lexeme;
         if (ts_peek().type == TOK_MINUS) {
             tok = ts_advance();
-            strcat(name_buf, tok.lexeme);              // "--"
+            pieces[piece_count++] = tok.lexeme;
         }
-        if (ts_peek().type != TOK_IDENT) {
+        if (ts_peek().type != TOK_IDENT)
             error(line, "Se esperaba nombre del flag después de '-'/'--'");
-        }
-        strcat(name_buf, ts_advance().lexeme);
+        pieces[piece_count++] = ts_advance().lexeme;
     } else if (ts_peek().type == TOK_IDENT && is_valid_flag_name(ts_peek().lexeme)) {
-        strcat(name_buf, ts_advance().lexeme);
+        pieces[piece_count++] = ts_advance().lexeme;
     } else {
         error(line, "Se esperaba un flag (--nombre, -n o nombre)");
     }
-    return strdup(name_buf);
+
+    for (int i = 0; i < piece_count; i++) {
+        size_t add = strlen(pieces[i]);
+        if (len > SIZE_MAX - add - 1) {
+            free(name);
+            error(line, "Nombre de flag demasiado largo");
+        }
+        if (len + add + 1 > cap) {
+            while (cap < len + add + 1) cap *= 2;
+            char *tmp = realloc(name, cap);
+            if (!tmp) { free(name); error(line, "Memoria insuficiente al construir flag"); }
+            name = tmp;
+        }
+        memcpy(name + len, pieces[i], add);
+        len += add;
+        name[len] = '\0';
+    }
+    return name;
 }
 
 void parse_flag_body_tokens(Token **body_tokens, int *body_count) {
