@@ -13,5 +13,6 @@
 
 Chunk *compile_program(NodeList *program);
 Chunk *compile_function(ASTNode *func_node);
+void compiler_cleanup_on_error(void);
 
 #endif

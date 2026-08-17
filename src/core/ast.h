@@ -14,5 +14,6 @@ ASTNode *node_create(int kind, int line);
 void     nodelist_add(NodeList *list, ASTNode *node);
 void     ast_free(ASTNode *node);
 void     nodelist_free(NodeList *list);
+void     ast_free_all(void);
 
 #endif

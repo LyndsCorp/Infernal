@@ -67,6 +67,9 @@ Value eval_map(ASTNode *expr) {
         Value key = eval_expr(expr->data.map.pairs[i].key);
         Value val = eval_expr(expr->data.map.pairs[i].value);
         if (key.type != VAL_STRING) {
+            value_free(&key);
+            value_free(&val);
+            value_free(&map);
             error(expr->line, "La clave de un mapa debe ser string (obtenido tipo %d)", key.type);
         }
         val_map_set(&map, key.data.sval, val);

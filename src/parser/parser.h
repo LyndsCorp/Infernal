@@ -16,4 +16,7 @@ ASTNode *parse_if_statement(void);
 /* --- Función para construir comando desde tokens ------------ */
 char *build_command_from_tokens(int start_pos, int end_pos);
 
+/* Libera estructuras parciales del parser cuando un error aborta parse_block(). */
+void parser_cleanup_on_error(void);
+
 #endif

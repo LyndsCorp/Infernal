@@ -33,6 +33,34 @@ typedef struct {
     int portal_count;
 } Compiler;
 
+static Compiler *active_compiler = NULL;
+
+static void compiler_free_partial(Compiler *c) {
+    if (!c) return;
+    if (c->chunk) {
+        for (int i = 0; i < c->chunk->const_count; i++) value_free(&c->chunk->constants[i]);
+        free(c->chunk->constants);
+        free(c->chunk->code);
+        free(c->chunk->local_names);
+        free(c->chunk->local_types);
+        free(c->chunk);
+        c->chunk = NULL;
+    }
+    for (int i = 0; i < c->local_count; i++) free(c->local_names[i]);
+    for (int i = 0; i < c->portal_count; i++) free(c->portals[i].name);
+    free(c->portals);
+    c->portals = NULL;
+    c->portal_count = 0;
+}
+
+void compiler_cleanup_on_error(void) {
+    if (active_compiler) {
+        Compiler *c = active_compiler;
+        active_compiler = NULL;
+        compiler_free_partial(c);
+    }
+}
+
 static int add_constant(Compiler *c, Value v) {
     Chunk *ch = c->chunk;
     if (ch->const_count >= ch->const_cap) {
@@ -385,6 +413,61 @@ static void compile_stmt(Compiler *c, ASTNode *stmt) {
             const char *name = stmt->data.assign.name;
             int vtype = stmt->data.assign.vtype;
 
+            /* Declaración tipada sin '=': crear directamente el valor base en la VM. */
+            if (!stmt->data.assign.is_cmd && stmt->data.assign.value == NULL &&
+                !stmt->data.assign.lhs_index) {
+                bool to_local = stmt->data.assign.is_local;
+                int gidx = -1;
+                int slot = -1;
+
+                if (stmt->data.assign.is_global) {
+                    gidx = vm_find_global_index(name);
+                    if (gidx < 0) gidx = vm_register_global(name, GLOBAL_SUPER, vtype);
+                    else if (vtype != 0) vm_global_types[gidx] = vtype;
+                } else if (to_local) {
+                    slot = resolve_local(c, name);
+                    if (slot < 0) slot = add_local(c, name);
+                    if (vtype != 0) c->local_types[slot] = vtype;
+                } else {
+                    gidx = vm_find_global_index(name);
+                    if (gidx < 0) gidx = vm_register_global(name, GLOBAL_SCRIPT, vtype);
+                    else if (vtype != 0) vm_global_types[gidx] = vtype;
+                }
+
+                switch (vtype) {
+                    case TOK_INT:
+                        emit(c->chunk, OP_PUSH_INT, add_constant(c, val_int(0)), stmt->line);
+                        break;
+                    case TOK_FLOAT:
+                        emit(c->chunk, OP_PUSH_FLOAT, add_constant(c, val_float(0.0)), stmt->line);
+                        break;
+                    case TOK_BOOL:
+                        emit(c->chunk, OP_PUSH_BOOL, add_constant(c, val_bool(false)), stmt->line);
+                        break;
+                    case TOK_STRING:
+                        emit(c->chunk, OP_PUSH_STRING, add_constant(c, val_string("")), stmt->line);
+                        break;
+                    case TOK_LIST:
+                        emit(c->chunk, OP_NEW_LIST, 0, stmt->line);
+                        break;
+                    case TOK_MAP:
+                        emit(c->chunk, OP_NEW_MAP, 0, stmt->line);
+                        break;
+                    default:
+                        emit(c->chunk, OP_PUSH_NULL, 0, stmt->line);
+                        break;
+                }
+
+                if (to_local) {
+                    emit(c->chunk, OP_STORE_VAR, slot, stmt->line);
+                } else {
+                    emit(c->chunk, OP_STORE_GLOBAL, gidx, stmt->line);
+                    c->chunk->code[c->chunk->code_count - 1].operand2 =
+                        stmt->data.assign.is_global ? GLOBAL_SUPER : GLOBAL_SCRIPT;
+                }
+                break;
+            }
+
             if (stmt->data.assign.lhs_index) {
                 int const_idx = add_constant(c, val_ptr(stmt));
                 emit(c->chunk, OP_INTERPRET_NODE, const_idx, stmt->line);
@@ -548,6 +631,7 @@ Chunk *compile_program(NodeList *program) {
     c.chunk = calloc(1, sizeof(Chunk));
     c.local_count = 0;
     c.in_function = false;
+    active_compiler = &c;
     c.top_level = true;
     c.portals = NULL;
     c.portal_count = 0;
@@ -572,6 +656,7 @@ Chunk *compile_program(NodeList *program) {
     for (int i = 0; i < c.portal_count; i++) free(c.portals[i].name);
     free(c.portals);
 
+    active_compiler = NULL;
     return c.chunk;
 }
 
@@ -581,6 +666,7 @@ Chunk *compile_function(ASTNode *func_node) {
     c.chunk = calloc(1, sizeof(Chunk));
     c.local_count = 0;
     c.in_function = true;
+    active_compiler = &c;
     c.top_level = false;
     c.portals = NULL;
     c.portal_count = 0;
@@ -605,5 +691,6 @@ Chunk *compile_function(ASTNode *func_node) {
         }
     }
 
+    active_compiler = NULL;
     return c.chunk;
 }

@@ -72,6 +72,7 @@ Value eval_binop(ASTNode *expr) {
                 Value item = right_val.data.list.items[0];
                 if (item.type == VAL_INT) idx = item.data.ival;
             }
+            value_free(&right_val);
         }
 
         if (idx != -1) {
@@ -125,11 +126,11 @@ Value eval_binop(ASTNode *expr) {
         new_list.data.list.items[i] = new_list.data.list.items[i - 1];
     }
     new_list.data.list.items[pos - 1] = copy_value_secure(base);
-    DEBUG_VAR("nueva lista", new_list);
-    DEBUG_INFO("Devolviendo lista (tipo %d)", new_list.type);
     value_free(&base);
     value_free(&index_val);
     value_free(&left);
+    DEBUG_VAR("nueva lista", new_list);
+    DEBUG_INFO("Devolviendo lista (tipo %d)", new_list.type);
     return new_list;
         }
 
@@ -170,39 +171,49 @@ Value eval_binop(ASTNode *expr) {
             case TOK_GE:    result = (lv >= rv); break;
             default: break;
         }
-        Value cmp_result = val_bool(result);
+        Value result_value = val_bool(result);
         value_free(&left);
         value_free(&right);
-        return cmp_result;
+        return result_value;
             }
 
             if (expr->data.binop.op == TOK_POW) {
                 if (left.type == VAL_INT && right.type == VAL_INT && right.data.ival >= 0) {
                     long result = 1;
                     for (long i = 0; i < right.data.ival; i++) result *= left.data.ival;
-                    Value out = val_int((int)result);
+                    Value result_value = val_int((int)result);
                     value_free(&left);
                     value_free(&right);
-                    return out;
+                    return result_value;
                 }
                 double lv = (left.type == VAL_INT) ? left.data.ival : left.data.fval;
                 double rv = (right.type == VAL_INT) ? right.data.ival : right.data.fval;
-                Value out = val_float(pow(lv, rv));
+                Value result_value = val_float(pow(lv, rv));
                 value_free(&left);
                 value_free(&right);
-                return out;
+                return result_value;
             }
 
             if (left.type == VAL_STRING || right.type == VAL_STRING) {
                 char lbuf[64], rbuf[64];
                 const char *ls = left.type == VAL_STRING ? left.data.sval : lbuf;
                 const char *rs = right.type == VAL_STRING ? right.data.sval : rbuf;
-                if (left.type != VAL_STRING)
-                    snprintf(lbuf, sizeof(lbuf), "%d", left.type == VAL_INT ? left.data.ival :
-                    left.type == VAL_FLOAT ? (int)left.data.fval : left.data.bval ? 1 : 0);
-                if (right.type != VAL_STRING)
-                    snprintf(rbuf, sizeof(rbuf), "%d", right.type == VAL_INT ? right.data.ival :
-                    right.type == VAL_FLOAT ? (int)right.data.fval : right.data.bval ? 1 : 0);
+                if (left.type != VAL_STRING) {
+                    if (left.type == VAL_INT)
+                        snprintf(lbuf, sizeof(lbuf), "%d", left.data.ival);
+                    else if (left.type == VAL_FLOAT)
+                        snprintf(lbuf, sizeof(lbuf), "%.15g", left.data.fval);
+                    else
+                        snprintf(lbuf, sizeof(lbuf), "%s", left.data.bval ? "true" : "false");
+                }
+                if (right.type != VAL_STRING) {
+                    if (right.type == VAL_INT)
+                        snprintf(rbuf, sizeof(rbuf), "%d", right.data.ival);
+                    else if (right.type == VAL_FLOAT)
+                        snprintf(rbuf, sizeof(rbuf), "%.15g", right.data.fval);
+                    else
+                        snprintf(rbuf, sizeof(rbuf), "%s", right.data.bval ? "true" : "false");
+                }
                 size_t total = strlen(ls) + strlen(rs) + 1;
                 char *buf = malloc(total);
                 if (!buf) error(expr->line, "Memoria insuficiente al concatenar cadenas");
@@ -245,5 +256,7 @@ Value eval_binop(ASTNode *expr) {
                 case TOK_PERCENT: if (rv == 0) error(expr->line, "Módulo por cero"); result = val_float((int)lv % (int)rv); break;
                 default: error(expr->line, "Operador no soportado");
             }
+            value_free(&left);
+            value_free(&right);
             return result;
 }

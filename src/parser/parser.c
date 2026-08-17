@@ -24,6 +24,19 @@
 #include "developer/debug.h"
 #include "core/memory.h"
 
+/* --- Estado de limpieza de parser ante longjmp --- */
+#define MAX_ACTIVE_PARSE_BLOCKS 256
+static NodeList *active_parse_blocks[MAX_ACTIVE_PARSE_BLOCKS];
+static size_t active_parse_block_count = 0;
+
+void parser_cleanup_on_error(void) {
+    while (active_parse_block_count > 0) {
+        NodeList *block = active_parse_blocks[--active_parse_block_count];
+        nodelist_free(block);
+    }
+    ast_free_all();
+}
+
 /* --- Funciones auxiliares --- */
 static char *strip_quotes(const char *s) {
     if (!s) return NULL;
@@ -277,6 +290,8 @@ ASTNode *parse_assignment_expr(int line) {
 
 NodeList parse_block(const char *terminator) {
     NodeList block = {NULL, 0, 0};
+    if (active_parse_block_count < MAX_ACTIVE_PARSE_BLOCKS)
+        active_parse_blocks[active_parse_block_count++] = &block;
     DEBUG_INFO("=== parse_block: iniciando bloque, terminator='%s' ===", terminator ? terminator : "NULL");
 
     while (1) {
@@ -522,7 +537,7 @@ NodeList parse_block(const char *terminator) {
 
             ASTNode *init_expr = parse_expression(0);
             ASTNode *init = node_create(NODE_ASSIGN, t.line);
-            init->data.assign.name = strdup(varname);
+            init->data.assign.name = varname;
             init->data.assign.value = init_expr;
             init->data.assign.vtype = vtype;
             init->data.assign.is_local = is_local;
@@ -567,7 +582,11 @@ NodeList parse_block(const char *terminator) {
             if (!ts_match(TOK_FI)) error(t.line, "Se esperaba 'fi'");
 
             stmt = node_create(NODE_FOR, t.line);
-            stmt->data.for_stmt.var = varname;
+            stmt->data.for_stmt.var = strdup(varname);
+            if (!stmt->data.for_stmt.var) {
+                ast_free(stmt);
+                error(t.line, "No hay memoria para el nombre de variable del for");
+            }
             stmt->data.for_stmt.vtype = vtype;
             stmt->data.for_stmt.is_local = is_local;
             stmt->data.for_stmt.is_global = is_global;
@@ -584,17 +603,23 @@ NodeList parse_block(const char *terminator) {
         /* --- FUNCTION --- */
         if (t.type == TOK_FUNCTION) {
             ts_advance();
-            if (ts_peek().type != TOK_IDENT) error(t.line, "Se esperaba nombre de función");
-            char *fname = strdup(ts_advance().lexeme);
-
-            if (func_lookup(fname) != NULL) {
-                fprintf(stderr, "Error al declarar función, línea: %d: '%s' es una función interna y no puede ser redefinida.\n",
-                        t.line, fname);
-                exit(1);
+            stmt = node_create(NODE_FUNC_DEF, t.line);
+            if (ts_peek().type != TOK_IDENT) {
+                ast_free(stmt);
+                stmt = NULL;
+                error(t.line, "Se esperaba nombre de función");
             }
+            stmt->data.func.name = strdup(ts_advance().lexeme);
+            stmt->data.func.params = NULL;
+            stmt->data.func.ptypes = NULL;
+            stmt->data.func.param_count = 0;
+            stmt->data.func.body = (NodeList){NULL, 0, 0};
+            nodelist_add(&block, stmt);
+
+            if (func_lookup(stmt->data.func.name) != NULL)
+                error(t.line, "'%s' es una función interna y no puede ser redefinida.", stmt->data.func.name);
 
             if (!ts_match(TOK_LPAREN)) error(t.line, "Se esperaba '('");
-            char **params = NULL; int *ptypes = NULL; int pcount = 0;
             if (!ts_match(TOK_RPAREN)) {
                 do {
                     int ptype = 0;
@@ -602,32 +627,33 @@ NodeList parse_block(const char *terminator) {
                     if (tt == TOK_INT || tt == TOK_FLOAT || tt == TOK_BOOL || tt == TOK_STRING || tt == TOK_LIST)
                         ptype = ts_advance().type;
                     if (ts_peek().type != TOK_IDENT) error(t.line, "Se esperaba nombre de parámetro");
-                    char *pname = strdup(ts_advance().lexeme);
+                    char *pname = clean_var_name(ts_advance().lexeme);
                     validate_var_name(pname, t.line);
-                    params = realloc(params, (pcount+1)*sizeof(char*));
-                    ptypes = realloc(ptypes, (pcount+1)*sizeof(int));
-                    params[pcount] = pname;
-                    ptypes[pcount] = ptype;
-                    pcount++;
+                    int pcount = stmt->data.func.param_count;
+                    stmt->data.func.params = realloc(stmt->data.func.params, (pcount + 1) * sizeof(char*));
+                    stmt->data.func.ptypes = realloc(stmt->data.func.ptypes, (pcount + 1) * sizeof(int));
+                    stmt->data.func.params[pcount] = pname;
+                    stmt->data.func.ptypes[pcount] = ptype;
+                    stmt->data.func.param_count = pcount + 1;
                 } while (ts_match(TOK_COMMA));
                 if (!ts_match(TOK_RPAREN)) error(t.line, "Se esperaba ')'");
             }
-            NodeList body = parse_block("fi");
+
+            stmt->data.func.body = parse_block("fi");
             if (!ts_match(TOK_FI)) error(t.line, "Se esperaba 'fi'");
-            stmt = node_create(NODE_FUNC_DEF, t.line);
-            stmt->data.func.name = fname;
-            stmt->data.func.params = params;
-            stmt->data.func.ptypes = ptypes;
-            stmt->data.func.param_count = pcount;
-            stmt->data.func.body = body;
-            func_register(fname, stmt);
+
+            func_register(stmt->data.func.name, stmt);
             if (current_import_prefix) {
                 char prefixed[512];
-                snprintf(prefixed, sizeof(prefixed), "%s.%s", current_import_prefix, fname);
+                snprintf(prefixed, sizeof(prefixed), "%s.%s", current_import_prefix, stmt->data.func.name);
                 func_register(strdup(prefixed), stmt);
             }
 
-            nodelist_add(&block, stmt);
+            Chunk *func_chunk = compile_function(stmt);
+            FuncObject *fobj = func_lookup(stmt->data.func.name);
+            if (func_chunk && fobj && fobj->kind == FUNC_USER)
+                fobj->code = func_chunk;
+
             DEBUG_INFO("parse_block: añadido NODE_FUNC_DEF en línea %d", stmt->line);
             ts_skip_newlines();
             continue;
@@ -801,7 +827,7 @@ NodeList parse_block(const char *terminator) {
             continue;
         }
 
-        /* --- LOCAL / GLOBAL --- */
+        /* --- LOCAL / GLOBAL / TIPO: declaraciones de variables --- */
         if (t.type == TOK_LOCAL || t.type == TOK_GLOBAL) {
             bool is_local = ts_match(TOK_LOCAL);
             bool is_global = ts_match(TOK_GLOBAL);
@@ -822,138 +848,165 @@ NodeList parse_block(const char *terminator) {
             }
 
             int vtype = 0;
-            if (!is_local && !is_global) {
-                if (ts_peek().type == TOK_INT || ts_peek().type == TOK_FLOAT ||
-                    ts_peek().type == TOK_BOOL || ts_peek().type == TOK_STRING || ts_peek().type == TOK_LIST) {
-                    vtype = ts_advance().type;
+            if (ts_peek().type == TOK_INT || ts_peek().type == TOK_FLOAT ||
+                ts_peek().type == TOK_BOOL || ts_peek().type == TOK_STRING ||
+                ts_peek().type == TOK_LIST || ts_peek().type == TOK_MAP) {
+                vtype = ts_advance().type;
+            } else if (ts_peek().type != TOK_IDENT) {
+                error(t.line, "Se esperaba un tipo (int, float, bool, string, list, map) o un nombre de variable");
+            }
+
+            /* Una sola línea puede declarar varias variables, pero todas
+             * comparten exactamente el mismo scope y tipo definidos arriba. */
+            while (1) {
+                if (ts_peek().type != TOK_IDENT)
+                    error(t.line, "Se esperaba nombre de variable después del tipo o de ','");
+
+                char *vname = clean_var_name(ts_advance().lexeme);
+                validate_var_name(vname, t.line);
+
+                if (ts_peek().type == TOK_LOCAL || ts_peek().type == TOK_GLOBAL)
+                    error(t.line, "No se puede cambiar el scope dentro de una declaración múltiple; todas las variables deben compartir scope y tipo");
+
+                if (ts_peek().type == TOK_LBRACKET)
+                    error(t.line, "No se puede usar indexación al declarar una variable");
+
+                ASTNode *value = NULL;
+                bool is_cmd = false;
+                char *cmd_str = NULL;
+
+                if (ts_match(TOK_EQ)) {
+                    Token next_token = ts_peek();
+                    if (next_token.type == TOK_IDENT && next_token.lexeme[0] != '$' && next_token.lexeme[0] != '?') {
+                        int next_pos = ts.pos + 1;
+                        TokenType rhs_follow = (next_pos < ts.count) ? ts.tokens[next_pos].type : TOK_EOF;
+
+                        /*
+                         * Un comando simple sigue siendo válido (p. ej. `host = hostname`).
+                         * En cambio, si después del identificador viene un operador, debemos
+                         * tratarlo como expresión para que referencias de variables como
+                         * `contador_test = contador_test + 1` no terminen ejecutándose como
+                         * comandos del shell.
+                         */
+                        bool simple_command =
+                            rhs_follow == TOK_NEWLINE || rhs_follow == TOK_EOF ||
+                            rhs_follow == TOK_COMMA;
+
+                        if (rhs_follow == TOK_LPAREN || rhs_follow == TOK_LBRACKET || !simple_command) {
+                            value = parse_expression(0);
+                        } else {
+                            is_cmd = true;
+                            cmd_str = extract_literal_command(t.line);
+                            while (ts_peek().type != TOK_NEWLINE && ts_peek().type != TOK_EOF) ts_advance();
+                        }
                     } else {
-                        error(t.line, "Se esperaba un tipo (int, float, bool, string, list)");
-                    }
-            } else {
-                if (ts_peek().type == TOK_INT || ts_peek().type == TOK_FLOAT ||
-                    ts_peek().type == TOK_BOOL || ts_peek().type == TOK_STRING || ts_peek().type == TOK_LIST) {
-                    vtype = ts_advance().type;
-                    }
-            }
-
-            if (ts_peek().type != TOK_IDENT) error(t.line, "Se esperaba nombre de variable");
-            char *vname = clean_var_name(ts_advance().lexeme);
-            validate_var_name(vname, t.line);
-            DEBUG_INFO("parse_block: variable '%s', vtype=%d", vname, vtype);
-
-            ASTNode *lhs_index = NULL;
-            if (ts_peek().type == TOK_LBRACKET) {
-                Token lb = ts_advance();
-                lhs_index = parse_index_or_slice(lb.line);
-                if (lhs_index->kind == NODE_SLICE) error(lb.line, "No se puede usar slice en el lado izquierdo de una asignación");
-                lhs_index->data.idx.list = node_create(NODE_VAR, t.line);
-                lhs_index->data.idx.list->data.var.name = strdup(vname);
-            }
-
-            if (!ts_match(TOK_EQ)) error(t.line, "Se esperaba '='");
-
-            ASTNode *value = NULL;
-            bool is_cmd = false;
-            char *cmd_str = NULL;
-
-            Token next_token = ts_peek();
-            if (next_token.type == TOK_IDENT && next_token.lexeme[0] != '$' && next_token.lexeme[0] != '?') {
-                int next_pos = ts.pos + 1;
-                if (next_pos < ts.count) {
-                    Token next_next = ts.tokens[next_pos];
-                    if (next_next.type == TOK_LPAREN || next_next.type == TOK_LBRACKET) {
                         value = parse_expression(0);
-                    } else {
-                        is_cmd = true;
-                        cmd_str = extract_literal_command(t.line);
-                        while (ts_peek().type != TOK_NEWLINE && ts_peek().type != TOK_EOF) ts_advance();
-                        value = NULL;
                     }
-                } else {
-                    is_cmd = true;
-                    cmd_str = extract_literal_command(t.line);
-                    while (ts_peek().type != TOK_NEWLINE && ts_peek().type != TOK_EOF) ts_advance();
-                    value = NULL;
                 }
-            } else {
-                value = parse_expression(0);
+
+                stmt = node_create(NODE_ASSIGN, t.line);
+                stmt->data.assign.name = vname;
+                stmt->data.assign.is_cmd = is_cmd;
+                stmt->data.assign.cmd_str = cmd_str;
+                stmt->data.assign.value = value; /* NULL = valor por defecto del tipo */
+                stmt->data.assign.vtype = vtype;
+                stmt->data.assign.is_local = is_local;
+                stmt->data.assign.is_global = is_global;
+                stmt->data.assign.lhs_index = NULL;
+                nodelist_add(&block, stmt);
+
+                if (is_cmd) {
+                    /* extract_literal_command consume el resto de la línea. */
+                    break;
+                }
+
+                if (!ts_match(TOK_COMMA))
+                    break;
+
+                /* El tipado automático (vtype == 0) solo puede declarar una
+                 * variable por línea. Las declaraciones múltiples requieren
+                 * un tipo explícito común para todas. */
+                if (vtype == 0)
+                    error(t.line, "Las declaraciones múltiples requieren un tipo explícito");
+
+                /* Después de ',' debe venir solamente otro identificador.
+                 * Por tanto 'global a, local b' queda rechazado. */
+                if (ts_peek().type != TOK_IDENT)
+                    error(t.line, "Después de ',' se esperaba otra variable; no se puede cambiar el scope o tipo dentro de la misma línea");
             }
 
-            stmt = node_create(NODE_ASSIGN, t.line);
-            stmt->data.assign.name = vname;
-            stmt->data.assign.is_cmd = is_cmd;
-            stmt->data.assign.cmd_str = cmd_str;
-            stmt->data.assign.value = value;
-            stmt->data.assign.vtype = vtype;
-            stmt->data.assign.is_local = is_local;
-            stmt->data.assign.is_global = is_global;
-            stmt->data.assign.lhs_index = lhs_index;
-            nodelist_add(&block, stmt);
-            DEBUG_INFO("parse_block: añadida asignación de '%s' en línea %d", vname, stmt->line);
             ts_skip_newlines();
             continue;
         }
 
-        /* --- TIPO + IDENT (int x = 5) --- */
+        /* --- TIPO + IDENT (int x = 5, int a, b, c) --- */
         if (t.type == TOK_INT || t.type == TOK_FLOAT || t.type == TOK_BOOL ||
-            t.type == TOK_STRING || t.type == TOK_LIST) {
+            t.type == TOK_STRING || t.type == TOK_LIST || t.type == TOK_MAP) {
             int vtype = ts_advance().type;
-        if (ts_peek().type != TOK_IDENT) error(t.line, "Se esperaba nombre de variable");
-        char *vname = clean_var_name(ts_advance().lexeme);
-            validate_var_name(vname, t.line);
 
-            ASTNode *lhs_index = NULL;
-            if (ts_peek().type == TOK_LBRACKET) {
-                Token lb = ts_advance();
-                lhs_index = parse_index_or_slice(lb.line);
-                if (lhs_index->kind == NODE_SLICE) error(lb.line, "No se puede usar slice en el lado izquierdo de una asignación");
-                lhs_index->data.idx.list = node_create(NODE_VAR, t.line);
-                lhs_index->data.idx.list->data.var.name = strdup(vname);
-            }
+            while (1) {
+                if (ts_peek().type != TOK_IDENT)
+                    error(t.line, "Se esperaba nombre de variable después del tipo o de ','");
 
-            if (!ts_match(TOK_EQ)) error(t.line, "Se esperaba '='");
+                char *vname = clean_var_name(ts_advance().lexeme);
+                validate_var_name(vname, t.line);
 
-            ASTNode *value = NULL;
-            bool is_cmd = false;
-            char *cmd_str = NULL;
+                if (ts_peek().type == TOK_LOCAL || ts_peek().type == TOK_GLOBAL)
+                    error(t.line, "No se puede cambiar el scope dentro de una declaración múltiple; todas las variables deben compartir scope y tipo");
 
-            Token next_token = ts_peek();
-            if (next_token.type == TOK_IDENT && next_token.lexeme[0] != '$' && next_token.lexeme[0] != '?') {
-                int next_pos = ts.pos + 1;
-                if (next_pos < ts.count) {
-                    Token next_next = ts.tokens[next_pos];
-                    if (next_next.type == TOK_LPAREN || next_next.type == TOK_LBRACKET) {
-                        value = parse_expression(0);
+                if (ts_peek().type == TOK_LBRACKET)
+                    error(t.line, "No se puede usar indexación al declarar una variable");
+
+                ASTNode *value = NULL;
+                bool is_cmd = false;
+                char *cmd_str = NULL;
+
+                if (ts_match(TOK_EQ)) {
+                    Token next_token = ts_peek();
+                    if (next_token.type == TOK_IDENT && next_token.lexeme[0] != '$' && next_token.lexeme[0] != '?') {
+                        int next_pos = ts.pos + 1;
+                        if (next_pos < ts.count) {
+                            Token next_next = ts.tokens[next_pos];
+                            if (next_next.type == TOK_LPAREN || next_next.type == TOK_LBRACKET) {
+                                value = parse_expression(0);
+                            } else {
+                                is_cmd = true;
+                                cmd_str = extract_literal_command(t.line);
+                                while (ts_peek().type != TOK_NEWLINE && ts_peek().type != TOK_EOF) ts_advance();
+                            }
+                        } else {
+                            is_cmd = true;
+                            cmd_str = extract_literal_command(t.line);
+                            while (ts_peek().type != TOK_NEWLINE && ts_peek().type != TOK_EOF) ts_advance();
+                        }
                     } else {
-                        is_cmd = true;
-                        cmd_str = extract_literal_command(t.line);
-                        while (ts_peek().type != TOK_NEWLINE && ts_peek().type != TOK_EOF) ts_advance();
-                        value = NULL;
+                        value = parse_expression(0);
                     }
-                } else {
-                    is_cmd = true;
-                    cmd_str = extract_literal_command(t.line);
-                    while (ts_peek().type != TOK_NEWLINE && ts_peek().type != TOK_EOF) ts_advance();
-                    value = NULL;
                 }
-            } else {
-                value = parse_expression(0);
+
+                stmt = node_create(NODE_ASSIGN, t.line);
+                stmt->data.assign.name = vname;
+                stmt->data.assign.is_cmd = is_cmd;
+                stmt->data.assign.cmd_str = cmd_str;
+                stmt->data.assign.value = value; /* NULL = valor por defecto del tipo */
+                stmt->data.assign.vtype = vtype;
+                stmt->data.assign.is_local = false;
+                stmt->data.assign.is_global = false;
+                stmt->data.assign.lhs_index = NULL;
+                nodelist_add(&block, stmt);
+                DEBUG_INFO("parse_block: añadida declaración tipada de '%s' en línea %d", vname, stmt->line);
+
+                if (is_cmd)
+                    break;
+                if (!ts_match(TOK_COMMA))
+                    break;
+                if (ts_peek().type != TOK_IDENT)
+                    error(t.line, "Después de ',' se esperaba otra variable; no se puede cambiar el scope o tipo dentro de la misma línea");
             }
 
-            stmt = node_create(NODE_ASSIGN, t.line);
-            stmt->data.assign.name = vname;
-            stmt->data.assign.is_cmd = is_cmd;
-            stmt->data.assign.cmd_str = cmd_str;
-            stmt->data.assign.value = value;
-            stmt->data.assign.vtype = vtype;
-            stmt->data.assign.is_local = false;
-            stmt->data.assign.is_global = false;
-            stmt->data.assign.lhs_index = lhs_index;
-            nodelist_add(&block, stmt);
-            DEBUG_INFO("parse_block: añadida asignación sin local/global de '%s' en línea %d", vname, stmt->line);
             ts_skip_newlines();
             continue;
-            }
+        }
 
             /* --- IDENT (x = 0, print(...), etc.) --- */
             if (t.type == TOK_IDENT) {
@@ -1066,5 +1119,7 @@ NodeList parse_block(const char *terminator) {
     }
 
     DEBUG_INFO("=== parse_block: bloque finalizado, %d sentencias ===", block.count);
+    if (active_parse_block_count > 0 && active_parse_blocks[active_parse_block_count - 1] == &block)
+        active_parse_block_count--;
     return block;
 }

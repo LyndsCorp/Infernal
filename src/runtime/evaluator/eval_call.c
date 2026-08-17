@@ -33,8 +33,9 @@ Value eval_call(ASTNode *expr) {
 
         current_eval_line = saved_line;   /* restaurar */
 
-        for (int i = 0; i < expr->data.call.argc; i++)
+        for (int i = 0; i < expr->data.call.argc; i++) {
             value_free(&args[i]);
+        }
         free(args);
         return ret;
     } else {

@@ -45,10 +45,25 @@ static void cleanup_runtime_state(void) {
     if (global_scope) { scope_free(global_scope); global_scope = NULL; current_scope = NULL; }
     if (super_global_scope) { scope_free(super_global_scope); super_global_scope = NULL; }
     while (func_table) {
-        FuncEntry *next = func_table->next;
-        free(func_table->name);
-        free(func_table->obj);
-        free(func_table);
+        FuncEntry *entry = func_table;
+        FuncEntry *next = entry->next;
+        FuncObject *obj = entry->obj;
+        bool shared_obj = false;
+        for (FuncEntry *scan = next; scan; scan = scan->next) {
+            if (scan->obj == obj) {
+                shared_obj = true;
+                break;
+            }
+        }
+        free(entry->name);
+        if (!shared_obj && obj) {
+            if (obj->kind == FUNC_USER && obj->code) {
+                chunk_free(obj->code);
+                obj->code = NULL;
+            }
+            free(obj);
+        }
+        free(entry);
         func_table = next;
     }
     if (infernal_shell) { free(infernal_shell); infernal_shell = NULL; }
@@ -192,6 +207,7 @@ int main(int argc, char **argv) {
     NodeList program = {NULL, 0, 0};
     Chunk *main_chunk = NULL;
     bool file_open = true;
+    bool parse_complete = false;
 
     if (!setjmp(exception_env)) {
         ts_init();
@@ -200,10 +216,11 @@ int main(int argc, char **argv) {
         file_open = false;
 
         program = parse_block(NULL);
+        parse_complete = true;
 
         main_chunk = compile_program(&program);
         Value result = vm_run(main_chunk);
-        value_free(&result);
+        (void)result;
 
         chunk_free(main_chunk);
         main_chunk = NULL;
@@ -224,7 +241,13 @@ int main(int argc, char **argv) {
         if (file_open) fclose(fp);
         if (main_chunk) { chunk_free(main_chunk); main_chunk = NULL; }
         vm_cleanup_state();
-        nodelist_free(&program);
+        if (!parse_complete) {
+            compiler_cleanup_on_error();
+            parser_cleanup_on_error();
+            program = (NodeList){NULL, 0, 0};
+        } else {
+            nodelist_free(&program);
+        }
         if (ts.tokens) {
             for (int i = 0; i < ts.count; i++) free(ts.tokens[i].lexeme);
             free(ts.tokens); ts.tokens = NULL; ts.count = ts.cap = ts.pos = 0;

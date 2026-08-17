@@ -20,6 +20,7 @@
 #include "lexer/lexer.h"
 #include "parser/parser.h"
 #include "developer/debug.h"
+#include "vm/vm.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
@@ -49,18 +50,14 @@ void exec_stmt(ASTNode *stmt) {
 
     switch (stmt->kind) {
 
-        case NODE_EXPR_STMT: {
-            Value result = eval_expr(stmt->data.expr_stmt.expr);
-            value_free(&result);
+        case NODE_EXPR_STMT:
+            eval_expr(stmt->data.expr_stmt.expr);
             break;
-        }
 
         case NODE_POST_INC:
-        case NODE_POST_DEC: {
-            Value result = eval_expr(stmt);
-            value_free(&result);
+        case NODE_POST_DEC:
+            eval_expr(stmt);
             break;
-        }
 
         case NODE_CMD_STMT: {
             char *expanded = expand_command(stmt->data.cmd_stmt.cmd);
@@ -85,7 +82,7 @@ void exec_stmt(ASTNode *stmt) {
         case NODE_ASSIGN: {
             DEBUG_INFO("ASIGNACION: nombre='%s', is_cmd=%d", stmt->data.assign.name, stmt->data.assign.is_cmd);
 
-            Value val;
+            Value val = val_make_null();
             if (stmt->data.assign.is_cmd) {
                 // ... (código de comandos, sin cambios) ...
                 char *cmd = stmt->data.assign.cmd_str;
@@ -184,8 +181,9 @@ void exec_stmt(ASTNode *stmt) {
                     free(expanded_cmd);
                 }
             } else {
-                // Asignación normal (no comando)
-                if (stmt->data.assign.lhs_index) {
+                // Asignación normal (no comando). Una declaración tipada sin '='
+                // ya recibió su valor por defecto arriba.
+                if (stmt->data.assign.value != NULL && stmt->data.assign.lhs_index) {
                     // Asignación con índice (ej: lista[2] = 5)
                     VarEntry *var = scope_find(current_scope, stmt->data.assign.name);
                     if (!var) error(stmt->line, "Variable no definida: %s", stmt->data.assign.name);
@@ -198,20 +196,33 @@ void exec_stmt(ASTNode *stmt) {
                         value_free(&var->value.data.list.items[idx - 1]);
                         var->value.data.list.items[idx - 1] = copy_value_secure(new_val);
                         value_free(&new_val);
-                        value_free(&idx_val);
                     } else if (var->value.type == VAL_MAP) {
                         if (idx_val.type != VAL_STRING) error(stmt->line, "Clave de mapa debe ser string");
                         Value new_val = eval_expr(stmt->data.assign.value);
                         val_map_set(&var->value, idx_val.data.sval, new_val);
                         value_free(&new_val);
-                        value_free(&idx_val);
                     } else {
+                        value_free(&idx_val);
                         error(stmt->line, "No se puede indexar este tipo de variable");
                     }
+                    value_free(&idx_val);
                     break;
                 }
                 // Asignación sin índice
-                val = eval_expr(stmt->data.assign.value);
+                if (stmt->data.assign.value != NULL)
+                    val = eval_expr(stmt->data.assign.value);
+                else if (stmt->data.assign.vtype == TOK_INT)
+                    val = val_int(0);
+                else if (stmt->data.assign.vtype == TOK_FLOAT)
+                    val = val_float(0.0);
+                else if (stmt->data.assign.vtype == TOK_BOOL)
+                    val = val_bool(false);
+                else if (stmt->data.assign.vtype == TOK_STRING)
+                    val = val_string("");
+                else if (stmt->data.assign.vtype == TOK_LIST)
+                    val = val_list_empty();
+                else if (stmt->data.assign.vtype == TOK_MAP)
+                    val = val_map_empty();
             }
 
             // --- Obtener el tipo fijo declarado ---
@@ -242,6 +253,22 @@ void exec_stmt(ASTNode *stmt) {
             if (stmt->data.assign.is_global) {
                 DEBUG_INFO("Definiendo global '%s' en super_global_scope", stmt->data.assign.name);
                 scope_define(super_global_scope, stmt->data.assign.name, vtype, val);
+
+                /*
+                 * La ejecución de funciones pasa por el evaluador, mientras que
+                 * las lecturas posteriores del programa pueden pasar por la VM.
+                 * Sin sincronizar aquí, una declaración `global` modificada dentro
+                 * de una función podía volver a verse con el valor antiguo en la VM.
+                 */
+                int gidx = vm_find_global_index(stmt->data.assign.name);
+                if (gidx < 0) {
+                    gidx = vm_register_global(stmt->data.assign.name, GLOBAL_SUPER, vtype);
+                }
+                if (gidx >= 0) {
+                    value_free(&vm_globals[gidx]);
+                    vm_globals[gidx] = copy_value_secure(val);
+                    if (vtype != 0) vm_global_types[gidx] = vtype;
+                }
             } else if (stmt->data.assign.is_local) {
                 DEBUG_INFO("Definiendo local '%s' en current_scope", stmt->data.assign.name);
                 scope_define(current_scope, stmt->data.assign.name, vtype, val);
@@ -253,6 +280,8 @@ void exec_stmt(ASTNode *stmt) {
                     Value copied = copy_value_secure(val);
                     value_free(&var->value);
                     var->value = copied;
+                    /* La copia ya es propiedad de la variable. El valor
+                     * evaluado temporalmente deja de tener propietario. */
                     value_free(&val);
                     if (vtype != 0) {
                         var->vtype = vtype;
@@ -274,7 +303,6 @@ void exec_stmt(ASTNode *stmt) {
             } else {
                 exec_block_impl(&stmt->data.if_stmt.else_block);
             }
-            value_free(&cond);
             if (control_flow == CF_REPEAT_LINE) return;
             break;
         }
@@ -286,11 +314,7 @@ void exec_stmt(ASTNode *stmt) {
                     error(stmt->line, "Límite de iteraciones (%d) alcanzado en bucle while", max_loop_iterations);
                 iter_count++;
                 Value cond = eval_expr(stmt->data.while_stmt.cond);
-                if (!val_is_truthy(cond)) {
-                    value_free(&cond);
-                    break;
-                }
-                value_free(&cond);
+                if (!val_is_truthy(cond)) break;
                 Scope *block_scope = scope_new(current_scope, NULL);
                 Scope *old_scope = current_scope;
                 current_scope = block_scope;
@@ -386,7 +410,6 @@ void exec_stmt(ASTNode *stmt) {
                     Value copied = copy_value_secure(init_val);
                     value_free(&existing->value);
                     existing->value = copied;
-                    value_free(&init_val);
 
                     if (vtype != 0) {
                         existing->vtype = vtype;
@@ -534,14 +557,8 @@ void exec_stmt(ASTNode *stmt) {
                 scope_free(iter_scope);
                 if (control_flow == CF_BREAK) { control_flow = CF_NONE; break; }
                 if (control_flow == CF_CONTINUE) { control_flow = CF_NONE; continue; }
-                if (control_flow == CF_REPEAT_LINE) {
-                    value_free(&list_val);
-                    return;
-                }
-                if (control_flow == CF_RETURN) {
-                    value_free(&list_val);
-                    return;
-                }
+                if (control_flow == CF_REPEAT_LINE) { value_free(&list_val); return; }
+                if (control_flow == CF_RETURN) { value_free(&list_val); return; }
             }
             value_free(&list_val);
             break;
