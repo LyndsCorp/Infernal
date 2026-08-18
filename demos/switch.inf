@@ -1,0 +1,33 @@
+#!../infernal
+int var
+var = 2
+booleano = true
+texto = "¡Hola!"
+
+switch var
+    case 1
+        print("Hola mundo")
+        break
+    case 2
+        print("Hello world")
+        break
+    default
+        print("Nada se cumple")
+        break
+fi
+
+switch booleano
+    case true
+    case false
+        print("El booleano es false o true")
+        break #SI NO TIENE ESTO, DA ERROR
+fi
+
+switch texto
+    case "¡Hola!"
+    case "¡Adiós!"
+        print("Me has saludado")
+    default
+        echo "Te digo esto desde el shell :). También si me has saludado o no."
+        break
+fi
