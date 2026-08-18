@@ -63,8 +63,6 @@ TokenType lookup_keyword(const char *lexeme) {
     // Utilidades
     if (strcmp(lexeme, "flags") == 0) return TOK_FLAG;
     if (strcmp(lexeme, "line") == 0) return TOK_LINE;
-
-    // NUEVO: execute
     if (strcmp(lexeme, "execute") == 0) return TOK_EXECUTE;
 
     return TOK_IDENT;
