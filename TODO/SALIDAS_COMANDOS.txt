@@ -1,0 +1,12 @@
+#FILE: SALIDAS_COMANDOS.txt
+Estuve trasteando entre los demos y encontré que si pongo:
+``` Infernal
+int var = exited(cat $archivo)
+```
+Funciona bien lo de imprimir la variable archivo de Infernal, pero lo que pasa es que la salida de ejecutar ese comando sale en la terminal.
+No debería imprimir la salida, solo devolver int un al valor de var con el valor del código de salida que le dió ejecutar ese comando.
+Y con bool var = comando también pasó. Puse:
+``` Infernal
+bool var = cat $archivo
+```
+Para comprobar si el archivo existe, y la terminal se ensució con la salida de que no existe ese archivo, pero el booleano devolvió correctamente false porque falló el comando. La salida de ese comando no se debería ver sea cual sea el código de salida que muestre.
