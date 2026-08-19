@@ -27,6 +27,7 @@ switch texto
     case "¡Hola!"
     case "¡Adiós!"
         print("Me has saludado")
+      break
     default
         echo "Te digo esto desde el shell :). También si me has saludado o no."
         break
