@@ -1,0 +1,8 @@
+#FILE: VAR++_BIEN.txt
+Actualmnete:
+``` Infernal
+x = 10
+y = $x++
+```
+no tiene sentido que x sea 11 e y 10 (bueno, si pero estamos usando el $, la maquina de clonacion)
+Entonces propongo que haga que x siga siendo 10 e y sea x++ (11).
