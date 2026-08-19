@@ -325,30 +325,37 @@ void exec_stmt(ASTNode *stmt) {
             Value selector = eval_expr(stmt->data.switch_stmt.expr);
             bool matched = false;
 
-            for (int i = 0; i < stmt->data.switch_stmt.case_count; i++) {
+            for (int i = 0; i < stmt->data.switch_stmt.case_count && !matched; i++) {
                 SwitchCase *swcase = &stmt->data.switch_stmt.cases[i];
                 Value case_value = eval_expr(swcase->value);
                 bool equal = switch_values_equal(selector, case_value);
-                value_free(&case_value);
+                value_free(&case_value);   // liberar el valor del caso
 
-                if (!matched && equal) {
+                if (equal) {
                     matched = true;
-                    /* Un case vacío es un alias: sigue buscando el primer
-                     * case posterior que tenga cuerpo ejecutable. */
-                }
-
-                if (matched && swcase->body.count > 0) {
-                    exec_block_impl(&swcase->body);
-                    if (control_flow == CF_BREAK) control_flow = CF_NONE;
-                    break;
+                    if (swcase->body.count > 0) {
+                        exec_block_impl(&swcase->body);
+                        // Si el bloque tenía break, limpiar la bandera
+                        if (control_flow == CF_BREAK) {
+                            control_flow = CF_NONE;
+                        }
+                        // Salir del bucle (ya ejecutamos el primer caso con cuerpo)
+                        break;
+                    }
+                    // Si el caso no tiene cuerpo, seguimos buscando el siguiente caso con cuerpo
+                    // (pero sin evaluar más casos, porque matched ya es true)
                 }
             }
 
+            // Si no hubo coincidencia y existe default, ejecutarlo
             if (!matched && stmt->data.switch_stmt.has_default) {
                 exec_block_impl(&stmt->data.switch_stmt.default_block);
-                if (control_flow == CF_BREAK) control_flow = CF_NONE;
+                if (control_flow == CF_BREAK) {
+                    control_flow = CF_NONE;
+                }
             }
 
+            // Liberar el selector una sola vez
             value_free(&selector);
             break;
         }
