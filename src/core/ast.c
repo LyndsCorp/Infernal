@@ -114,6 +114,15 @@ static void ast_free_internal(ASTNode *node) {
             break;
         case NODE_IF: ast_free_internal(node->data.if_stmt.cond); nodelist_free_internal(&node->data.if_stmt.then_block); nodelist_free_internal(&node->data.if_stmt.else_block); break;
         case NODE_WHILE: ast_free_internal(node->data.while_stmt.cond); nodelist_free_internal(&node->data.while_stmt.body); break;
+        case NODE_SWITCH:
+            ast_free_internal(node->data.switch_stmt.expr);
+            for (int i = 0; i < node->data.switch_stmt.case_count; i++) {
+                ast_free_internal(node->data.switch_stmt.cases[i].value);
+                nodelist_free_internal(&node->data.switch_stmt.cases[i].body);
+            }
+            free(node->data.switch_stmt.cases);
+            nodelist_free_internal(&node->data.switch_stmt.default_block);
+            break;
         case NODE_FOR: free(node->data.for_stmt.var); ast_free_internal(node->data.for_stmt.init); ast_free_internal(node->data.for_stmt.cond); ast_free_internal(node->data.for_stmt.incr); nodelist_free_internal(&node->data.for_stmt.body); break;
         case NODE_FUNC_DEF:
             free(node->data.func.name);

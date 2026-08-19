@@ -44,6 +44,20 @@ void exec_block_from_impl(NodeList *block, int start_index) {
     }
 }
 
+
+static bool switch_values_equal(Value left, Value right) {
+    if (left.type != right.type) return false;
+    switch (left.type) {
+        case VAL_NULL: return true;
+        case VAL_BOOL: return left.data.bval == right.data.bval;
+        case VAL_INT: return left.data.ival == right.data.ival;
+        case VAL_FLOAT: return left.data.fval == right.data.fval;
+        case VAL_STRING:
+            return left.data.sval && right.data.sval && strcmp(left.data.sval, right.data.sval) == 0;
+        default: return false;
+    }
+}
+
 /* --- Implementación de exec_stmt --- */
 void exec_stmt(ASTNode *stmt) {
     DEBUG_INFO("exec_stmt: kind=%d, line=%d", stmt->kind, stmt->line);
@@ -304,6 +318,38 @@ void exec_stmt(ASTNode *stmt) {
                 exec_block_impl(&stmt->data.if_stmt.else_block);
             }
             if (control_flow == CF_REPEAT_LINE) return;
+            break;
+        }
+
+        case NODE_SWITCH: {
+            Value selector = eval_expr(stmt->data.switch_stmt.expr);
+            bool matched = false;
+
+            for (int i = 0; i < stmt->data.switch_stmt.case_count; i++) {
+                SwitchCase *swcase = &stmt->data.switch_stmt.cases[i];
+                Value case_value = eval_expr(swcase->value);
+                bool equal = switch_values_equal(selector, case_value);
+                value_free(&case_value);
+
+                if (!matched && equal) {
+                    matched = true;
+                    /* Un case vacío es un alias: sigue buscando el primer
+                     * case posterior que tenga cuerpo ejecutable. */
+                }
+
+                if (matched && swcase->body.count > 0) {
+                    exec_block_impl(&swcase->body);
+                    if (control_flow == CF_BREAK) control_flow = CF_NONE;
+                    break;
+                }
+            }
+
+            if (!matched && stmt->data.switch_stmt.has_default) {
+                exec_block_impl(&stmt->data.switch_stmt.default_block);
+                if (control_flow == CF_BREAK) control_flow = CF_NONE;
+            }
+
+            value_free(&selector);
             break;
         }
 

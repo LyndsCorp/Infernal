@@ -160,6 +160,123 @@ char *build_command_from_tokens(int start_pos, int end_pos) {
     return cmd;
 }
 
+
+static int find_switch_boundary(int start_pos) {
+    int depth = 0;
+    for (int i = start_pos; i < ts.count; i++) {
+        TokenType type = ts.tokens[i].type;
+        if (type == TOK_IF || type == TOK_WHILE || type == TOK_FOR ||
+            type == TOK_FUNCTION || type == TOK_TRY || type == TOK_SWITCH) {
+            depth++;
+            continue;
+        }
+        if (type == TOK_FI) {
+            if (depth == 0) return i;
+            depth--;
+            continue;
+        }
+        if (depth == 0 && (type == TOK_CASE || type == TOK_DEFAULT)) return i;
+    }
+    return -1;
+}
+
+static bool validate_switch_body(const NodeList *body) {
+    if (!body || body->count == 0) return true;
+    return body->stmts[body->count - 1]->kind == NODE_BREAK;
+}
+
+static ASTNode *parse_switch_statement(void) {
+    Token t = ts_peek();
+    int line = t.line;
+    ts_advance();
+
+    ASTNode *stmt = node_create(NODE_SWITCH, line);
+    stmt->data.switch_stmt.expr = parse_expression(0);
+    stmt->data.switch_stmt.cases = NULL;
+    stmt->data.switch_stmt.case_count = 0;
+    stmt->data.switch_stmt.default_block = (NodeList){NULL, 0, 0};
+    stmt->data.switch_stmt.has_default = false;
+
+    ts_skip_newlines();
+
+    while (1) {
+        Token head = ts_peek();
+        if (head.type == TOK_FI) {
+            ts_advance();
+            break;
+        }
+        if (head.type == TOK_EOF) {
+            error(line, "Se esperaba 'fi' para cerrar el switch");
+        }
+        if (head.type == TOK_CASE) {
+            ts_advance();
+            ASTNode *value = parse_expression(0);
+            if (!value) error(head.line, "Se esperaba un valor después de 'case'");
+            ts_skip_newlines();
+
+            int boundary = find_switch_boundary(ts.pos);
+            if (boundary < 0) error(head.line, "Se esperaba otro 'case', 'default' o 'fi' en el switch");
+
+            TokenType saved_type = ts.tokens[boundary].type;
+            ts.tokens[boundary].type = TOK_EOF;
+            NodeList body = parse_block(NULL);
+            ts.tokens[boundary].type = saved_type;
+            ts.pos = boundary;
+
+            /* Validate before attaching the partially parsed case to the
+             * switch AST.  On parser errors error() longjmps to the outer
+             * cleanup path, so keeping ownership unambiguous here avoids
+             * double-freeing partially constructed switch nodes. */
+            if (!validate_switch_body(&body)) {
+                /* `body` is not owned by the switch yet.  Free its NodeList
+                 * storage before jumping out through the parser error path. */
+                nodelist_free(&body);
+                error(head.line, "El case debe terminar con 'break'");
+            }
+
+            int n = stmt->data.switch_stmt.case_count;
+            SwitchCase *tmp = infernal_realloc(stmt->data.switch_stmt.cases, (size_t)(n + 1) * sizeof(*tmp));
+            stmt->data.switch_stmt.cases = tmp;
+            stmt->data.switch_stmt.cases[n].value = value;
+            stmt->data.switch_stmt.cases[n].body = body;
+            stmt->data.switch_stmt.case_count = n + 1;
+            ts_skip_newlines();
+            continue;
+        }
+        if (head.type == TOK_DEFAULT) {
+            if (stmt->data.switch_stmt.has_default)
+                error(head.line, "No puede haber más de un 'default' en un switch");
+            ts_advance();
+            ts_skip_newlines();
+
+            int boundary = find_switch_boundary(ts.pos);
+            if (boundary < 0) error(head.line, "Se esperaba 'fi' al cerrar el switch");
+            if (boundary != ts.pos && ts.tokens[boundary].type == TOK_CASE)
+                error(head.line, "'default' debe ser el último bloque del switch");
+
+            TokenType saved_type = ts.tokens[boundary].type;
+            ts.tokens[boundary].type = TOK_EOF;
+            NodeList body = parse_block(NULL);
+            ts.tokens[boundary].type = saved_type;
+            ts.pos = boundary;
+
+            /* Same ownership rule as cases: validate before attaching the
+             * block so a syntax error cannot leave duplicate ownership. */
+            if (!validate_switch_body(&body)) {
+                nodelist_free(&body);
+                error(head.line, "El default debe terminar con 'break'");
+            }
+            stmt->data.switch_stmt.default_block = body;
+            stmt->data.switch_stmt.has_default = true;
+            ts_skip_newlines();
+            continue;
+        }
+        error(head.line, "Se esperaba 'case', 'default' o 'fi' dentro del switch");
+    }
+
+    return stmt;
+}
+
 ASTNode *parse_if_statement() {
     Token t = ts_peek();
     int line = t.line;
@@ -464,6 +581,15 @@ NodeList parse_block(const char *terminator) {
             stmt->data.execute.argc = argc;
             nodelist_add(&block, stmt);
             DEBUG_INFO("parse_block: añadido NODE_EXECUTE en línea %d", stmt->line);
+            ts_skip_newlines();
+            continue;
+        }
+
+        /* --- SWITCH --- */
+        if (t.type == TOK_SWITCH) {
+            stmt = parse_switch_statement();
+            nodelist_add(&block, stmt);
+            DEBUG_INFO("parse_block: añadido NODE_SWITCH en línea %d", stmt->line);
             ts_skip_newlines();
             continue;
         }

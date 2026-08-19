@@ -17,6 +17,9 @@ TokenType lookup_keyword(const char *lexeme) {
     if (strcmp(lexeme, "elseif") == 0) return TOK_ELSEIF;
     if (strcmp(lexeme, "while") == 0) return TOK_WHILE;
     if (strcmp(lexeme, "for") == 0) return TOK_FOR;
+    if (strcmp(lexeme, "switch") == 0) return TOK_SWITCH;
+    if (strcmp(lexeme, "case") == 0) return TOK_CASE;
+    if (strcmp(lexeme, "default") == 0) return TOK_DEFAULT;
 
     // Funciones
     if (strcmp(lexeme, "function") == 0) return TOK_FUNCTION;

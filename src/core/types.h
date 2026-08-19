@@ -21,7 +21,7 @@ typedef enum {
     TOK_LBRACE, TOK_RBRACE,
     TOK_SEMI, TOK_COMMA, TOK_PIPE, TOK_GT_OP, TOK_LT_OP, TOK_GGT,
     TOK_IF, TOK_THEN, TOK_FI, TOK_ELSE, TOK_ELSEIF,
-    TOK_WHILE, TOK_FOR,
+    TOK_WHILE, TOK_FOR, TOK_SWITCH, TOK_CASE, TOK_DEFAULT,
     TOK_FUNCTION, TOK_RETURN, TOK_BREAK, TOK_REPEAT, TOK_CONTINUE,
     TOK_IMPORT, TOK_TRY, TOK_CATCH,
     TOK_INT, TOK_FLOAT, TOK_BOOL, TOK_STRING, TOK_LIST,
@@ -116,11 +116,16 @@ typedef struct FuncObject {
     Chunk *code;
 } FuncObject;
 
+typedef struct {
+    ASTNode *value;
+    NodeList body;
+} SwitchCase;
+
 struct ASTNode {
     int line;
     enum {
         NODE_PROGRAM, NODE_EXPR_STMT, NODE_CMD_STMT, NODE_SHELL_CMD, NODE_ASSIGN,
-        NODE_IF, NODE_WHILE, NODE_FOR, NODE_FUNC_DEF, NODE_RETURN,
+        NODE_IF, NODE_WHILE, NODE_FOR, NODE_SWITCH, NODE_FUNC_DEF, NODE_RETURN,
         NODE_BREAK, NODE_CONTINUE, NODE_REPEAT, NODE_IMPORT, NODE_TRY,
         NODE_VAR, NODE_LITERAL, NODE_BINOP, NODE_CALL, NODE_INDEX,
         NODE_FLAGS, NODE_LIST, NODE_FOR_IN, NODE_PORTAL,
@@ -139,6 +144,13 @@ struct ASTNode {
         struct { char *name; ASTNode *value; bool is_cmd; char *cmd_str; int vtype;
             bool is_local; bool is_global; ASTNode *lhs_index; } assign;
             struct { ASTNode *cond; NodeList then_block, else_block; } if_stmt;
+            struct {
+                ASTNode *expr;
+                SwitchCase *cases;
+                int case_count;
+                NodeList default_block;
+                bool has_default;
+            } switch_stmt;
             struct { ASTNode *cond; NodeList body; } while_stmt;
             struct {
                 char *var;
