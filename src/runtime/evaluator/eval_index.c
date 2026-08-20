@@ -5,6 +5,9 @@
  * Código fuente de Infernal: runtime/evaluator/eval_index.c
 */
 
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include "eval_index.h"
 #include "eval_slice.h"
 #include "helpers.h"
@@ -12,8 +15,6 @@
 #include "core/value.h"
 #include "runtime/error.h"
 #include "runtime/globals.h"
-#include <string.h>
-#include <stdlib.h>
 
 Value eval_index(ASTNode *expr) {
     if (expr->data.idx.index->kind == NODE_SLICE) {
@@ -88,6 +89,16 @@ Value eval_index(ASTNode *expr) {
         case VAL_MAP: {
             if (idx.type != VAL_STRING) {
                 error(line, "La clave de un mapa debe ser string");
+            }
+            // Comprobar si la clave existe
+            if (!val_map_has(base, idx.data.sval)) {
+                char map_name[256] = "";
+                if (expr->data.idx.list->kind == NODE_VAR) {
+                    const char *name = expr->data.idx.list->data.var.name;
+                    if (name[0] == '$' || name[0] == '?') name++;
+                    snprintf(map_name, sizeof(map_name), " '%s'", name);
+                }
+                error(line, "Clave '%s' no encontrada en el mapa%s", idx.data.sval, map_name);
             }
             result = val_map_get(base, idx.data.sval);
             break;

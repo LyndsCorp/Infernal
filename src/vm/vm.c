@@ -5,7 +5,7 @@
  * Código fuente de Infernal: vm/vm.c
 */
 
-#include "vm.h"
+// #include "vm.h"
 #include "core/value.h"
 #include "runtime/command.h"
 #include "runtime/error.h"
@@ -684,8 +684,18 @@ Value vm_run(Chunk *chunk) {
                                     }
 
                                     case OP_INDEX: {
+                                        int name_idx = ip->operand2;
+                                        const char *map_name = NULL;
+                                        if (name_idx != 0) {
+                                            Value name_val = chunk->constants[name_idx];
+                                            if (name_val.type == VAL_STRING) {
+                                                map_name = name_val.data.sval;
+                                            }
+                                        }
+
                                         Value idx = pop();
                                         Value base = pop();
+
                                         if (base.type == VAL_LIST) {
                                             if (idx.type != VAL_INT) {
                                                 value_free(&idx);
@@ -699,7 +709,8 @@ Value vm_run(Chunk *chunk) {
                                                 error(current_eval_line, "Índice fuera de rango");
                                             }
                                             push(copy_value_secure(base.data.list.items[i - 1]));
-                                        } else if (base.type == VAL_STRING) {
+                                        }
+                                        else if (base.type == VAL_STRING) {
                                             if (idx.type != VAL_INT) {
                                                 value_free(&idx);
                                                 value_free(&base);
@@ -714,18 +725,34 @@ Value vm_run(Chunk *chunk) {
                                             }
                                             char c[2] = {base.data.sval[i - 1], 0};
                                             push(val_string(c));
-                                        } else if (base.type == VAL_MAP) {
+                                        }
+                                        else if (base.type == VAL_MAP) {
                                             if (idx.type != VAL_STRING) {
                                                 value_free(&idx);
                                                 value_free(&base);
                                                 error(current_eval_line, "La clave de mapa debe ser string");
                                             }
-                                            push(val_map_get(base, idx.data.sval));
-                                        } else {
+                                            // Comprobar si la clave existe
+                                            if (!val_map_has(base, idx.data.sval)) {
+                                                if (map_name) {
+                                                    error(current_eval_line,
+                                                          "Clave '%s' no encontrada en el mapa '%s'",
+                                                          idx.data.sval, map_name);
+                                                } else {
+                                                    error(current_eval_line,
+                                                          "Clave '%s' no encontrada en el mapa",
+                                                          idx.data.sval);
+                                                }
+                                            }
+                                            Value result = val_map_get(base, idx.data.sval);
+                                            push(result);
+                                        }
+                                        else {
                                             value_free(&idx);
                                             value_free(&base);
                                             error(current_eval_line, "Indexación no soportada");
                                         }
+
                                         value_free(&idx);
                                         value_free(&base);
                                         ip++;

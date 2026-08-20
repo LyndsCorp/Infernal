@@ -188,6 +188,7 @@ static void collect_portals_rec(ASTNode *node, Compiler *c) {
                 collect_portals_rec(node->data.call.args[i], c);
         break;
         case NODE_INDEX:
+            // Solo recorremos los hijos, no compilamos aquí
             collect_portals_rec(node->data.idx.list, c);
             collect_portals_rec(node->data.idx.index, c);
             break;
@@ -206,6 +207,7 @@ static void collect_portals_rec(ASTNode *node, Compiler *c) {
     }
 }
 
+/* --- Declaración anticipada de compile_expr --- */
 static void compile_expr(Compiler *c, ASTNode *expr);
 static void compile_block(Compiler *c, NodeList *block);
 
@@ -335,7 +337,15 @@ static void compile_expr(Compiler *c, ASTNode *expr) {
                                     case NODE_INDEX: {
                                         compile_expr(c, expr->data.idx.list);
                                         compile_expr(c, expr->data.idx.index);
+                                        // Guardar el nombre del mapa para mensajes de error
+                                        int name_idx = 0;
+                                        if (expr->data.idx.list->kind == NODE_VAR) {
+                                            const char *name = expr->data.idx.list->data.var.name;
+                                            if (name[0] == '$' || name[0] == '?') name++;
+                                            name_idx = add_constant(c, val_string(name));
+                                        }
                                         emit(c->chunk, OP_INDEX, 0, expr->line);
+                                        c->chunk->code[c->chunk->code_count - 1].operand2 = name_idx;
                                         break;
                                     }
                                     case NODE_SLICE: {
@@ -417,111 +427,68 @@ static void compile_stmt(Compiler *c, ASTNode *stmt) {
             if (!stmt->data.assign.is_cmd && stmt->data.assign.value == NULL &&
                 !stmt->data.assign.lhs_index) {
                 bool to_local = stmt->data.assign.is_local;
-                int gidx = -1;
-                int slot = -1;
-
-                if (stmt->data.assign.is_global) {
-                    gidx = vm_find_global_index(name);
-                    if (gidx < 0) gidx = vm_register_global(name, GLOBAL_SUPER, vtype);
-                    else if (vtype != 0) vm_global_types[gidx] = vtype;
-                } else if (to_local) {
-                    slot = resolve_local(c, name);
-                    if (slot < 0) slot = add_local(c, name);
-                    if (vtype != 0) c->local_types[slot] = vtype;
-                } else {
-                    gidx = vm_find_global_index(name);
-                    if (gidx < 0) gidx = vm_register_global(name, GLOBAL_SCRIPT, vtype);
-                    else if (vtype != 0) vm_global_types[gidx] = vtype;
-                }
-
-                switch (vtype) {
-                    case TOK_INT:
-                        emit(c->chunk, OP_PUSH_INT, add_constant(c, val_int(0)), stmt->line);
-                        break;
-                    case TOK_FLOAT:
-                        emit(c->chunk, OP_PUSH_FLOAT, add_constant(c, val_float(0.0)), stmt->line);
-                        break;
-                    case TOK_BOOL:
-                        emit(c->chunk, OP_PUSH_BOOL, add_constant(c, val_bool(false)), stmt->line);
-                        break;
-                    case TOK_STRING:
-                        emit(c->chunk, OP_PUSH_STRING, add_constant(c, val_string("")), stmt->line);
-                        break;
-                    case TOK_LIST:
-                        emit(c->chunk, OP_NEW_LIST, 0, stmt->line);
-                        break;
-                    case TOK_MAP:
-                        emit(c->chunk, OP_NEW_MAP, 0, stmt->line);
-                        break;
-                    default:
-                        emit(c->chunk, OP_PUSH_NULL, 0, stmt->line);
-                        break;
-                }
-
-                if (to_local) {
-                    emit(c->chunk, OP_STORE_VAR, slot, stmt->line);
-                } else {
-                    emit(c->chunk, OP_STORE_GLOBAL, gidx, stmt->line);
-                    c->chunk->code[c->chunk->code_count - 1].operand2 =
-                        stmt->data.assign.is_global ? GLOBAL_SUPER : GLOBAL_SCRIPT;
-                }
-                break;
-            }
-
-            if (stmt->data.assign.lhs_index) {
-                int const_idx = add_constant(c, val_ptr(stmt));
-                emit(c->chunk, OP_INTERPRET_NODE, const_idx, stmt->line);
-                c->chunk->code[c->chunk->code_count - 1].operand2 = 0;
-                break;
-            }
+            int gidx = -1;
+            int slot = -1;
 
             if (stmt->data.assign.is_global) {
-                int gidx = vm_find_global_index(name);
-                if (gidx < 0) {
-                    gidx = vm_register_global(name, GLOBAL_SUPER, vtype);
-                } else if (vtype != 0) {
-                    vm_global_types[gidx] = vtype;
-                }
-                if (stmt->data.assign.is_cmd) {
-                    int const_node = add_constant(c, val_ptr(stmt));
-                    emit(c->chunk, OP_INTERPRET_NODE, const_node, stmt->line);
-                    c->chunk->code[c->chunk->code_count - 1].operand2 = 0;
-                } else {
-                    compile_expr(c, stmt->data.assign.value);
-                    emit(c->chunk, OP_STORE_GLOBAL, gidx, stmt->line);
-                    c->chunk->code[c->chunk->code_count - 1].operand2 = GLOBAL_SUPER;
-                }
-            } else if (stmt->data.assign.is_local) {
-                int slot = resolve_local(c, name);
+                gidx = vm_find_global_index(name);
+                if (gidx < 0) gidx = vm_register_global(name, GLOBAL_SUPER, vtype);
+                else if (vtype != 0) vm_global_types[gidx] = vtype;
+            } else if (to_local) {
+                slot = resolve_local(c, name);
                 if (slot < 0) slot = add_local(c, name);
                 if (vtype != 0) c->local_types[slot] = vtype;
-                if (stmt->data.assign.is_cmd) {
-                    int const_idx = add_constant(c, val_string(stmt->data.assign.cmd_str));
-                    emit(c->chunk, OP_CMD_ASSIGN, const_idx, stmt->line);
-                    c->chunk->code[c->chunk->code_count - 1].operand2 = slot;
-                } else {
-                    compile_expr(c, stmt->data.assign.value);
-                    emit(c->chunk, OP_STORE_VAR, slot, stmt->line);
-                }
             } else {
-                // Asignación sin calificador: primero resolver como local
-                int slot = resolve_local(c, name);
-                if (slot >= 0) {
-                    // Es una variable local → actualizar local
-                    if (vtype != 0) c->local_types[slot] = vtype;
-                    if (stmt->data.assign.is_cmd) {
-                        int const_idx = add_constant(c, val_string(stmt->data.assign.cmd_str));
-                        emit(c->chunk, OP_CMD_ASSIGN, const_idx, stmt->line);
-                        c->chunk->code[c->chunk->code_count - 1].operand2 = slot;
-                    } else {
-                        compile_expr(c, stmt->data.assign.value);
-                        emit(c->chunk, OP_STORE_VAR, slot, stmt->line);
-                    }
-                } else {
-                    // No es local → tratarlo como global
+                gidx = vm_find_global_index(name);
+                if (gidx < 0) gidx = vm_register_global(name, GLOBAL_SCRIPT, vtype);
+                else if (vtype != 0) vm_global_types[gidx] = vtype;
+            }
+
+            switch (vtype) {
+                case TOK_INT:
+                    emit(c->chunk, OP_PUSH_INT, add_constant(c, val_int(0)), stmt->line);
+                    break;
+                case TOK_FLOAT:
+                    emit(c->chunk, OP_PUSH_FLOAT, add_constant(c, val_float(0.0)), stmt->line);
+                    break;
+                case TOK_BOOL:
+                    emit(c->chunk, OP_PUSH_BOOL, add_constant(c, val_bool(false)), stmt->line);
+                    break;
+                case TOK_STRING:
+                    emit(c->chunk, OP_PUSH_STRING, add_constant(c, val_string("")), stmt->line);
+                    break;
+                case TOK_LIST:
+                    emit(c->chunk, OP_NEW_LIST, 0, stmt->line);
+                    break;
+                case TOK_MAP:
+                    emit(c->chunk, OP_NEW_MAP, 0, stmt->line);
+                    break;
+                default:
+                    emit(c->chunk, OP_PUSH_NULL, 0, stmt->line);
+                    break;
+            }
+
+            if (to_local) {
+                emit(c->chunk, OP_STORE_VAR, slot, stmt->line);
+            } else {
+                emit(c->chunk, OP_STORE_GLOBAL, gidx, stmt->line);
+                c->chunk->code[c->chunk->code_count - 1].operand2 =
+                stmt->data.assign.is_global ? GLOBAL_SUPER : GLOBAL_SCRIPT;
+            }
+            break;
+                }
+
+                if (stmt->data.assign.lhs_index) {
+                    int const_idx = add_constant(c, val_ptr(stmt));
+                    emit(c->chunk, OP_INTERPRET_NODE, const_idx, stmt->line);
+                    c->chunk->code[c->chunk->code_count - 1].operand2 = 0;
+                    break;
+                }
+
+                if (stmt->data.assign.is_global) {
                     int gidx = vm_find_global_index(name);
                     if (gidx < 0) {
-                        gidx = vm_register_global(name, GLOBAL_SCRIPT, vtype);
+                        gidx = vm_register_global(name, GLOBAL_SUPER, vtype);
                     } else if (vtype != 0) {
                         vm_global_types[gidx] = vtype;
                     }
@@ -532,11 +499,54 @@ static void compile_stmt(Compiler *c, ASTNode *stmt) {
                     } else {
                         compile_expr(c, stmt->data.assign.value);
                         emit(c->chunk, OP_STORE_GLOBAL, gidx, stmt->line);
-                        c->chunk->code[c->chunk->code_count - 1].operand2 = GLOBAL_SCRIPT;
+                        c->chunk->code[c->chunk->code_count - 1].operand2 = GLOBAL_SUPER;
+                    }
+                } else if (stmt->data.assign.is_local) {
+                    int slot = resolve_local(c, name);
+                    if (slot < 0) slot = add_local(c, name);
+                    if (vtype != 0) c->local_types[slot] = vtype;
+                    if (stmt->data.assign.is_cmd) {
+                        int const_idx = add_constant(c, val_string(stmt->data.assign.cmd_str));
+                        emit(c->chunk, OP_CMD_ASSIGN, const_idx, stmt->line);
+                        c->chunk->code[c->chunk->code_count - 1].operand2 = slot;
+                    } else {
+                        compile_expr(c, stmt->data.assign.value);
+                        emit(c->chunk, OP_STORE_VAR, slot, stmt->line);
+                    }
+                } else {
+                    // Asignación sin calificador: primero resolver como local
+                    int slot = resolve_local(c, name);
+                    if (slot >= 0) {
+                        // Es una variable local → actualizar local
+                        if (vtype != 0) c->local_types[slot] = vtype;
+                        if (stmt->data.assign.is_cmd) {
+                            int const_idx = add_constant(c, val_string(stmt->data.assign.cmd_str));
+                            emit(c->chunk, OP_CMD_ASSIGN, const_idx, stmt->line);
+                            c->chunk->code[c->chunk->code_count - 1].operand2 = slot;
+                        } else {
+                            compile_expr(c, stmt->data.assign.value);
+                            emit(c->chunk, OP_STORE_VAR, slot, stmt->line);
+                        }
+                    } else {
+                        // No es local → tratarlo como global
+                        int gidx = vm_find_global_index(name);
+                        if (gidx < 0) {
+                            gidx = vm_register_global(name, GLOBAL_SCRIPT, vtype);
+                        } else if (vtype != 0) {
+                            vm_global_types[gidx] = vtype;
+                        }
+                        if (stmt->data.assign.is_cmd) {
+                            int const_node = add_constant(c, val_ptr(stmt));
+                            emit(c->chunk, OP_INTERPRET_NODE, const_node, stmt->line);
+                            c->chunk->code[c->chunk->code_count - 1].operand2 = 0;
+                        } else {
+                            compile_expr(c, stmt->data.assign.value);
+                            emit(c->chunk, OP_STORE_GLOBAL, gidx, stmt->line);
+                            c->chunk->code[c->chunk->code_count - 1].operand2 = GLOBAL_SCRIPT;
+                        }
                     }
                 }
-            }
-            break;
+                break;
         }
         case NODE_IF: {
             compile_expr(c, stmt->data.if_stmt.cond);
