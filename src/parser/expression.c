@@ -157,6 +157,10 @@ static ASTNode *parse_map_literal(int line) {
     do {
         ts_skip_newlines();
         ASTNode *key = parse_expression(0);
+        // --- NUEVA COMPROBACIÓN: si el siguiente token es ':' ---
+        if (ts_peek().type == TOK_COLON) {
+            error(line, "En los mapas, separa clave y valor con `=`, no con `:`.");
+        }
         if (!ts_match(TOK_EQ)) {
             error(line, "Se esperaba '=' en par clave-valor de mapa");
         }
@@ -271,6 +275,12 @@ ASTNode *parse_primary() {
             /* --- CORRECCIÓN: limpiar prefijo $ o ? --- */
             char *cleaned = clean_var_name(t.lexeme);
             n->data.var.name = cleaned;
+
+            // --- NUEVA COMPROBACIÓN: si el siguiente token es '{' ---
+            if (ts_peek().type == TOK_LBRACE) {
+                error(t.line, "Para acceder a elementos de una lista o mapa, usa corchetes `[]`, no llaves `{}`.");
+            }
+
             while (ts_peek().type == TOK_LBRACKET) {
                 Token lb = ts_advance();
                 Token next = ts_peek();

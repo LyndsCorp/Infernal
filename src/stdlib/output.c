@@ -49,6 +49,7 @@ void print_value(Value v) {
             printf("]");
             break;
         case VAL_MAP:
+            // Ahora usamos corchetes para representar mapas, igual que la sintaxis del lenguaje
             printf("[");
             MapData *md = v.data.map;
             for (int i = 0; i < md->count; i++) {
@@ -58,7 +59,22 @@ void print_value(Value v) {
             }
             printf("]");
             break;
-        default: printf("?");
+        default:
+            /* Fallback por si algún tipo no se hubiera cubierto */
+            if (v.type == VAL_MAP) {
+                // Redundante, pero seguro
+                MapData *md = v.data.map;
+                printf("[");
+                for (int i = 0; i < md->count; i++) {
+                    if (i > 0) printf(", ");
+                    printf("\"%s\" = ", md->pairs[i].key);
+                    print_value(md->pairs[i].value);
+                }
+                printf("]");
+            } else {
+                printf("?");
+            }
+            break;
     }
 }
 
