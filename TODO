@@ -1,0 +1,16 @@
+#FILE: PERSISTENCIA_VARIABLES.txt
+Que se puedan guardar el valor de variables en archivos de forma nativa sin tener que llamar al shell para ejecutar cat.
+Por ejemplo:
+tofile(var, file)
+fromfile(var, file)
+entonces tu pones:
+``` Infernal
+algo = true
+otro = ["mapa" = 6]
+home = echo ?HOME #pregunta al shell
+tofile(algo, home + "/.local/share/dato.bool)
+fromfile(otro, home + "/.local/share/dato.map) #sobreescribe la variable actual
+```
+Perfecto para bases de datos o guardar progreso.
+El tofile sobreescribe el archivo, fromfile la variable.
+Tambien que se pueda poner var = fromfile(file).
