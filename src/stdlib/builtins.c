@@ -15,6 +15,7 @@
 #include "map.h" //funciones de maps
 #include "bytes.h" //funciones de bytes crudos
 #include "neutral.h" //funciones polimorficas
+#include "database.h" //funciones de persistencia
 
 // AQUI SE AÑADEN LOS STDLIB
 void register_all_builtins(void) {
@@ -25,4 +26,5 @@ void register_all_builtins(void) {
     register_map_builtins();
     register_bytes_builtins();
     register_neutral_builtins();
+    register_database_builtins();
 }
