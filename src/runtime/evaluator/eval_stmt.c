@@ -97,85 +97,118 @@ void exec_stmt(ASTNode *stmt) {
             DEBUG_INFO("ASIGNACION: nombre='%s', is_cmd=%d", stmt->data.assign.name, stmt->data.assign.is_cmd);
 
             Value val = val_make_null();
+
             if (stmt->data.assign.is_cmd) {
-                // ... (código de comandos, sin cambios) ...
                 char *cmd = stmt->data.assign.cmd_str;
                 int exit_code = 0;
 
-                if (stmt->data.assign.vtype == TOK_BOOL) {
-                    char *expanded_cmd = expand_command(cmd);
-                    FILE *fp = popen(expanded_cmd, "r");
-                    if (!fp) {
-                        error(stmt->line, "Error al ejecutar comando: %s", expanded_cmd);
+                // Expandir variables en el comando
+                char *expanded_cmd = expand_command(cmd);
+                if (!expanded_cmd) {
+                    error(stmt->line, "Error al expandir comando: %s", cmd);
+                }
+
+                // Determinar si es un comando embebido (entre !!)
+                int is_embedded = (expanded_cmd[0] == '!' && expanded_cmd[strlen(expanded_cmd)-1] == '!');
+
+                char *cmd_with_redir = NULL;
+                if (is_embedded) {
+                    // Los embebidos no se ejecutan a través del shell, no podemos redirigir con 2>&1
+                    cmd_with_redir = strdup(expanded_cmd);
+                } else {
+                    // Redirigir stderr según el tipo de la variable
+                    if (stmt->data.assign.vtype == TOK_BOOL) {
+                        // Para booleanos: queremos silenciar completamente la salida
+                        asprintf(&cmd_with_redir, "%s 2>/dev/null", expanded_cmd);
+                    } else {
+                        // Para otros tipos: capturamos también stderr (2>&1) para que no llegue a la terminal
+                        asprintf(&cmd_with_redir, "%s 2>&1", expanded_cmd);
                     }
+                }
+                free(expanded_cmd);  // ya no necesitamos el original
+
+                if (!cmd_with_redir) {
+                    error(stmt->line, "Memoria insuficiente para redirigir comando");
+                }
+
+                FILE *fp = NULL;
+                char *temp_path = NULL;
+
+                if (is_embedded) {
+                    // Los embebidos se manejan con popen_embedded_with_path
+                    char *trimmed = strdup(cmd_with_redir + 1);
+                    trimmed[strlen(trimmed)-1] = '\0';
+                    fp = popen_embedded_with_path(trimmed, "r", &temp_path);
+                    free(trimmed);
+                } else {
+                    fp = popen(cmd_with_redir, "r");
+                }
+
+                free(cmd_with_redir);  // ya podemos liberar la cadena con redirección
+
+                if (!fp) {
+                    error(stmt->line, "Error al ejecutar comando: %s", cmd);
+                }
+
+                // Si es booleano, solo nos interesa el código de salida
+                if (stmt->data.assign.vtype == TOK_BOOL) {
                     char buf[1024];
-                    while (fgets(buf, sizeof(buf), fp) != NULL) {}
+                    while (fgets(buf, sizeof(buf), fp) != NULL) {} // descartar salida
                     int status = pclose(fp);
-                    if (WIFEXITED(status)) exit_code = WEXITSTATUS(status);
-                    else exit_code = -1;
-                    free(expanded_cmd);
+                    if (WIFEXITED(status)) {
+                        exit_code = WEXITSTATUS(status);
+                    } else {
+                        exit_code = -1;
+                    }
+                    if (temp_path) {
+                        unlink(temp_path);
+                        free(temp_path);
+                    }
                     val = val_bool(exit_code == 0);
                 } else {
-                    char *expanded_cmd = expand_command(cmd);
-                    FILE *fp = NULL;
-                    char *temp_path = NULL;
-                    int is_embedded = 0;
-
-                    if (expanded_cmd[0] == '!' && expanded_cmd[strlen(expanded_cmd)-1] == '!') {
-                        is_embedded = 1;
-                        char *trimmed = strdup(expanded_cmd + 1);
-                        trimmed[strlen(trimmed)-1] = '\0';
-                        fp = popen_embedded_with_path(trimmed, "r", &temp_path);
-                        free(trimmed);
-                    } else {
-                        fp = popen(expanded_cmd, "r");
-                    }
-
-                    if (!fp) {
-                        if (is_embedded)
-                            error(stmt->line, "Comando embebido no encontrado: %s", expanded_cmd);
-                        else
-                            error(stmt->line, "Error al ejecutar comando: %s", expanded_cmd);
-                    }
+                    // Para otros tipos: capturar la salida (incluyendo stderr si se redirigió)
                     char buf[4096];
                     char *out = strdup("");
+                    if (!out) {
+                        pclose(fp);
+                        if (temp_path) { unlink(temp_path); free(temp_path); }
+                        error(stmt->line, "Memoria insuficiente para capturar salida");
+                    }
                     while (fgets(buf, sizeof(buf), fp)) {
                         size_t old_len = strlen(out);
                         size_t add_len = strlen(buf);
                         if (old_len > SIZE_MAX - add_len - 1) {
-                            free(out); pclose(fp);
+                            free(out);
+                            pclose(fp);
                             if (temp_path) { unlink(temp_path); free(temp_path); }
-                            free(expanded_cmd);
                             error(stmt->line, "Salida de comando demasiado grande");
                         }
                         char *tmp_out = realloc(out, old_len + add_len + 1);
                         if (!tmp_out) {
-                            free(out); pclose(fp);
+                            free(out);
+                            pclose(fp);
                             if (temp_path) { unlink(temp_path); free(temp_path); }
-                            free(expanded_cmd);
                             error(stmt->line, "Memoria insuficiente para salida de comando");
                         }
                         out = tmp_out;
                         memcpy(out + old_len, buf, add_len + 1);
                     }
                     int status = pclose(fp);
-                    if (status != 0) {
-                        char command_error[512];
-                        snprintf(command_error, sizeof(command_error), "Comando falló: %.440s", expanded_cmd);
-                        if (temp_path) { unlink(temp_path); free(temp_path); temp_path = NULL; }
-                        free(out);
-                        free(expanded_cmd);
-                        error(stmt->line, "%s", command_error);
+                    if (status != 0 && status != -1) {
+                        // El comando falló, pero aún queremos la salida (si la hay)
+                        // No lanzamos error, simplemente asignamos lo que haya devuelto.
+                        // Opcional: si se quiere lanzar error, descomentar:
+                        // error(stmt->line, "Comando falló: %s", cmd);
                     }
-
                     if (temp_path) {
                         unlink(temp_path);
                         free(temp_path);
                     }
-
+                    // Quitar salto de línea final
                     size_t len = strlen(out);
                     if (len > 0 && out[len-1] == '\n') out[len-1] = '\0';
 
+                    // Asignar según el tipo esperado
                     if (stmt->data.assign.vtype == TOK_LIST) {
                         Value list = val_list_empty();
                         char *dup = strdup(out);
@@ -189,14 +222,14 @@ void exec_stmt(ASTNode *stmt) {
                         free(out);
                         val = list;
                     } else {
+                        // Para int, float, string, etc. se asigna como string (luego se convertirá)
                         val = val_string(out);
                         free(out);
                     }
-                    free(expanded_cmd);
                 }
             } else {
-                // Asignación normal (no comando). Una declaración tipada sin '='
-                // ya recibió su valor por defecto arriba.
+                // Asignación normal (no comando)
+                // ... (el código existente para asignaciones normales, sin cambios)
                 if (stmt->data.assign.value != NULL && stmt->data.assign.lhs_index) {
                     // Asignación con índice (ej: lista[2] = 5)
                     VarEntry *var = scope_find(current_scope, stmt->data.assign.name);
@@ -239,10 +272,9 @@ void exec_stmt(ASTNode *stmt) {
                     val = val_map_empty();
             }
 
-            // --- Obtener el tipo fijo declarado ---
+            // --- Conversión de tipos (si hay tipo fijo) ---
             int vtype = stmt->data.assign.vtype;
 
-            // --- Conversión de tipos ---
             if (vtype == TOK_STRING && val.type == VAL_LIST) {
                 if (!try_convert_value(&val, TOK_STRING)) {
                     error(stmt->line, "No se pudo convertir la lista a string en la asignación a '%s'",
@@ -268,12 +300,7 @@ void exec_stmt(ASTNode *stmt) {
                 DEBUG_INFO("Definiendo global '%s' en super_global_scope", stmt->data.assign.name);
                 scope_define(super_global_scope, stmt->data.assign.name, vtype, val);
 
-                /*
-                 * La ejecución de funciones pasa por el evaluador, mientras que
-                 * las lecturas posteriores del programa pueden pasar por la VM.
-                 * Sin sincronizar aquí, una declaración `global` modificada dentro
-                 * de una función podía volver a verse con el valor antiguo en la VM.
-                 */
+                // Sincronizar con la VM para que las lecturas posteriores vean el valor
                 int gidx = vm_find_global_index(stmt->data.assign.name);
                 if (gidx < 0) {
                     gidx = vm_register_global(stmt->data.assign.name, GLOBAL_SUPER, vtype);
@@ -294,9 +321,7 @@ void exec_stmt(ASTNode *stmt) {
                     Value copied = copy_value_secure(val);
                     value_free(&var->value);
                     var->value = copied;
-                    /* La copia ya es propiedad de la variable. El valor
-                     * evaluado temporalmente deja de tener propietario. */
-                    value_free(&val);
+                    value_free(&val); // la copia ya es propiedad de la variable
                     if (vtype != 0) {
                         var->vtype = vtype;
                     }

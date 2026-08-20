@@ -528,21 +528,29 @@ int run_shell_command(const char *cmd) {
     }
 }
 
-/* --- Función unificada: ejecuta y devuelve el código de salida --- */
 int run_command_get_exit_code(const char *cmd) {
     if (!cmd) return -1;
     char *expanded = expand_command(cmd);
     if (!expanded) return -1;
 
-    int code;
-    if (expanded[0] == '!' && expanded[strlen(expanded)-1] == '!') {
-        char *trimmed = strdup(expanded + 1);
-        trimmed[strlen(trimmed)-1] = '\0';
-        code = execute_embedded(trimmed);
-        free(trimmed);
-    } else {
-        code = run_shell_command(expanded);
+    // Construir comando con stderr redirigido a /dev/null
+    char *silent_cmd = malloc(strlen(expanded) + 20);
+    if (!silent_cmd) {
+        free(expanded);
+        return -1;
     }
+    sprintf(silent_cmd, "%s 2>/dev/null", expanded);
     free(expanded);
-    return code;
+
+    FILE *fp = popen(silent_cmd, "r");
+    free(silent_cmd);
+    if (!fp) return -1;
+
+    // Leer y descartar toda la salida (stdout)
+    char buf[1024];
+    while (fgets(buf, sizeof(buf), fp) != NULL) {}
+
+    int status = pclose(fp);
+    if (WIFEXITED(status)) return WEXITSTATUS(status);
+    return -1;
 }
