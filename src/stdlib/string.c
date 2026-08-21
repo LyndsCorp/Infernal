@@ -167,8 +167,8 @@ static Value builtin_indexof(int argc, Value *args) {
     const char *haystack = args[0].data.sval;
     const char *needle   = args[1].data.sval;
 
-    // Si needle está vacío, devuelve 0 (por convención)
-    if (*needle == '\0') return val_int(0);
+    // Si needle está vacío, devuelve 1 (primer carácter, base 1)
+    if (*needle == '\0') return val_int(1);
 
     int hay_count, needle_count;
     CharSegment *hay_segs = utf8_to_segments(haystack, &hay_count);
@@ -179,10 +179,8 @@ static Value builtin_indexof(int argc, Value *args) {
         error(current_eval_line, "memoria insuficiente en indexof");
     }
 
-    int result = -1;
-    if (needle_count > hay_count) {
-        // no puede haber coincidencia
-    } else {
+    int result = 0;  // 0 = no encontrado
+    if (needle_count <= hay_count) {
         for (int i = 0; i <= hay_count - needle_count; i++) {
             bool match = true;
             for (int j = 0; j < needle_count; j++) {
@@ -192,7 +190,7 @@ static Value builtin_indexof(int argc, Value *args) {
                 }
             }
             if (match) {
-                result = i;  // índice en caracteres
+                result = i + 1;  // base 1
                 break;
             }
         }
