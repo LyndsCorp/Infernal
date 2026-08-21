@@ -1,0 +1,6 @@
+#!../infernal
+texto = "Hola"
+print(binbytes(texto))
+print(hexbytes(texto))
+print(utf8bytes(texto))
+print(unicodeCodepoints(texto))
