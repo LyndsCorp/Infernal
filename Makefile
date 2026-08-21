@@ -327,6 +327,7 @@ sanitize:
 	$(MAKE) test
 
 install: $(TARGET)
+	$(MAKE) release
 	@if [ "$$(id -u)" -eq 0 ]; then \
 		echo " [INSTALL ROOT] $(BINDIR)/$(TARGET)"; \
 		install -Dm755 $(TARGET) $(BINDIR)/$(TARGET); \
