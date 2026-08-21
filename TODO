@@ -1,0 +1,2 @@
+Que las funciones tengan `return tipo valor` para tipado explícito de funciones.
+También que return pueda leer variables del scope local de la función
