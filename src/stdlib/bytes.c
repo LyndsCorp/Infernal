@@ -30,6 +30,24 @@ static Value builtin_countbytes(int argc, Value *args) {
     return val_int((int)len);
 }
 
+/* --- indexofbytes() --- */
+static Value builtin_indexofbytes(int argc, Value *args) {
+    if (argc != 2) error(current_eval_line, "indexofbytes() espera exactamente 2 argumentos");
+    if (args[0].type != VAL_STRING) error(current_eval_line, "indexofbytes() espera un string como primer argumento");
+    if (args[1].type != VAL_STRING) error(current_eval_line, "indexofbytes() espera un string como segundo argumento");
+
+    const char *haystack = args[0].data.sval;
+    const char *needle   = args[1].data.sval;
+
+    if (*needle == '\0') return val_int(1);  // subcadena vacía: posición 1 (base 1)
+
+    const char *found = strstr(haystack, needle);
+    if (!found) return val_int(0);  // no encontrado
+
+    // Diferencia de punteros = número de bytes, +1 para base 1
+    return val_int((int)(found - haystack) + 1);
+}
+
 /* --- headbytes() --- */
 static Value builtin_headbytes(int argc, Value *args) {
     if (argc != 2) error(current_eval_line, "headbytes requiere dos argumentos");
@@ -167,6 +185,7 @@ static Value builtin_lengthbytes(int argc, Value *args) {
 
 void register_bytes_builtins(void) {
     func_register_builtin("countbytes", builtin_countbytes);
+    func_register_builtin("indexofbytes", builtin_indexofbytes);
     func_register_builtin("headbytes", builtin_headbytes);
     func_register_builtin("tailbytes", builtin_tailbytes);
     func_register_builtin("replacebytes", builtin_replacebytes);
@@ -174,6 +193,7 @@ void register_bytes_builtins(void) {
     func_register_builtin("lengthbytes", builtin_lengthbytes);
 
     vm_register_builtin("countbytes", builtin_countbytes);
+    vm_register_builtin("indexofbytes", builtin_indexofbytes);
     vm_register_builtin("headbytes", builtin_headbytes);
     vm_register_builtin("tailbytes", builtin_tailbytes);
     vm_register_builtin("replacebytes", builtin_replacebytes);
