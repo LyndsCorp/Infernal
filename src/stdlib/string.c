@@ -158,6 +158,51 @@ static Value builtin_count(int argc, Value *args) {
     return val_int(count);
 }
 
+/* --- indexof() --- */
+static Value builtin_indexof(int argc, Value *args) {
+    if (argc != 2) error(current_eval_line, "indexof() espera exactamente 2 argumentos");
+    if (args[0].type != VAL_STRING) error(current_eval_line, "indexof() espera un string como primer argumento");
+    if (args[1].type != VAL_STRING) error(current_eval_line, "indexof() espera un string como segundo argumento");
+
+    const char *haystack = args[0].data.sval;
+    const char *needle   = args[1].data.sval;
+
+    // Si needle está vacío, devuelve 0 (por convención)
+    if (*needle == '\0') return val_int(0);
+
+    int hay_count, needle_count;
+    CharSegment *hay_segs = utf8_to_segments(haystack, &hay_count);
+    if (!hay_segs) error(current_eval_line, "memoria insuficiente en indexof");
+    CharSegment *needle_segs = utf8_to_segments(needle, &needle_count);
+    if (!needle_segs) {
+        free(hay_segs);
+        error(current_eval_line, "memoria insuficiente en indexof");
+    }
+
+    int result = -1;
+    if (needle_count > hay_count) {
+        // no puede haber coincidencia
+    } else {
+        for (int i = 0; i <= hay_count - needle_count; i++) {
+            bool match = true;
+            for (int j = 0; j < needle_count; j++) {
+                if (!seg_equal(&hay_segs[i + j], &needle_segs[j])) {
+                    match = false;
+                    break;
+                }
+            }
+            if (match) {
+                result = i;  // índice en caracteres
+                break;
+            }
+        }
+    }
+
+    free(hay_segs);
+    free(needle_segs);
+    return val_int(result);
+}
+
 /* --- replace() --- */
 static Value builtin_replace(int argc, Value *args) {
     if (argc != 3) error(current_eval_line, "replace() espera exactamente 3 argumentos");
@@ -545,6 +590,7 @@ void register_string_builtins(void) {
     func_register_builtin("lower", builtin_lower);
     func_register_builtin("upper", builtin_upper);
     func_register_builtin("count", builtin_count);
+    func_register_builtin("indexof", builtin_indexof);
     func_register_builtin("replace", builtin_replace);
     func_register_builtin("reverse", builtin_reverse);
     func_register_builtin("join", builtin_join);
@@ -562,6 +608,7 @@ void register_string_builtins(void) {
     vm_register_builtin("lower", builtin_lower);
     vm_register_builtin("upper", builtin_upper);
     vm_register_builtin("count", builtin_count);
+    vm_register_builtin("indexof", builtin_indexof);
     vm_register_builtin("replace", builtin_replace);
     vm_register_builtin("reverse", builtin_reverse);
     vm_register_builtin("join", builtin_join);
