@@ -472,6 +472,36 @@ static Value builtin_trimcenter(int argc, Value *args) {
     return res;
 }
 
+/* --- delspaces() --- */
+static Value builtin_delspaces(int argc, Value *args) {
+    if (argc != 1) error(current_eval_line, "delspaces() espera exactamente 1 argumento");
+    if (args[0].type != VAL_STRING) error(current_eval_line, "delspaces() espera un string.");
+
+    const char *src = args[0].data.sval;
+    size_t len = strlen(src);
+
+    // Contar bytes que no son espacio
+    size_t new_len = 0;
+    for (const unsigned char *p = (const unsigned char *)src; *p; p++) {
+        if (!isspace(*p)) new_len++;
+    }
+
+    char *result = (char *)malloc(new_len + 1);
+    if (!result) error(current_eval_line, "memoria insuficiente en delspaces");
+
+    char *dst = result;
+    for (const unsigned char *p = (const unsigned char *)src; *p; p++) {
+        if (!isspace(*p)) {
+            *dst++ = (char)*p;
+        }
+    }
+    *dst = '\0';
+
+    Value res = val_string(result);
+    free(result);
+    return res;
+}
+
 /* --- head() --- */
 static Value builtin_head(int argc, Value *args) {
     if (argc != 2) error(current_eval_line, "head requiere dos argumentos");
@@ -596,6 +626,7 @@ void register_string_builtins(void) {
     func_register_builtin("rtrim", builtin_rtrim);
     func_register_builtin("ltrim", builtin_ltrim);
     func_register_builtin("trimcenter", builtin_trimcenter);
+    func_register_builtin("delspaces", builtin_delspaces);
     func_register_builtin("starts", builtin_starts);
     func_register_builtin("ends", builtin_ends);
     func_register_builtin("capitalize", builtin_capitalize);
@@ -614,6 +645,7 @@ void register_string_builtins(void) {
     vm_register_builtin("rtrim", builtin_rtrim);
     vm_register_builtin("ltrim", builtin_ltrim);
     vm_register_builtin("trimcenter", builtin_trimcenter);
+    vm_register_builtin("delspaces", builtin_delspaces);
     vm_register_builtin("starts", builtin_starts);
     vm_register_builtin("ends", builtin_ends);
     vm_register_builtin("capitalize", builtin_capitalize);
