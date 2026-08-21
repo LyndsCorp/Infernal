@@ -55,11 +55,12 @@ Value eval_expr(ASTNode *expr) {
                 else if (old.type == VAL_FLOAT) new_val = val_float(old.data.fval - 1.0);
                 else error(expr->line, "Decremento solo aplicable a números");
             }
-            // Actualizar directamente la entrada encontrada
-            Value copied = copy_value_secure(new_val);
+            // El valor de retorno del post-incremento debe ser una copia profunda:
+            // e->value se libera/reemplaza justo después.
+            Value result = copy_value_secure(old);
             value_free(&e->value);
-            e->value = copied;
-            return old;
+            e->value = new_val;
+            return result;
         }
         default:
             error(expr->line, "Se encontró una sentencia donde se esperaba una expresión. "

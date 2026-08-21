@@ -23,6 +23,7 @@
 #include "vm/compiler.h"
 #include "developer/debug.h"
 #include "core/memory.h"
+#include "runtime/evaluator/helpers.h"
 
 /* --- Estado de limpieza de parser ante longjmp --- */
 #define MAX_ACTIVE_PARSE_BLOCKS 256
@@ -750,7 +751,7 @@ NodeList parse_block(const char *terminator) {
                 do {
                     int ptype = 0;
                     TokenType tt = ts_peek().type;
-                    if (tt == TOK_INT || tt == TOK_FLOAT || tt == TOK_BOOL || tt == TOK_STRING || tt == TOK_LIST)
+                    if (tt == TOK_INT || tt == TOK_FLOAT || tt == TOK_BOOL || tt == TOK_STRING || tt == TOK_LIST || tt == TOK_MAP)
                         ptype = ts_advance().type;
                     if (ts_peek().type != TOK_IDENT) error(t.line, "Se esperaba nombre de parámetro");
                     char *pname = clean_var_name(ts_advance().lexeme);
@@ -789,12 +790,27 @@ NodeList parse_block(const char *terminator) {
         if (t.type == TOK_RETURN) {
             ts_advance();
             ASTNode *expr = NULL;
+            int rtype = 0;
+
+            TokenType tt = ts_peek().type;
+            if (tt == TOK_INT || tt == TOK_FLOAT || tt == TOK_BOOL ||
+                tt == TOK_STRING || tt == TOK_LIST || tt == TOK_MAP) {
+                rtype = ts_advance().type;
+                if (ts_peek().type == TOK_NEWLINE || ts_peek().type == TOK_FI || ts_peek().type == TOK_EOF)
+                    error(t.line, "Se esperaba un valor después del tipo de retorno '%s'", type_name(rtype));
+            }
+
             if (ts_peek().type != TOK_NEWLINE && ts_peek().type != TOK_FI && ts_peek().type != TOK_EOF)
                 expr = parse_expression(0);
+
+            if (rtype != 0 && !expr)
+                error(t.line, "Se esperaba un valor después de 'return %s'", type_name(rtype));
+
             stmt = node_create(NODE_RETURN, t.line);
             stmt->data.ret.expr = expr;
+            stmt->data.ret.rtype = rtype;
             nodelist_add(&block, stmt);
-            DEBUG_INFO("parse_block: añadido NODE_RETURN en línea %d", stmt->line);
+            DEBUG_INFO("parse_block: añadido NODE_RETURN en línea %d (rtype=%d)", stmt->line, rtype);
             ts_skip_newlines();
             continue;
         }

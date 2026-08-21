@@ -54,9 +54,14 @@ Value eval_call(ASTNode *expr) {
         }
         int saved_cf = control_flow;
         Value saved_ret = return_value;
+        return_value = val_make_null();
         control_flow = CF_NONE;
         exec_block(&func->data.func.body);
+
         Value ret = (control_flow == CF_RETURN) ? return_value : val_make_null();
+        if (control_flow == CF_RETURN)
+            return_value = val_make_null(); /* ownership transferred to ret */
+
         control_flow = saved_cf;
         return_value = saved_ret;
         current_scope = prev_scope;

@@ -66,6 +66,7 @@ static void cleanup_runtime_state(void) {
         free(entry);
         func_table = next;
     }
+    value_free(&return_value);
     if (infernal_shell) { free(infernal_shell); infernal_shell = NULL; }
 }
 
@@ -220,7 +221,7 @@ int main(int argc, char **argv) {
 
         main_chunk = compile_program(&program);
         Value result = vm_run(main_chunk);
-        (void)result;
+        value_free(&result);
 
         chunk_free(main_chunk);
         main_chunk = NULL;

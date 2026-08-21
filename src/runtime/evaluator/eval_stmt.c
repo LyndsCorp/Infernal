@@ -64,14 +64,18 @@ void exec_stmt(ASTNode *stmt) {
 
     switch (stmt->kind) {
 
-        case NODE_EXPR_STMT:
-            eval_expr(stmt->data.expr_stmt.expr);
+        case NODE_EXPR_STMT: {
+            Value result = eval_expr(stmt->data.expr_stmt.expr);
+            value_free(&result);
             break;
+        }
 
         case NODE_POST_INC:
-        case NODE_POST_DEC:
-            eval_expr(stmt);
+        case NODE_POST_DEC: {
+            Value result = eval_expr(stmt);
+            value_free(&result);
             break;
+        }
 
         case NODE_CMD_STMT: {
             char *expanded = expand_command(stmt->data.cmd_stmt.cmd);
@@ -645,10 +649,31 @@ void exec_stmt(ASTNode *stmt) {
         case NODE_FUNC_DEF:
             break;
 
-        case NODE_RETURN:
-            return_value = stmt->data.ret.expr ? eval_expr(stmt->data.ret.expr) : val_make_null();
+        case NODE_RETURN: {
+            Value result = stmt->data.ret.expr ? eval_expr(stmt->data.ret.expr) : val_make_null();
+
+            if (stmt->data.ret.rtype != 0) {
+                int expected = stmt->data.ret.rtype;
+                if (expected == TOK_STRING && result.type == VAL_LIST) {
+                    if (!try_convert_value(&result, expected)) {
+                        value_free(&result);
+                        error(stmt->line, "No se pudo convertir el valor de retorno a %s", type_name(expected));
+                    }
+                }
+
+                int actual = valtype_to_tokentype(result.type);
+                if (actual != expected) {
+                    value_free(&result);
+                    error(stmt->line, "Tipado del retorno: se esperaba %s, se recibió %s",
+                          type_name(expected), type_name(actual));
+                }
+            }
+
+            value_free(&return_value);
+            return_value = result;
             control_flow = CF_RETURN;
             return;
+        }
 
         case NODE_BREAK:
             control_flow = CF_BREAK;

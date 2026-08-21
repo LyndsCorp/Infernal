@@ -37,138 +37,34 @@ Scope *scope_new(Scope *parent, const char *function_name) {
  * - Devuelve la variable REAL más cercana (en profundidad) o NULL si no existe.
  * ================================================================ */
 VarEntry *scope_find(Scope *scope, const char *name) {
-    DEBUG_INFO("scope_find: buscando '%s'", name);
+    if (!scope) return NULL;
 
-    VarEntry *null_candidate = NULL;
-
-    Scope *s = scope;
-
-    while (s) {
-        DEBUG_INFO("scope_find: revisando scope %p", (void *)s);
-
+    /*
+     * Resolución léxica normal: la primera declaración encontrada gana,
+     * incluso aunque su valor sea NULL. Un NULL local debe ocultar una
+     * variable homónima del ámbito padre.
+     */
+    for (Scope *s = scope; s; s = s->parent) {
         for (VarEntry *e = s->vars; e; e = e->next) {
-            if (strcmp(e->name, name) != 0)
-                continue;
-
-            /*
-             * Guardamos una coincidencia NULL como candidato,
-             * pero seguimos buscando por si existe una variable
-             * REAL en un ámbito superior.
-             */
-            if (e->value.type == VAL_NULL) {
-                if (!null_candidate) {
-                    null_candidate = e;
-                }
-
-                DEBUG_INFO(
-                    "scope_find: encontrado '%s' en scope %p "
-                    "pero su valor es NULL; continuando búsqueda",
-                    name,
-                    (void *)s
-                );
-
-                continue;
-            }
-
-            DEBUG_INFO(
-                "scope_find: encontrado '%s' en scope %p "
-                "(type=%d)",
-                       name,
-                       (void *)s,
-                       e->value.type
-            );
-
-            return e;
+            if (strcmp(e->name, name) == 0)
+                return e;
         }
-
-        s = s->parent;
     }
 
-    /*
-     * Buscar también explícitamente en global_scope.
-     */
+    /* Compatibilidad con los ámbitos globales que pueden no formar parte
+     * de la cadena de padres durante la inicialización/importación. */
     if (global_scope && global_scope != super_global_scope) {
-        DEBUG_INFO("scope_find: buscando en global_scope");
-
         for (VarEntry *e = global_scope->vars; e; e = e->next) {
-            if (strcmp(e->name, name) != 0)
-                continue;
-
-            if (e->value.type == VAL_NULL) {
-                if (!null_candidate) {
-                    null_candidate = e;
-                }
-
-                DEBUG_INFO(
-                    "scope_find: '%s' existe en global_scope "
-                    "pero es NULL; continuando búsqueda",
-                    name
-                );
-
-                continue;
-            }
-
-            DEBUG_INFO(
-                "scope_find: encontrado '%s' en global_scope",
-                name
-            );
-
-            return e;
+            if (strcmp(e->name, name) == 0)
+                return e;
         }
     }
-
-    /*
-     * Buscar en super_global_scope.
-     */
     if (super_global_scope) {
-        DEBUG_INFO("scope_find: buscando en super_global_scope");
-
         for (VarEntry *e = super_global_scope->vars; e; e = e->next) {
-            if (strcmp(e->name, name) != 0)
-                continue;
-
-            if (e->value.type == VAL_NULL) {
-                if (!null_candidate) {
-                    null_candidate = e;
-                }
-
-                DEBUG_INFO(
-                    "scope_find: '%s' existe en super_global_scope "
-                    "pero es NULL",
-                    name
-                );
-
-                continue;
-            }
-
-            DEBUG_INFO(
-                "scope_find: encontrado '%s' en super_global_scope",
-                name
-            );
-
-            return e;
+            if (strcmp(e->name, name) == 0)
+                return e;
         }
     }
-
-    /*
-     * Si solo encontramos una variable NULL, devolverla.
-     * Así mantenemos la semántica existente cuando no hay
-     * ninguna versión con valor real.
-     */
-    if (null_candidate) {
-        DEBUG_INFO(
-            "scope_find: usando candidato NULL para '%s'",
-            name
-        );
-
-        return null_candidate;
-    }
-
-    DEBUG_INFO(
-        "scope_find: NO encontrado '%s'",
-        name
-    );
-
     return NULL;
 }
 
@@ -221,6 +117,11 @@ void scope_assign(Scope *scope, const char *name, Value val, int line) {
             Value copied = copy_value_secure(val);
             value_free(&e->value);
             e->value = copied;
+            /* Las variables dinámicas adquieren el tipo de su valor actual.
+             * Esto permite que printAllVars() muestre el tipo real después de
+             * una asignación, incluso cuando la variable fue registrada
+             * previamente por el compilador con vtype=0. */
+            e->vtype = valtype_to_tokentype(val.type);
             return;
         }
         // Conversión si el destino es string y el valor es lista
