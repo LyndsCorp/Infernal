@@ -2,7 +2,7 @@
  * Infernal: el intérprete de Aro Infernal.
  * Copyright (C) 2026, David Baña Szymaniak
  * Este software se distribuye bajo la licencia Apache 2.0
- * Código fuente de Infernal: stdlib/string.c
+ * Código fuente de Infernal: stdlib/bytes.c
  *
  * Operaciones sobre bytes crudos (sin interpretación UTF‑8).
 */
@@ -44,7 +44,6 @@ static Value builtin_indexofbytes(int argc, Value *args) {
     const char *found = strstr(haystack, needle);
     if (!found) return val_int(0);  // no encontrado
 
-    // Diferencia de punteros = número de bytes, +1 para base 1
     return val_int((int)(found - haystack) + 1);
 }
 
@@ -178,6 +177,189 @@ static Value builtin_lengthbytes(int argc, Value *args) {
     return val_int((int)len);
 }
 
+/* --- binbytes() --- */
+static Value builtin_binbytes(int argc, Value *args) {
+    if (argc != 1) error(current_eval_line, "binbytes() espera exactamente 1 argumento");
+    if (args[0].type != VAL_STRING) error(current_eval_line, "binbytes() espera un string.");
+
+    const unsigned char *s = (const unsigned char *)args[0].data.sval;
+    size_t len = strlen((const char *)s);
+
+    size_t out_len = (len == 0) ? 1 : len * 9;
+    char *buf = (char *)malloc(out_len);
+    if (!buf) error(current_eval_line, "memoria insuficiente en binbytes");
+
+    char *p = buf;
+    for (size_t i = 0; i < len; i++) {
+        unsigned char byte = s[i];
+        for (int bit = 7; bit >= 0; bit--) {
+            *p++ = (byte & (1u << bit)) ? '1' : '0';
+        }
+        if (i < len - 1) *p++ = ' ';
+    }
+    *p = '\0';
+
+    Value res = val_string(buf);
+    free(buf);
+    return res;
+}
+
+/* --- hexbytes() --- */
+static Value builtin_hexbytes(int argc, Value *args) {
+    if (argc != 1) error(current_eval_line, "hexbytes() espera exactamente 1 argumento");
+    if (args[0].type != VAL_STRING) error(current_eval_line, "hexbytes() espera un string.");
+
+    const unsigned char *s = (const unsigned char *)args[0].data.sval;
+    size_t len = strlen((const char *)s);
+
+    size_t out_len = (len == 0) ? 1 : len * 3;
+    char *buf = (char *)malloc(out_len);
+    if (!buf) error(current_eval_line, "memoria insuficiente en hexbytes");
+
+    char *p = buf;
+    for (size_t i = 0; i < len; i++) {
+        unsigned char byte = s[i];
+        *p++ = "0123456789ABCDEF"[byte >> 4];
+        *p++ = "0123456789ABCDEF"[byte & 0x0F];
+        if (i < len - 1) *p++ = ' ';
+    }
+    *p = '\0';
+
+    Value res = val_string(buf);
+    free(buf);
+    return res;
+}
+
+/* --- utf8bytes() ---
+ * Muestra los bytes UTF‑8 reales en formato decimal (0‑255), separados por espacios.
+ */
+static Value builtin_utf8bytes(int argc, Value *args) {
+    if (argc != 1) error(current_eval_line, "utf8bytes() espera exactamente 1 argumento");
+    if (args[0].type != VAL_STRING) error(current_eval_line, "utf8bytes() espera un string.");
+
+    const unsigned char *s = (const unsigned char *)args[0].data.sval;
+    size_t len = strlen((const char *)s);
+
+    // Cada byte decimal ocupa hasta 3 dígitos + 1 espacio (sin espacio final)
+    size_t out_len = (len == 0) ? 1 : len * 4;
+    char *buf = (char *)malloc(out_len);
+    if (!buf) error(current_eval_line, "memoria insuficiente en utf8bytes");
+
+    char *p = buf;
+    for (size_t i = 0; i < len; i++) {
+        int byte = s[i];
+        // Escribimos el número decimal manualmente para evitar sprintf
+        char num[4];
+        int digits = 0;
+        if (byte >= 100) {
+            num[digits++] = '0' + byte / 100;
+            byte %= 100;
+            num[digits++] = '0' + byte / 10;
+            num[digits++] = '0' + byte % 10;
+        } else if (byte >= 10) {
+            num[digits++] = '0' + byte / 10;
+            num[digits++] = '0' + byte % 10;
+        } else {
+            num[digits++] = '0' + byte;
+        }
+        memcpy(p, num, digits);
+        p += digits;
+        if (i < len - 1) *p++ = ' ';
+    }
+    *p = '\0';
+
+    Value res = val_string(buf);
+    free(buf);
+    return res;
+}
+
+/* --- unicodeCodepoints() ---
+ * Devuelve los puntos de código Unicode de cada carácter UTF‑8.
+ * Formato: U+XXXX (o U+XXXXXX para fuera del plano básico), separados por espacios.
+ */
+static Value builtin_unicodeCodepoints(int argc, Value *args) {
+    if (argc != 1) error(current_eval_line, "unicodeCodepoints() espera exactamente 1 argumento");
+    if (args[0].type != VAL_STRING) error(current_eval_line, "unicodeCodepoints() espera un string.");
+
+    const unsigned char *s = (const unsigned char *)args[0].data.sval;
+    size_t len = strlen((const char *)s);
+    const unsigned char *p = s;
+    const unsigned char *end = s + len;
+
+    // Contamos cuántos caracteres UTF‑8 hay
+    size_t char_count = 0;
+    while (p < end) {
+        unsigned char c = *p;
+        int extra = 0;
+        if (c < 0x80) extra = 0;
+        else if ((c & 0xE0) == 0xC0) extra = 1;
+        else if ((c & 0xF0) == 0xE0) extra = 2;
+        else if ((c & 0xF8) == 0xF0) extra = 3;
+        else extra = 0;
+        p += 1 + extra;
+        char_count++;
+    }
+
+    // Máximo: U+10FFFF (8 caracteres) + espacio
+    size_t out_len = (char_count == 0) ? 1 : char_count * 10;
+    char *buf = (char *)malloc(out_len);
+    if (!buf) error(current_eval_line, "memoria insuficiente en unicodeCodepoints");
+
+    char *out = buf;
+    p = s;
+    bool first = true;
+    while (p < end) {
+        unsigned char c = *p;
+        uint32_t codepoint;
+        int extra = 0;
+
+        if (c < 0x80) {
+            codepoint = c;
+        } else if ((c & 0xE0) == 0xC0) {
+            codepoint = c & 0x1F;
+            extra = 1;
+        } else if ((c & 0xF0) == 0xE0) {
+            codepoint = c & 0x0F;
+            extra = 2;
+        } else if ((c & 0xF8) == 0xF0) {
+            codepoint = c & 0x07;
+            extra = 3;
+        } else {
+            codepoint = c;
+            extra = 0;
+        }
+
+        for (int i = 1; i <= extra; i++) {
+            codepoint = (codepoint << 6) | (p[i] & 0x3F);
+        }
+        p += 1 + extra;
+
+        if (!first) *out++ = ' ';
+        first = false;
+
+        *out++ = 'U';
+        *out++ = '+';
+        if (codepoint <= 0xFFFF) {
+            *out++ = "0123456789ABCDEF"[(codepoint >> 12) & 0xF];
+            *out++ = "0123456789ABCDEF"[(codepoint >> 8) & 0xF];
+            *out++ = "0123456789ABCDEF"[(codepoint >> 4) & 0xF];
+            *out++ = "0123456789ABCDEF"[codepoint & 0xF];
+        } else {
+            *out++ = "0123456789ABCDEF"[(codepoint >> 20) & 0xF];
+            *out++ = "0123456789ABCDEF"[(codepoint >> 16) & 0xF];
+            *out++ = "0123456789ABCDEF"[(codepoint >> 12) & 0xF];
+            *out++ = "0123456789ABCDEF"[(codepoint >> 8) & 0xF];
+            *out++ = "0123456789ABCDEF"[(codepoint >> 4) & 0xF];
+            *out++ = "0123456789ABCDEF"[codepoint & 0xF];
+        }
+    }
+    *out = '\0';
+
+    Value res = val_string(buf);
+    free(buf);
+    return res;
+}
+
 
 /* ================================================
  *  Registro de funciones
@@ -191,6 +373,10 @@ void register_bytes_builtins(void) {
     func_register_builtin("replacebytes", builtin_replacebytes);
     func_register_builtin("reversebytes", builtin_reversebytes);
     func_register_builtin("lengthbytes", builtin_lengthbytes);
+    func_register_builtin("binbytes", builtin_binbytes);
+    func_register_builtin("hexbytes", builtin_hexbytes);
+    func_register_builtin("utf8bytes", builtin_utf8bytes);
+    func_register_builtin("unicodeCodepoints", builtin_unicodeCodepoints);
 
     vm_register_builtin("countbytes", builtin_countbytes);
     vm_register_builtin("indexofbytes", builtin_indexofbytes);
@@ -199,4 +385,8 @@ void register_bytes_builtins(void) {
     vm_register_builtin("replacebytes", builtin_replacebytes);
     vm_register_builtin("reversebytes", builtin_reversebytes);
     vm_register_builtin("lengthbytes", builtin_lengthbytes);
+    vm_register_builtin("binbytes", builtin_binbytes);
+    vm_register_builtin("hexbytes", builtin_hexbytes);
+    vm_register_builtin("utf8bytes", builtin_utf8bytes);
+    vm_register_builtin("unicodeCodepoints", builtin_unicodeCodepoints);
 }
