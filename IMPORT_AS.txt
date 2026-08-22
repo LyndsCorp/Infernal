@@ -1,0 +1,4 @@
+#FILE: IMPORT_AS.txt
+Que se pueda poner
+import "/home/user/fires de infernal/algo.fire" as seta
+y se llaman con seta.funcion
