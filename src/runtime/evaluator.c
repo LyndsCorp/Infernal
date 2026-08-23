@@ -44,6 +44,7 @@ Value eval_expr(ASTNode *expr) {
             if (name[0] == '$' || name[0] == '?') name++;
             VarEntry *e = scope_find(current_scope, name);
             if (!e) error(expr->line, "Variable '%s' no definida", name);
+
             Value old = e->value;
             Value new_val;
             if (expr->kind == NODE_POST_INC) {
@@ -55,8 +56,23 @@ Value eval_expr(ASTNode *expr) {
                 else if (old.type == VAL_FLOAT) new_val = val_float(old.data.fval - 1.0);
                 else error(expr->line, "Decremento solo aplicable a números");
             }
-            // El valor de retorno del post-incremento debe ser una copia profunda:
-            // e->value se libera/reemplaza justo después.
+
+            if (var_node->data.var.clone) {
+                /* $x es una clonación temporal: $x++ produce el valor
+                 * incrementado, pero no modifica x. En una línea propia,
+                 * marcada por el parser como statement_context, sí se usa
+                 * explícitamente para actualizar la variable. */
+                Value result = copy_value_secure(new_val);
+                if (expr->data.post_op.statement_context) {
+                    value_free(&e->value);
+                    e->value = copy_value_secure(new_val);
+                }
+                value_free(&new_val);
+                return result;
+            }
+
+            /* x++ mantiene la semántica post-incremento clásica: devuelve
+             * la copia antigua y después actualiza la variable. */
             Value result = copy_value_secure(old);
             value_free(&e->value);
             e->value = new_val;

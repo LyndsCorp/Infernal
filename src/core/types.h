@@ -162,9 +162,9 @@ struct ASTNode {
             } for_stmt;
             struct { char *name; char **params; int *ptypes; int param_count; NodeList body; } func;
             struct { ASTNode *expr; int rtype; } ret;
-            struct { char *path; NodeList module_block; } import;
+            struct { char *path; char *alias; NodeList module_block; } import;
             struct { NodeList try_block, catch_block; } try_stmt;
-            struct { char *name; } var;
+            struct { char *name; bool clone; } var;
             struct { int type; int ival; double fval; int bval; char *sval; } lit;
             struct { int op; ASTNode *left, *right; } binop;
             struct { char *name; ASTNode **args; int argc; } call;
@@ -186,6 +186,7 @@ struct ASTNode {
             } unary;
             struct {
                 ASTNode *var;
+                bool statement_context;
             } post_op;
     } data;
 };

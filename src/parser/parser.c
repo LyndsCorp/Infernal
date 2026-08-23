@@ -383,6 +383,7 @@ ASTNode *parse_assignment_expr(int line) {
         }
         ASTNode *var_node = node_create(NODE_VAR, line);
         var_node->data.var.name = strdup(varname);
+        var_node->data.var.clone = false;
         ASTNode *binop = node_create(NODE_BINOP, line);
         binop->data.binop.left = var_node;
         binop->data.binop.right = value;
@@ -683,6 +684,8 @@ NodeList parse_block(const char *terminator) {
 
             ASTNode *incr = NULL;
             Token next_tok = ts_peek();
+            if (next_tok.type == TOK_IDENT && next_tok.lexeme[0] == '$')
+                error(t.line, "En el incremento de un for debes usar 'i++' o 'i--', sin '$'");
             if (next_tok.type == TOK_IDENT) {
                 int pos = ts.pos + 1;
                 if (pos < ts.count) {
@@ -864,6 +867,7 @@ NodeList parse_block(const char *terminator) {
             ts_advance();
             Token nt = ts_peek();
             char *module_name = NULL;
+            char *module_alias = NULL;
             int use_embedded = 0;
             const unsigned char *emb_data = NULL;
             size_t emb_size = 0;
@@ -883,6 +887,16 @@ NodeList parse_block(const char *terminator) {
 
             if (nt.type == TOK_IDENT && !valid_module_name(module_name))
                 error(t.line, "Nombre de módulo inválido: %s", module_name);
+
+            /* import <módulo/ruta> as <alias> */
+            if (ts_peek().type == TOK_IDENT && strcmp(ts_peek().lexeme, "as") == 0) {
+                ts_advance();
+                if (ts_peek().type != TOK_IDENT)
+                    error(t.line, "Se esperaba un alias después de 'as'");
+                module_alias = strdup(ts_advance().lexeme);
+                if (!valid_module_name(module_alias))
+                    error(t.line, "Alias de módulo inválido: %s", module_alias);
+            }
 
             TokenStream old_ts = ts;
             ts_init();
@@ -938,7 +952,7 @@ NodeList parse_block(const char *terminator) {
             if (dot) *dot = '\0';
 
             char *old_prefix = current_import_prefix;
-            current_import_prefix = prefix_base;
+            current_import_prefix = module_alias ? module_alias : prefix_base;
             NodeList module_block = parse_block(NULL);
             current_import_prefix = old_prefix;
             ts = old_ts;
@@ -946,6 +960,7 @@ NodeList parse_block(const char *terminator) {
             free(module_name);
             stmt = node_create(NODE_IMPORT, t.line);
             stmt->data.import.path = NULL;
+            stmt->data.import.alias = module_alias;
             stmt->data.import.module_block = module_block;
             nodelist_add(&block, stmt);
             DEBUG_INFO("parse_block: añadido NODE_IMPORT en línea %d", stmt->line);
@@ -1223,6 +1238,11 @@ NodeList parse_block(const char *terminator) {
                     if (next_tok.type == TOK_INC || next_tok.type == TOK_DEC) {
                         ts.pos--;
                         ASTNode *expr = parse_expression(0);
+                        if ((expr->kind == NODE_POST_INC || expr->kind == NODE_POST_DEC) &&
+                            expr->data.post_op.var && expr->data.post_op.var->kind == NODE_VAR &&
+                            expr->data.post_op.var->data.var.clone) {
+                            expr->data.post_op.statement_context = true;
+                        }
                         stmt = node_create(NODE_EXPR_STMT, saved_t.line);
                         stmt->data.expr_stmt.expr = expr;
                         nodelist_add(&block, stmt);

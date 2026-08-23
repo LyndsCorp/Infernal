@@ -367,6 +367,12 @@ static void compile_expr(Compiler *c, ASTNode *expr) {
                                     case NODE_POST_INC:
                                     case NODE_POST_DEC: {
                                         ASTNode *var_node = expr->data.post_op.var;
+                                        if (var_node && var_node->kind == NODE_VAR && var_node->data.var.clone) {
+                                            int const_idx = add_constant(c, val_ptr(expr));
+                                            emit(c->chunk, OP_INTERPRET_NODE, const_idx, expr->line);
+                                            c->chunk->code[c->chunk->code_count - 1].operand2 = 1;
+                                            break;
+                                        }
                                         if (var_node->kind != NODE_VAR) {
                                             error(expr->line, "Incremento/decremento solo soportado para variables");
                                         }

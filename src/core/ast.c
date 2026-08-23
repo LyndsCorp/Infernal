@@ -131,7 +131,7 @@ static void ast_free_internal(ASTNode *node) {
             nodelist_free_internal(&node->data.func.body);
             break;
         case NODE_RETURN: ast_free_internal(node->data.ret.expr); break;
-        case NODE_IMPORT: free(node->data.import.path); nodelist_free_internal(&node->data.import.module_block); break;
+        case NODE_IMPORT: free(node->data.import.path); free(node->data.import.alias); nodelist_free_internal(&node->data.import.module_block); break;
         case NODE_TRY: nodelist_free_internal(&node->data.try_stmt.try_block); nodelist_free_internal(&node->data.try_stmt.catch_block); break;
         case NODE_VAR: free(node->data.var.name); break;
         case NODE_LITERAL: free(node->data.lit.sval); break;

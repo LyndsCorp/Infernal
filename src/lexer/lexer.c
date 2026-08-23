@@ -333,7 +333,10 @@ void tokenize_file(FILE *fp) {
 
             if (isalpha(*p) || *p == '_' || *p == '.' || *p == '~') {
                 char *start = p;
-                while (isalnum(*p) || *p == '_' || *p == '/' || *p == '.' || *p == '-' || *p == '~') p++;
+                while (isalnum((unsigned char)*p) || *p == '_' || *p == '/' || *p == '.' ||
+                       *p == '~' || (*p == '-' && *(p + 1) != '-')) {
+                    p++;
+                }
                 size_t len = (size_t)(p - start);
                 char *lexeme = strndup(start, len);
                 if (!lexeme) error(lineno, "Memoria insuficiente para identificador");

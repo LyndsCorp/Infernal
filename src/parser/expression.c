@@ -272,7 +272,9 @@ ASTNode *parse_primary() {
         } else {
             ts_advance();
             ASTNode *n = node_create(NODE_VAR, t.line);
-            /* --- CORRECCIÓN: limpiar prefijo $ o ? --- */
+            /* $ marca una copia temporal (la información sintáctica se conserva
+             * para que $x++ pueda comportarse distinto de x++). */
+            n->data.var.clone = (t.lexeme[0] == '$');
             char *cleaned = clean_var_name(t.lexeme);
             n->data.var.name = cleaned;
 
@@ -343,6 +345,7 @@ ASTNode *parse_primary() {
         if (!ts_match(TOK_RBRACE)) error(t.line, "Se esperaba '}'");
         ASTNode *n = node_create(NODE_VAR, t.line);
         n->data.var.name = name;
+        n->data.var.clone = false;
         return n;
     }
     if (t.type == TOK_LPAREN) {
@@ -367,6 +370,7 @@ static ASTNode *parse_postfix(void) {
             /* Se permite cualquier nombre de variable, incluyendo $ y ? */
             ASTNode *node = node_create((op.type == TOK_INC) ? NODE_POST_INC : NODE_POST_DEC, expr->line);
             node->data.post_op.var = expr;
+            node->data.post_op.statement_context = false;
             expr = node;
         } else {
             break;
