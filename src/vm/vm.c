@@ -25,8 +25,11 @@
 extern int current_eval_line;
 
 #define STACK_MAX 4096
+#define VM_MAX_COMMAND_OUTPUT (8u * 1024u * 1024u)
 Value stack[STACK_MAX];
 static Value *sp = stack;
+static Value *active_locals = NULL;
+static int active_local_count = 0;
 
 static inline size_t vm_stack_depth(void) { return (size_t)(sp - stack); }
 
@@ -150,7 +153,10 @@ Chunk *vm_get_user_function(int index) {
 }
 
 static int call_builtin(int index, int arg_count) {
-    if (index >= vm_builtin_count) error(current_eval_line, "Índice de builtin inválido");
+    if (index < 0 || index >= vm_builtin_count)
+        error(current_eval_line, "Índice de builtin inválido");
+    if (arg_count < 0 || (size_t)arg_count > vm_stack_depth())
+        error(current_eval_line, "Argumentos insuficientes para builtin (se solicitaron %d, hay %zu)", arg_count, vm_stack_depth());
     Value *args = sp - arg_count;
     Value ret = vm_builtins[index](arg_count, args);
     for (int i = 0; i < arg_count; i++)
@@ -228,7 +234,13 @@ Value vm_run(Chunk *chunk) {
     if (!chunk || chunk->code_count == 0) return val_make_null();
 
     Value *frame_sp = sp;
-    Value locals[256] = {{0}};
+    Value *locals = NULL;
+    if (chunk->local_count > 0) {
+        locals = calloc((size_t)chunk->local_count, sizeof(*locals));
+        if (!locals) error(current_eval_line, "No se pudo reservar memoria para variables locales");
+    }
+    active_locals = locals;
+    active_local_count = chunk->local_count;
     Instruction *ip = chunk->code;
 
     for (;;) {
@@ -260,7 +272,10 @@ Value vm_run(Chunk *chunk) {
                 break;
 
             case OP_LOAD_VAR: {
-                Value v = locals[ip->operand];
+                int slot = ip->operand;
+                if (slot < 0 || slot >= chunk->local_count)
+                    error(current_eval_line, "Índice de local inválido: %d", slot);
+                Value v = locals[slot];
                 if (v.type == VAL_NULL) {
                     error(current_eval_line, "Variable local no definida");
                 }
@@ -285,10 +300,10 @@ Value vm_run(Chunk *chunk) {
                         val = vm_convert_value(val, target_type);
                     }
                 }
-                if (slot >= 0 && slot < 256) {
-                    value_free(&locals[slot]);
-                    locals[slot] = val;
-                }
+                if (slot < 0 || slot >= chunk->local_count)
+                    error(current_eval_line, "Índice de local inválido: %d", slot);
+                value_free(&locals[slot]);
+                locals[slot] = val;
                 if (slot < chunk->local_count && chunk->local_names[slot]) {
                     const char *name = chunk->local_names[slot];
                     VarEntry *e = scope_find(current_scope, name);
@@ -622,8 +637,13 @@ Value vm_run(Chunk *chunk) {
                                             --sp;
                                             value_free(sp);
                                         }
-                                        for (int i = 0; i < chunk->local_count && i < 256; i++)
+                                        for (int i = 0; i < chunk->local_count; i++)
                                             value_free(&locals[i]);
+                                        free(locals);
+                                        if (active_locals == locals) {
+                                            active_locals = NULL;
+                                            active_local_count = 0;
+                                        }
                                         sp = frame_sp;
                                         return ret;
                                     }
@@ -816,7 +836,7 @@ Value vm_run(Chunk *chunk) {
                                         while (fgets(buf, sizeof(buf), fp)) {
                                             size_t old_len = strlen(out);
                                             size_t add_len = strlen(buf);
-                                            if (old_len > SIZE_MAX - add_len - 1) {
+                                            if (old_len > VM_MAX_COMMAND_OUTPUT || add_len > VM_MAX_COMMAND_OUTPUT - old_len - 1) {
                                                 free(out);
                                                 pclose(fp);
                                                 if (temp_path) { unlink(temp_path); free(temp_path); }
@@ -844,6 +864,8 @@ Value vm_run(Chunk *chunk) {
                                         if (len > 0 && out[len-1] == '\n') out[len-1] = '\0';
 
                                         int slot = ip->operand2;
+                                        if (slot < 0 || slot >= chunk->local_count)
+                                            error(current_eval_line, "Índice de local inválido: %d", slot);
                                         int expected_type = chunk->local_types[slot];
                                         Value final_val;
 
@@ -866,7 +888,9 @@ Value vm_run(Chunk *chunk) {
 
                                         locals[slot] = final_val;
 
-                                        if (slot < chunk->local_count && chunk->local_names[slot]) {
+                                        if (slot < 0 || slot >= chunk->local_count)
+                                            error(current_eval_line, "Índice de local inválido: %d", slot);
+                                        if (chunk->local_names[slot]) {
                                             const char *name = chunk->local_names[slot];
                                             VarEntry *e = scope_find(current_scope, name);
                                             if (e) {
@@ -1013,6 +1037,13 @@ static void vm_chunk_free(Chunk *ch) {
 }
 
 void vm_cleanup_state(void) {
+    if (active_locals) {
+        for (int i = 0; i < active_local_count; i++)
+            value_free(&active_locals[i]);
+        free(active_locals);
+        active_locals = NULL;
+        active_local_count = 0;
+    }
     while (sp > stack) {
         --sp;
         value_free(sp);

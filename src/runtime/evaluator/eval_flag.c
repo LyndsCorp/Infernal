@@ -18,6 +18,22 @@
 #include <string.h>
 #include <stdio.h>
 
+static char *clean_flag_value(const char *val_str) {
+    if (!val_str) return strdup("");
+    const char *start = val_str;
+    const char *end = val_str + strlen(val_str);
+    if ((val_str[0] == '"' || val_str[0] == '\'') && end > start + 1) {
+        char quote = val_str[0];
+        if (end[-1] == quote) { start++; end--; }
+    }
+    size_t len = (size_t)(end - start);
+    char *cleaned = malloc(len + 1);
+    if (!cleaned) return NULL;
+    memcpy(cleaned, start, len);
+    cleaned[len] = '\0';
+    return cleaned;
+}
+
 /* --- Ejecutar un spec individual (ya existente) --- */
 void exec_flag_spec_impl(FlagSpec *spec) {
     if (spec->body_count == 0) return;
@@ -53,15 +69,8 @@ void exec_flags(ASTNode *node) {
             if (arg_idx < script_argc) {
                 char *val_str = script_argv[arg_idx];
                 if (spec->vtype && spec->var_name) {
-                    char cleaned[512]; int c = 0;
-                    if (val_str[0] == '"' || val_str[0] == '\'') {
-                        char quote = val_str[0];
-                        for (int j=1; val_str[j] && val_str[j] != quote; j++) cleaned[c++] = val_str[j];
-                        cleaned[c] = '\0';
-                    } else {
-                        strncpy(cleaned, val_str, sizeof(cleaned));
-                        cleaned[sizeof(cleaned)-1] = '\0';
-                    }
+                    char *cleaned = clean_flag_value(val_str);
+                    if (!cleaned) error(node->line, "Memoria insuficiente para valor de flag");
                     if (spec->vtype == TOK_FLOAT) {
                         char *coma = strchr(cleaned, ',');
                         if (coma) *coma = '.';
@@ -74,6 +83,7 @@ void exec_flags(ASTNode *node) {
                         case TOK_STRING: v = val_string(cleaned); break;
                         default: v = val_string(cleaned);
                     }
+                    free(cleaned);
                     if (spec->is_global) {
                         scope_define(super_global_scope, spec->var_name, spec->vtype, v);
                     } else {
@@ -115,15 +125,8 @@ void exec_flags(ASTNode *node) {
                             if (!eq_pos && a + 1 >= script_argc)
                                 error(node->line, "Falta el valor para el flag '%s'", arg_dup);
                             char *val_str = eq_pos ? eq_pos + 1 : script_argv[++a];
-                            char cleaned[512]; int c = 0;
-                            if (val_str[0] == '"' || val_str[0] == '\'') {
-                                char quote = val_str[0];
-                                for (int j=1; val_str[j] && val_str[j] != quote; j++) cleaned[c++] = val_str[j];
-                                cleaned[c] = '\0';
-                            } else {
-                                strncpy(cleaned, val_str, sizeof(cleaned));
-                                cleaned[sizeof(cleaned)-1] = '\0';
-                            }
+                    char *cleaned = clean_flag_value(val_str);
+                    if (!cleaned) error(node->line, "Memoria insuficiente para valor de flag");
                             if (spec->vtype == TOK_FLOAT) {
                                 char *coma = strchr(cleaned, ',');
                                 if (coma) *coma = '.';

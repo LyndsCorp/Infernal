@@ -829,7 +829,7 @@ static int append_vprintf(char **buffer, size_t *cap, size_t *len,
                                                                                                              if (argc != 2) error(current_eval_line, "tofile() espera exactamente 2 argumentos");
                                                                                                              if (args[1].type != VAL_STRING) error(current_eval_line, "tofile() espera un string como segundo argumento");
 
-                                                                                                             size_t data_len;
+                                                                                                             size_t data_len = 0;
                                                                                                              char *text = value_to_text(args[0], &data_len);
                                                                                                              if (!text) error(current_eval_line, "Error al serializar el valor a texto");
 

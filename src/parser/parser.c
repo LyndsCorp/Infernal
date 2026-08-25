@@ -776,7 +776,7 @@ NodeList parse_block(const char *terminator) {
             if (current_import_prefix) {
                 char prefixed[512];
                 snprintf(prefixed, sizeof(prefixed), "%s.%s", current_import_prefix, stmt->data.func.name);
-                func_register(strdup(prefixed), stmt);
+                func_register(prefixed, stmt);
             }
 
             Chunk *func_chunk = compile_function(stmt);
@@ -899,7 +899,11 @@ NodeList parse_block(const char *terminator) {
             }
 
             TokenStream old_ts = ts;
+            char **old_source_lines = source_lines;
+            int old_source_line_count = source_line_count;
             ts_init();
+            source_lines = NULL;
+            source_line_count = 0;
 
             if (use_embedded) {
                 tokenize_buffer((const char*)emb_data, emb_size);
@@ -955,7 +959,20 @@ NodeList parse_block(const char *terminator) {
             current_import_prefix = module_alias ? module_alias : prefix_base;
             NodeList module_block = parse_block(NULL);
             current_import_prefix = old_prefix;
+
+            /* El stream del módulo ya no se necesita después del parseo.
+             * Liberarlo evita que cada import embebido pierda sus tokens. */
+            for (int i = 0; i < ts.count; i++) free(ts.tokens[i].lexeme);
+            free(ts.tokens);
             ts = old_ts;
+
+            /* tokenize_file() mantiene sus propias source_lines. Restauramos
+             * las del script principal para que los comandos posteriores y
+             * los mensajes de error sigan apuntando al archivo correcto. */
+            for (int i = 0; i < source_line_count; i++) free(source_lines[i]);
+            free(source_lines);
+            source_lines = old_source_lines;
+            source_line_count = old_source_line_count;
 
             free(module_name);
             stmt = node_create(NODE_IMPORT, t.line);

@@ -6,6 +6,7 @@
 */
 
 #include <stdlib.h>
+#include <limits.h>
 #include <string.h>
 #include "compiler.h"
 #include "core/ast.h"
@@ -15,7 +16,6 @@
 #include "runtime/globals.h"
 #include "vm/vm.h"
 
-#define MAX_LOCALS 256
 
 typedef struct CompilePortalEntry {
     char *name;
@@ -24,9 +24,10 @@ typedef struct CompilePortalEntry {
 
 typedef struct {
     Chunk *chunk;
-    char *local_names[MAX_LOCALS];
-    int local_types[MAX_LOCALS];
+    char **local_names;
+    int *local_types;
     int local_count;
+    int local_cap;
     bool in_function;
     bool top_level;
     CompilePortalEntry *portals;
@@ -47,6 +48,11 @@ static void compiler_free_partial(Compiler *c) {
         c->chunk = NULL;
     }
     for (int i = 0; i < c->local_count; i++) free(c->local_names[i]);
+    free(c->local_names);
+    free(c->local_types);
+    c->local_names = NULL;
+    c->local_types = NULL;
+    c->local_cap = 0;
     for (int i = 0; i < c->portal_count; i++) free(c->portals[i].name);
     free(c->portals);
     c->portals = NULL;
@@ -72,7 +78,14 @@ static int add_constant(Compiler *c, Value v) {
 }
 
 static int add_local(Compiler *c, const char *name) {
-    if (c->local_count >= MAX_LOCALS) error(0, "Demasiadas variables locales");
+    if (c->local_count >= c->local_cap) {
+        int new_cap = c->local_cap == 0 ? 16 : c->local_cap * 2;
+        if (new_cap < c->local_count + 1 || new_cap > INT_MAX / 2)
+            error(0, "Demasiadas variables locales");
+        c->local_names = realloc(c->local_names, (size_t)new_cap * sizeof(*c->local_names));
+        c->local_types = realloc(c->local_types, (size_t)new_cap * sizeof(*c->local_types));
+        c->local_cap = new_cap;
+    }
     c->local_names[c->local_count] = strdup(name);
     c->local_types[c->local_count] = 0;
     return c->local_count++;
@@ -644,8 +657,8 @@ static void compile_block(Compiler *c, NodeList *block) {
 
 Chunk *compile_program(NodeList *program) {
     Compiler c;
+    memset(&c, 0, sizeof(c));
     c.chunk = calloc(1, sizeof(Chunk));
-    c.local_count = 0;
     c.in_function = false;
     active_compiler = &c;
     c.top_level = true;
@@ -660,17 +673,16 @@ Chunk *compile_program(NodeList *program) {
     emit(c.chunk, OP_RETURN, 0, 0);
 
     c.chunk->local_count = c.local_count;
-    if (c.local_count > 0) {
-        c.chunk->local_names = malloc(c.local_count * sizeof(char*));
-        c.chunk->local_types = malloc(c.local_count * sizeof(int));
-        for (int i = 0; i < c.local_count; i++) {
-            c.chunk->local_names[i] = c.local_names[i];
-            c.chunk->local_types[i] = c.local_types[i];
-        }
-    }
+    c.chunk->local_names = c.local_names;
+    c.chunk->local_types = c.local_types;
+    c.local_names = NULL;
+    c.local_types = NULL;
+    c.local_count = 0;
+    c.local_cap = 0;
 
     for (int i = 0; i < c.portal_count; i++) free(c.portals[i].name);
     free(c.portals);
+    c.portals = NULL;
 
     active_compiler = NULL;
     return c.chunk;
@@ -679,13 +691,11 @@ Chunk *compile_program(NodeList *program) {
 Chunk *compile_function(ASTNode *func_node) {
     if (func_node->kind != NODE_FUNC_DEF) return NULL;
     Compiler c;
+    memset(&c, 0, sizeof(c));
     c.chunk = calloc(1, sizeof(Chunk));
-    c.local_count = 0;
     c.in_function = true;
     active_compiler = &c;
     c.top_level = false;
-    c.portals = NULL;
-    c.portal_count = 0;
 
     for (int i = 0; i < func_node->data.func.param_count; i++) {
         int slot = add_local(&c, func_node->data.func.params[i]);
@@ -698,14 +708,12 @@ Chunk *compile_function(ASTNode *func_node) {
     emit(c.chunk, OP_RETURN, 0, 0);
 
     c.chunk->local_count = c.local_count;
-    if (c.local_count > 0) {
-        c.chunk->local_names = malloc(c.local_count * sizeof(char*));
-        c.chunk->local_types = malloc(c.local_count * sizeof(int));
-        for (int i = 0; i < c.local_count; i++) {
-            c.chunk->local_names[i] = c.local_names[i];
-            c.chunk->local_types[i] = c.local_types[i];
-        }
-    }
+    c.chunk->local_names = c.local_names;
+    c.chunk->local_types = c.local_types;
+    c.local_names = NULL;
+    c.local_types = NULL;
+    c.local_count = 0;
+    c.local_cap = 0;
 
     active_compiler = NULL;
     return c.chunk;

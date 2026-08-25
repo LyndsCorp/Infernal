@@ -478,7 +478,6 @@ static Value builtin_delspaces(int argc, Value *args) {
     if (args[0].type != VAL_STRING) error(current_eval_line, "delspaces() espera un string.");
 
     const char *src = args[0].data.sval;
-    size_t len = strlen(src);
 
     // Contar bytes que no son espacio
     size_t new_len = 0;

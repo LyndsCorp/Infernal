@@ -284,7 +284,10 @@ static unsigned char *gunzip_data(const unsigned char *compressed, size_t compre
 
     #define Z_OK            0
     #define Z_STREAM_END    1
-    #define Z_FINISH        4
+    #define Z_NO_FLUSH      0
+    #define Z_STREAM_ERROR (-2)
+    #define Z_DATA_ERROR   (-3)
+    #define Z_BUF_ERROR    (-5)
     #define MAX_WBITS       15
 
     z_stream strm = {0};
@@ -304,7 +307,9 @@ static unsigned char *gunzip_data(const unsigned char *compressed, size_t compre
     strm.avail_out = buf_size;
 
     int ret;
-    while ((ret = p_inflate(&strm, Z_FINISH)) != Z_STREAM_END) {
+    for (;;) {
+        ret = p_inflate(&strm, Z_NO_FLUSH);
+        if (ret == Z_STREAM_END) break;
         if (ret != Z_OK) {
             free(out);
             p_inflateEnd(&strm);

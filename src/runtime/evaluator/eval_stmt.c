@@ -22,6 +22,7 @@
 #include "developer/debug.h"
 #include "vm/vm.h"
 #include <stdio.h>
+#define MAX_COMMAND_OUTPUT (8u * 1024u * 1024u)
 #include <stdlib.h>
 #include <stdint.h>
 #include <stdarg.h>
@@ -181,7 +182,7 @@ void exec_stmt(ASTNode *stmt) {
                     while (fgets(buf, sizeof(buf), fp)) {
                         size_t old_len = strlen(out);
                         size_t add_len = strlen(buf);
-                        if (old_len > SIZE_MAX - add_len - 1) {
+                        if (old_len > MAX_COMMAND_OUTPUT || add_len > MAX_COMMAND_OUTPUT - old_len - 1) {
                             free(out);
                             pclose(fp);
                             if (temp_path) { unlink(temp_path); free(temp_path); }
