@@ -521,93 +521,93 @@ Value vm_run(Chunk *chunk) {
                 ip++;
                 break;
             }
-            case OP_NEQ: {
-                Value b = pop(), a = pop();
-                int neq = 1;
-                if (a.type == b.type) {
-                    switch (a.type) {
-                        case VAL_INT: neq = (a.data.ival != b.data.ival); break;
-                        case VAL_FLOAT: neq = (a.data.fval != b.data.fval); break;
-                        case VAL_BOOL: neq = (a.data.bval != b.data.bval); break;
-                        case VAL_STRING: neq = (strcmp(a.data.sval, b.data.sval) != 0); break;
-                        default: neq = 1;
-                    }
-                }
-                value_free(&a);
-                value_free(&b);
-                push(val_bool(neq));
-                ip++;
-                break;
-            }
-            case OP_LT: {
-                Value b = pop(), a = pop();
-                double av = (a.type == VAL_INT) ? a.data.ival : a.data.fval;
-                double bv = (b.type == VAL_INT) ? b.data.ival : b.data.fval;
-                value_free(&a);
-                value_free(&b);
-                push(val_bool(av < bv));
-                ip++;
-                break;
-            }
-            case OP_GT: {
-                Value b = pop(), a = pop();
-                double av = (a.type == VAL_INT) ? a.data.ival : a.data.fval;
-                double bv = (b.type == VAL_INT) ? b.data.ival : b.data.fval;
-                value_free(&a);
-                value_free(&b);
-                push(val_bool(av > bv));
-                ip++;
-                break;
-            }
-            case OP_LE: {
-                Value b = pop(), a = pop();
-                double av = (a.type == VAL_INT) ? a.data.ival : a.data.fval;
-                double bv = (b.type == VAL_INT) ? b.data.ival : b.data.fval;
-                value_free(&a);
-                value_free(&b);
-                push(val_bool(av <= bv));
-                ip++;
-                break;
-            }
-            case OP_GE: {
-                Value b = pop(), a = pop();
-                double av = (a.type == VAL_INT) ? a.data.ival : a.data.fval;
-                double bv = (b.type == VAL_INT) ? b.data.ival : b.data.fval;
-                value_free(&a);
-                value_free(&b);
-                push(val_bool(av >= bv));
-                ip++;
-                break;
-            }
+                        case OP_NEQ: {
+                            Value b = pop(), a = pop();
+                            int neq = 1;
+                            if (a.type == b.type) {
+                                switch (a.type) {
+                                    case VAL_INT: neq = (a.data.ival != b.data.ival); break;
+                                    case VAL_FLOAT: neq = (a.data.fval != b.data.fval); break;
+                                    case VAL_BOOL: neq = (a.data.bval != b.data.bval); break;
+                                    case VAL_STRING: neq = (strcmp(a.data.sval, b.data.sval) != 0); break;
+                                    default: neq = 1;
+                                }
+                            }
+                            value_free(&a);
+                            value_free(&b);
+                            push(val_bool(neq));
+                            ip++;
+                            break;
+                        }
+                                    case OP_LT: {
+                                        Value b = pop(), a = pop();
+                                        double av = (a.type == VAL_INT) ? a.data.ival : a.data.fval;
+                                        double bv = (b.type == VAL_INT) ? b.data.ival : b.data.fval;
+                                        value_free(&a);
+                                        value_free(&b);
+                                        push(val_bool(av < bv));
+                                        ip++;
+                                        break;
+                                    }
+                                    case OP_GT: {
+                                        Value b = pop(), a = pop();
+                                        double av = (a.type == VAL_INT) ? a.data.ival : a.data.fval;
+                                        double bv = (b.type == VAL_INT) ? b.data.ival : b.data.fval;
+                                        value_free(&a);
+                                        value_free(&b);
+                                        push(val_bool(av > bv));
+                                        ip++;
+                                        break;
+                                    }
+                                    case OP_LE: {
+                                        Value b = pop(), a = pop();
+                                        double av = (a.type == VAL_INT) ? a.data.ival : a.data.fval;
+                                        double bv = (b.type == VAL_INT) ? b.data.ival : b.data.fval;
+                                        value_free(&a);
+                                        value_free(&b);
+                                        push(val_bool(av <= bv));
+                                        ip++;
+                                        break;
+                                    }
+                                    case OP_GE: {
+                                        Value b = pop(), a = pop();
+                                        double av = (a.type == VAL_INT) ? a.data.ival : a.data.fval;
+                                        double bv = (b.type == VAL_INT) ? b.data.ival : b.data.fval;
+                                        value_free(&a);
+                                        value_free(&b);
+                                        push(val_bool(av >= bv));
+                                        ip++;
+                                        break;
+                                    }
 
-            case OP_AND: {
-                Value b = pop(), a = pop();
-                int truthy_a = (a.type == VAL_BOOL && a.data.bval) || (a.type == VAL_INT && a.data.ival != 0) || (a.type == VAL_FLOAT && a.data.fval != 0.0) || (a.type == VAL_STRING && a.data.sval[0]);
-                int truthy_b = (b.type == VAL_BOOL && b.data.bval) || (b.type == VAL_INT && b.data.ival != 0) || (b.type == VAL_FLOAT && b.data.fval != 0.0) || (b.type == VAL_STRING && b.data.sval[0]);
-                value_free(&a);
-                value_free(&b);
-                push(val_bool(truthy_a && truthy_b));
-                ip++;
-                break;
-            }
-            case OP_OR: {
-                Value b = pop(), a = pop();
-                int truthy_a = (a.type == VAL_BOOL && a.data.bval) || (a.type == VAL_INT && a.data.ival != 0) || (a.type == VAL_FLOAT && a.data.fval != 0.0) || (a.type == VAL_STRING && a.data.sval[0]);
-                int truthy_b = (b.type == VAL_BOOL && b.data.bval) || (b.type == VAL_INT && b.data.ival != 0) || (b.type == VAL_FLOAT && b.data.fval != 0.0) || (b.type == VAL_STRING && b.data.sval[0]);
-                value_free(&a);
-                value_free(&b);
-                push(val_bool(truthy_a || truthy_b));
-                ip++;
-                break;
-            }
-            case OP_NOT: {
-                Value v = pop();
-                int truthy = (v.type == VAL_BOOL && v.data.bval) || (v.type == VAL_INT && v.data.ival != 0) || (v.type == VAL_FLOAT && v.data.fval != 0.0) || (v.type == VAL_STRING && v.data.sval[0]);
-                value_free(&v);
-                push(val_bool(!truthy));
-                ip++;
-                break;
-            }
+                                    case OP_AND: {
+                                        Value b = pop(), a = pop();
+                                        int truthy_a = (a.type == VAL_BOOL && a.data.bval) || (a.type == VAL_INT && a.data.ival != 0) || (a.type == VAL_FLOAT && a.data.fval != 0.0) || (a.type == VAL_STRING && a.data.sval[0]);
+                                        int truthy_b = (b.type == VAL_BOOL && b.data.bval) || (b.type == VAL_INT && b.data.ival != 0) || (b.type == VAL_FLOAT && b.data.fval != 0.0) || (b.type == VAL_STRING && b.data.sval[0]);
+                                        value_free(&a);
+                                        value_free(&b);
+                                        push(val_bool(truthy_a && truthy_b));
+                                        ip++;
+                                        break;
+                                    }
+                                    case OP_OR: {
+                                        Value b = pop(), a = pop();
+                                        int truthy_a = (a.type == VAL_BOOL && a.data.bval) || (a.type == VAL_INT && a.data.ival != 0) || (a.type == VAL_FLOAT && a.data.fval != 0.0) || (a.type == VAL_STRING && a.data.sval[0]);
+                                        int truthy_b = (b.type == VAL_BOOL && b.data.bval) || (b.type == VAL_INT && b.data.ival != 0) || (b.type == VAL_FLOAT && b.data.fval != 0.0) || (b.type == VAL_STRING && b.data.sval[0]);
+                                        value_free(&a);
+                                        value_free(&b);
+                                        push(val_bool(truthy_a || truthy_b));
+                                        ip++;
+                                        break;
+                                    }
+                                    case OP_NOT: {
+                                        Value v = pop();
+                                        int truthy = (v.type == VAL_BOOL && v.data.bval) || (v.type == VAL_INT && v.data.ival != 0) || (v.type == VAL_FLOAT && v.data.fval != 0.0) || (v.type == VAL_STRING && v.data.sval[0]);
+                                        value_free(&v);
+                                        push(val_bool(!truthy));
+                                        ip++;
+                                        break;
+                                    }
 
                                     case OP_CALL_BUILTIN: {
                                         int builtin_idx = ip->operand;
@@ -630,9 +630,9 @@ Value vm_run(Chunk *chunk) {
                                         break;
                                     }
 
-                                                            case OP_RETURN: {
+                                    case OP_RETURN: {
                                         Value ret = vm_stack_depth() > (size_t)(frame_sp - stack)
-                                            ? copy_value_secure(peek(0)) : val_make_null();
+                                        ? copy_value_secure(peek(0)) : val_make_null();
                                         while (sp > frame_sp) {
                                             --sp;
                                             value_free(sp);
@@ -1055,11 +1055,12 @@ void vm_cleanup_state(void) {
         vm_global_entries[i].name = NULL;
     }
     vm_global_count = 0;
+    /* Ya no liberamos los Chunk aquí; se liberan en cleanup_runtime_state().
+     *      Solo limpiamos los nombres para evitar uso posterior. */
     for (int i = 0; i < user_function_count; i++) {
         free(user_functions[i].name);
-        vm_chunk_free(user_functions[i].code);
         user_functions[i].name = NULL;
-        user_functions[i].code = NULL;
+        user_functions[i].code = NULL;   // no liberamos el Chunk
     }
     user_function_count = 0;
 }

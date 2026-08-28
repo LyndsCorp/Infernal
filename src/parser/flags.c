@@ -103,6 +103,28 @@ void parse_flag_body_tokens(Token **body_tokens, int *body_count) {
     }
 }
 
+/* --- Función de limpieza de FlagSpec (resistente a doble free) --- */
+static void free_flag_spec(FlagSpec *spec) {
+    if (!spec) return;
+
+    for (int i = 0; i < spec->name_count; i++) {
+        free(spec->names[i]);
+        spec->names[i] = NULL;
+    }
+    free(spec->names);
+    spec->names = NULL;
+    spec->name_count = 0;
+
+    free(spec->var_name);
+    spec->var_name = NULL;
+
+    /* body_tokens es un array de Token; no liberamos los lexemes porque
+     *      son compartidos con el token stream principal, pero el array sí debe liberarse */
+    free(spec->body_tokens);
+    spec->body_tokens = NULL;
+    spec->body_count = 0;
+}
+
 ASTNode *parse_flags() {
     if (!ts_match(TOK_LPAREN)) error(ts_peek().line, "Se esperaba '(' después de 'flags'");
     ASTNode *mode_expr = parse_expression(0);
