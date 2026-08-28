@@ -45,27 +45,21 @@ static void cleanup_runtime_state(void) {
     if (global_scope) { scope_free(global_scope); global_scope = NULL; current_scope = NULL; }
     if (super_global_scope) { scope_free(super_global_scope); super_global_scope = NULL; }
 
+    /* Liberar funciones de usuario y sus Chunk */
     while (func_table) {
         FuncEntry *entry = func_table;
-        FuncEntry *next = entry->next;
+        func_table = entry->next;  // avanzar antes de liberar
+
         FuncObject *obj = entry->obj;
-        bool shared_obj = false;
-        for (FuncEntry *scan = next; scan; scan = scan->next) {
-            if (scan->obj == obj) {
-                shared_obj = true;
-                break;
-            }
-        }
-        free(entry->name);
-        if (!shared_obj && obj) {
+        if (obj) {
             if (obj->kind == FUNC_USER && obj->code) {
-                chunk_free(obj->code);   // liberamos el Chunk aquí
+                chunk_free(obj->code);
                 obj->code = NULL;
             }
             free(obj);
         }
+        free(entry->name);
         free(entry);
-        func_table = next;
     }
 
     value_free(&return_value);
