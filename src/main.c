@@ -22,6 +22,7 @@
 #include "vm/vm.h"
 #include "vm/compiler.h"
 #include "developer/debug.h"
+#include "runtime/evaluator/evaluator.h"
 
 extern const char* get_metadata(const char *type);
 
@@ -45,11 +46,9 @@ static void cleanup_runtime_state(void) {
     if (global_scope) { scope_free(global_scope); global_scope = NULL; current_scope = NULL; }
     if (super_global_scope) { scope_free(super_global_scope); super_global_scope = NULL; }
 
-    /* Liberar funciones de usuario y sus Chunk */
     while (func_table) {
         FuncEntry *entry = func_table;
-        func_table = entry->next;  // avanzar antes de liberar
-
+        func_table = entry->next;
         FuncObject *obj = entry->obj;
         if (obj) {
             if (obj->kind == FUNC_USER && obj->code) {
@@ -202,7 +201,6 @@ int main(int argc, char **argv) {
     }
 
     NodeList program = {NULL, 0, 0};
-    Chunk *main_chunk = NULL;
     bool file_open = true;
     bool parse_complete = false;
 
@@ -213,21 +211,17 @@ int main(int argc, char **argv) {
         file_open = false;
 
         program = parse_block(NULL);
-
-        DEBUG_INFO("main: parse_block devolvió %d sentencias", program.count);
-        if (program.count == 0) {
-            error(0, "El script no contiene sentencias ejecutables");
-        }
-
         parse_complete = true;
 
-        main_chunk = compile_program(&program);
-        Value result = vm_run(main_chunk);
-        value_free(&result);
+        DEBUG_INFO("main: parse_block devolvió %d sentencias (stmts=%p)", program.count, (void*)program.stmts);
 
-        chunk_free(main_chunk);
-        main_chunk = NULL;
-        vm_cleanup_state();
+        /* Ejecutar directamente con el evaluador (más estable que el compilador) */
+        if (program.count > 0 && program.stmts != NULL) {
+            exec_block(&program);
+        } else {
+            fprintf(stderr, "Advertencia: el script no contiene sentencias válidas\n");
+        }
+
         nodelist_free(&program);
         if (ts.tokens) {
             for (int i = 0; i < ts.count; i++) free(ts.tokens[i].lexeme);
@@ -242,7 +236,6 @@ int main(int argc, char **argv) {
         return 0;
     } else {
         if (file_open) fclose(fp);
-        if (main_chunk) { chunk_free(main_chunk); main_chunk = NULL; }
         vm_cleanup_state();
         if (!parse_complete) {
             compiler_cleanup_on_error();
