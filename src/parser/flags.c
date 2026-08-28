@@ -79,11 +79,17 @@ static char *parse_flag_name(int line) {
     return name;
 }
 
-void parse_flag_body_tokens(Token **body_tokens, int *body_count) {
+void parse_flag_body_tokens(Token **body_tokens, int *body_count, int already_consumed_brace) {
     int depth = 1;
     *body_tokens = NULL;
     *body_count = 0;
     int cap = 0;
+
+    if (!already_consumed_brace) {
+        if (ts_peek().type != TOK_LBRACE)
+            error(ts_peek().line, "Se esperaba '{' para el bloque del flag");
+        ts_advance(); // consumir el '{'
+    }
 
     while (depth > 0 && ts.pos < ts.count) {
         Token t = ts_advance();
@@ -174,7 +180,7 @@ ASTNode *parse_flags() {
             spec.var_name = strdup(ts_advance().lexeme);
             if (ts_peek().type == TOK_LBRACE) {
                 ts_advance();
-                parse_flag_body_tokens(&spec.body_tokens, &spec.body_count);
+                parse_flag_body_tokens(&spec.body_tokens, &spec.body_count, 0);
             } else {
                 spec.body_tokens = NULL;
                 spec.body_count = 0;
@@ -183,44 +189,90 @@ ASTNode *parse_flags() {
             ts_advance();
             spec.catch_all = true;
             if (!ts_match(TOK_LBRACE)) error(ts_peek().line, "Se esperaba '{' después de '*'");
-            parse_flag_body_tokens(&spec.body_tokens, &spec.body_count);
+            parse_flag_body_tokens(&spec.body_tokens, &spec.body_count, 0);
         } else {
             /* --- FLAG NORMAL (con nombre) ---------------------- */
-            char *name = parse_flag_name(ts_peek().line);
-            add_flag_name(&spec, name, ts_peek().line);
-            free(name);
+            Token t = ts_peek();
+            char *name = NULL;
+            char **aliases = NULL;
+            int alias_count = 0;
+            int has_block = 0;
 
-            while (ts_peek().type == TOK_PIPE) {
-                ts_advance();
-                char *alias = parse_flag_name(ts_peek().line);
-                add_flag_name(&spec, alias, ts_peek().line);
-                free(alias);
+            // Verificar si el token contiene '|' o '{'
+            if (t.type == TOK_IDENT && (strchr(t.lexeme, '|') || strchr(t.lexeme, '{'))) {
+                char *lex = strdup(t.lexeme);
+                char *p = lex;
+                // Extraer nombre (antes de '|' o '{')
+                char *name_start = p;
+                while (*p && *p != '|' && *p != '{') p++;
+                if (p == name_start) {
+                    free(lex);
+                    error(t.line, "Nombre de flag vacío");
+                }
+                size_t name_len = p - name_start;
+                name = strndup(name_start, name_len);
+
+                // Procesar alias y detectar bloque
+                while (*p) {
+                    if (*p == '|') {
+                        p++;
+                        char *alias_start = p;
+                        while (*p && *p != '|' && *p != '{') p++;
+                        if (p > alias_start) {
+                            char *alias = strndup(alias_start, p - alias_start);
+                            aliases = realloc(aliases, (alias_count + 1) * sizeof(char*));
+                            aliases[alias_count++] = alias;
+                        }
+                    } else if (*p == '{') {
+                        has_block = 1;
+                        p++;
+                        break;
+                    } else {
+                        p++;
+                    }
+                }
+                free(lex);
+                ts_advance(); // consumir el token
+            } else {
+                name = parse_flag_name(t.line);
             }
 
+            // Añadir el nombre y los alias al spec
+            add_flag_name(&spec, name, t.line);
+            free(name);
+            for (int i = 0; i < alias_count; i++) {
+                add_flag_name(&spec, aliases[i], t.line);
+                free(aliases[i]);
+            }
+            free(aliases);
+
+            // Procesar el '=' y el tipo/variable
             if (ts_match(TOK_EQ)) {
-                /* --- Detectar 'global' o 'local' antes del tipo -- */
                 bool is_global = false;
                 TokenType peek = ts_peek().type;
                 if (peek == TOK_GLOBAL || peek == TOK_LOCAL) {
                     if (peek == TOK_GLOBAL) is_global = true;
-                    ts_advance(); // consumir global/local
+                    ts_advance();
                 }
-                TokenType t = ts_peek().type;
-                if (t == TOK_INT || t == TOK_FLOAT || t == TOK_BOOL || t == TOK_STRING || t == TOK_LIST) {
+                TokenType ttype = ts_peek().type;
+                if (ttype == TOK_INT || ttype == TOK_FLOAT || ttype == TOK_BOOL ||
+                    ttype == TOK_STRING || ttype == TOK_LIST) {
                     spec.vtype = ts_advance().type;
-                    if (ts_peek().type != TOK_IDENT || !is_valid_flag_name(ts_peek().lexeme))
-                        error(ts_peek().line, "Se esperaba nombre de variable para el flags");
+                if (ts_peek().type != TOK_IDENT || !is_valid_flag_name(ts_peek().lexeme))
+                    error(ts_peek().line, "Se esperaba nombre de variable para el flags");
                     spec.var_name = strdup(ts_advance().lexeme);
-                    spec.is_global = is_global;
-                } else {
-                    error(ts_peek().line, "Se esperaba un tipo (int, float, bool, string, list) después de '=' (o global/local tipo)");
-                }
+                spec.is_global = is_global;
+                    } else {
+                        error(ts_peek().line, "Se esperaba un tipo (int, float, bool, string, list) después de '='");
+                    }
             }
 
-            /* --- Bloque opcional -------------------------------- */
-            if (ts_peek().type == TOK_LBRACE) {
-                ts_advance();
-                parse_flag_body_tokens(&spec.body_tokens, &spec.body_count);
+            // Procesar el bloque (si no se ha procesado ya y existe)
+            if (!has_block && ts_peek().type == TOK_LBRACE) {
+                parse_flag_body_tokens(&spec.body_tokens, &spec.body_count, 0);
+            } else if (has_block) {
+                // Ya hemos consumido el '{' pegado, leer el bloque
+                parse_flag_body_tokens(&spec.body_tokens, &spec.body_count, 1);
             } else {
                 spec.body_tokens = NULL;
                 spec.body_count = 0;

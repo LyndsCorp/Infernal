@@ -11,5 +11,6 @@
 #include "core/types.h"
 
 ASTNode *parse_flags(void);
+void parse_flag_body_tokens(Token **body_tokens, int *body_count, int already_consumed_brace);
 
 #endif
