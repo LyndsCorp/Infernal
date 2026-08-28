@@ -606,6 +606,11 @@ static void compile_stmt(Compiler *c, ASTNode *stmt) {
             if (func_chunk) {
                 int idx = vm_register_user_function(stmt->data.func.name, func_chunk);
                 (void)idx;
+                // Actualizar el FuncObject en func_table para que apunte al Chunk
+                FuncObject *fobj = func_lookup(stmt->data.func.name);
+                if (fobj && fobj->kind == FUNC_USER) {
+                    fobj->code = func_chunk;
+                }
             }
             break;
         }
