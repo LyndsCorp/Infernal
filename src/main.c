@@ -44,6 +44,7 @@ static void cleanup_runtime_state(void) {
     }
     if (global_scope) { scope_free(global_scope); global_scope = NULL; current_scope = NULL; }
     if (super_global_scope) { scope_free(super_global_scope); super_global_scope = NULL; }
+
     while (func_table) {
         FuncEntry *entry = func_table;
         FuncEntry *next = entry->next;
@@ -57,15 +58,13 @@ static void cleanup_runtime_state(void) {
         }
         free(entry->name);
         if (!shared_obj && obj) {
-            if (obj->kind == FUNC_USER && obj->code) {
-                chunk_free(obj->code);
-                obj->code = NULL;
-            }
+            /* El Chunk ya fue liberado en vm_cleanup_state, así que no lo liberamos aquí */
             free(obj);
         }
         free(entry);
         func_table = next;
     }
+
     value_free(&return_value);
     if (infernal_shell) { free(infernal_shell); infernal_shell = NULL; }
 }

@@ -56,10 +56,20 @@ void nodelist_add(NodeList *list, ASTNode *node) {
 
 static void free_flag_spec(FlagSpec *spec) {
     if (!spec) return;
-    for (int i = 0; i < spec->name_count; i++) free(spec->names[i]);
+    for (int i = 0; i < spec->name_count; i++) {
+        free(spec->names[i]);
+        spec->names[i] = NULL;
+    }
     free(spec->names);
+    spec->names = NULL;
+    spec->name_count = 0;
+
     free(spec->var_name);
+    spec->var_name = NULL;
+
     free(spec->body_tokens);
+    spec->body_tokens = NULL;
+    spec->body_count = 0;
 }
 
 typedef struct ASTFreedEntry {
