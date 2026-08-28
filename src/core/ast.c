@@ -104,9 +104,26 @@ static void ast_clear_freed(void) {
 static void ast_free_internal(ASTNode *node);
 static void nodelist_free_internal(NodeList *list) {
     if (!list) return;
-    for (int i = 0; i < list->count; i++) ast_free_internal(list->stmts[i]);
+
+    // Si stmts es NULL o count es 0, simplemente reiniciar y salir
+    if (!list->stmts || list->count == 0) {
+        list->stmts = NULL;
+        list->count = 0;
+        list->cap = 0;
+        return;
+    }
+
+    // Liberar cada nodo del array
+    for (int i = 0; i < list->count; i++) {
+        if (list->stmts[i] != NULL) {
+            ast_free_internal(list->stmts[i]);
+            list->stmts[i] = NULL;  // evitar doble liberación
+        }
+    }
     free(list->stmts);
-    list->stmts = NULL; list->count = 0; list->cap = 0;
+    list->stmts = NULL;
+    list->count = 0;
+    list->cap = 0;
 }
 
 static void ast_free_internal(ASTNode *node) {
@@ -181,9 +198,15 @@ static void ast_free_internal(ASTNode *node) {
 }
 
 void nodelist_free(NodeList *list) {
-    ast_clear_freed();
+    if (!list) return;
+    if (!list->stmts || list->count == 0) {
+        // Ya está vacío o liberado
+        list->stmts = NULL;
+        list->count = 0;
+        list->cap = 0;
+        return;
+    }
     nodelist_free_internal(list);
-    ast_clear_freed();
 }
 
 void ast_free(ASTNode *node) {
