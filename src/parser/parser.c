@@ -24,6 +24,7 @@
 #include "developer/debug.h"
 #include "core/memory.h"
 #include "runtime/evaluator/helpers.h"
+#include "developer/debug.h"
 
 /* --- Estado de limpieza de parser ante longjmp --- */
 #define MAX_ACTIVE_PARSE_BLOCKS 256

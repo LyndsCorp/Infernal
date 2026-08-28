@@ -15,6 +15,7 @@
 #include "runtime/error.h"
 #include "runtime/globals.h"
 #include "vm/vm.h"
+#include "developer/debug.h"
 
 
 typedef struct CompilePortalEntry {
@@ -664,7 +665,7 @@ static void compile_block(Compiler *c, NodeList *block) {
 Chunk *compile_program(NodeList *program) {
     /* --- VERIFICACIÓN DE SEGURIDAD: si el programa está vacío --- */
     if (!program || program->count == 0 || !program->stmts) {
-        // Devolver un chunk vacío para evitar segfault
+        DEBUG_WARN("compile_program: programa vacío, devolviendo chunk vacío");
         Chunk *empty = calloc(1, sizeof(Chunk));
         if (!empty) {
             error(0, "No se pudo reservar memoria para chunk vacío");
@@ -677,6 +678,8 @@ Chunk *compile_program(NodeList *program) {
         empty->local_types = NULL;
         return empty;
     }
+
+    DEBUG_INFO("compile_program: compilando %d sentencias", program->count);
 
     Compiler c;
     memset(&c, 0, sizeof(c));
@@ -692,12 +695,19 @@ Chunk *compile_program(NodeList *program) {
 
     /* Recolectar portales en todo el programa */
     for (int i = 0; i < program->count; i++) {
-        collect_portals_rec(program->stmts[i], &c);
+        if (program->stmts[i]) {
+            collect_portals_rec(program->stmts[i], &c);
+        }
     }
+
+    DEBUG_INFO("compile_program: portales recolectados: %d", c.portal_count);
 
     /* Compilar todas las sentencias del programa */
     compile_block(&c, program);
+    DEBUG_INFO("compile_program: compilación completada, instrucciones generadas: %d", c.chunk->code_count);
+
     emit(c.chunk, OP_RETURN, 0, 0);
+    DEBUG_INFO("compile_program: emitido OP_RETURN, total instrucciones: %d", c.chunk->code_count);
 
     /* Transferir información de locales al chunk */
     c.chunk->local_count = c.local_count;
