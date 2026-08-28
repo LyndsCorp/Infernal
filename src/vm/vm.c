@@ -1047,7 +1047,7 @@ void vm_cleanup_state(void) {
     for (int i = 0; i < user_function_count; i++) {
         free(user_functions[i].name);
         user_functions[i].name = NULL;
-        user_functions[i].code = NULL;   // solo para evitar uso
+        user_functions[i].code = NULL;   // no liberamos el Chunk aquí
     }
     user_function_count = 0;
 }

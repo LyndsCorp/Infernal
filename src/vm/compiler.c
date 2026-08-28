@@ -604,9 +604,10 @@ static void compile_stmt(Compiler *c, ASTNode *stmt) {
         case NODE_FUNC_DEF: {
             Chunk *func_chunk = compile_function(stmt);
             if (func_chunk) {
+                // Registrar en la VM (para que pueda ser llamada)
                 int idx = vm_register_user_function(stmt->data.func.name, func_chunk);
                 (void)idx;
-                // Actualizar el FuncObject en func_table para que apunte al Chunk
+                // ¡ASIGNAR EL CHUNK AL FuncObject EN func_table!
                 FuncObject *fobj = func_lookup(stmt->data.func.name);
                 if (fobj && fobj->kind == FUNC_USER) {
                     fobj->code = func_chunk;
