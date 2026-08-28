@@ -154,8 +154,12 @@ ASTNode *parse_flags() {
     node->data.flags.spec_count = 0;
     int empty_count = 0;
 
-    while (!ts_match(TOK_RPAREN)) {
+    while (1) {
         ts_skip_newlines();
+        if (ts_peek().type == TOK_EOF) {
+            error(ts_peek().line, "Falta ')' al final de la declaración de flags");
+        }
+        if (ts_match(TOK_RPAREN)) break;
 
         // Saltar comentarios (identificadores que empiezan con '#')
         while (ts_peek().type == TOK_IDENT && ts_peek().lexeme[0] == '#') {
@@ -205,6 +209,7 @@ ASTNode *parse_flags() {
                 error(ts_peek().line, "Se esperaba '{' después de '*'");
             }
             parse_flag_body_tokens(&spec.body_tokens, &spec.body_count, 1);
+        } else {
             /* --- FLAG NORMAL (con nombre) ---------------------- */
             // Parsear el nombre principal
             char *name = parse_flag_name(ts_peek().line);
@@ -268,7 +273,12 @@ ASTNode *parse_flags() {
         node->data.flags.specs[node->data.flags.spec_count++] = spec;
 
         ts_skip_newlines();
-        if (ts_peek().type == TOK_COMMA) { ts_advance(); ts_skip_newlines(); }
+        if (ts_peek().type == TOK_COMMA) {
+            ts_advance();
+            ts_skip_newlines();
+        } else if (ts_peek().type != TOK_RPAREN && ts_peek().type != TOK_EOF) {
+            error(ts_peek().line, "Se esperaba ',' o ')' después del flag");
+        }
     }
 
     return node;
