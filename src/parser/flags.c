@@ -200,9 +200,11 @@ ASTNode *parse_flags() {
         } else if (ts_peek().type == TOK_STAR) {
             ts_advance();
             spec.catch_all = true;
-            if (!ts_match(TOK_LBRACE)) error(ts_peek().line, "Se esperaba '{' después de '*'");
-            parse_flag_body_tokens(&spec.body_tokens, &spec.body_count, 0);
-        } else {
+            ts_skip_newlines();
+            if (!ts_match(TOK_LBRACE)) {
+                error(ts_peek().line, "Se esperaba '{' después de '*'");
+            }
+            parse_flag_body_tokens(&spec.body_tokens, &spec.body_count, 1);
             /* --- FLAG NORMAL (con nombre) ---------------------- */
             // Parsear el nombre principal
             char *name = parse_flag_name(ts_peek().line);
