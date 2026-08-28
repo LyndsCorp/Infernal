@@ -779,11 +779,6 @@ NodeList parse_block(const char *terminator) {
                 func_register(prefixed, stmt);
             }
 
-            Chunk *func_chunk = compile_function(stmt);
-            FuncObject *fobj = func_lookup(stmt->data.func.name);
-            if (func_chunk && fobj && fobj->kind == FUNC_USER)
-                fobj->code = func_chunk;
-
             DEBUG_INFO("parse_block: añadido NODE_FUNC_DEF en línea %d", stmt->line);
             ts_skip_newlines();
             continue;
