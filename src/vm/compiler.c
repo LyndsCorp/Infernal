@@ -664,18 +664,13 @@ static void compile_block(Compiler *c, NodeList *block) {
 
 Chunk *compile_program(NodeList *program) {
     /* --- VERIFICACIÓN DE SEGURIDAD: si el programa está vacío --- */
-    if (!program || program->count == 0 || !program->stmts) {
-        DEBUG_WARN("compile_program: programa vacío, devolviendo chunk vacío");
+    if (!program || !program->stmts || program->count == 0) {
+        DEBUG_WARN("compile_program: programa vacío, devolviendo chunk con solo RETURN");
         Chunk *empty = calloc(1, sizeof(Chunk));
-        if (!empty) {
-            error(0, "No se pudo reservar memoria para chunk vacío");
-        }
-        empty->code = NULL;
-        empty->code_count = 0;
+        empty->code = malloc(sizeof(Instruction));
+        empty->code[0] = (Instruction){OP_RETURN, 0, 0, 0};
+        empty->code_count = 1;
         empty->const_count = 0;
-        empty->local_count = 0;
-        empty->local_names = NULL;
-        empty->local_types = NULL;
         return empty;
     }
 

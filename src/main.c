@@ -213,6 +213,12 @@ int main(int argc, char **argv) {
         file_open = false;
 
         program = parse_block(NULL);
+
+        DEBUG_INFO("main: parse_block devolvió %d sentencias", program.count);
+        if (program.count == 0) {
+            error(0, "El script no contiene sentencias ejecutables");
+        }
+
         parse_complete = true;
 
         main_chunk = compile_program(&program);

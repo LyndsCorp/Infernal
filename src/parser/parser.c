@@ -24,7 +24,6 @@
 #include "developer/debug.h"
 #include "core/memory.h"
 #include "runtime/evaluator/helpers.h"
-#include "developer/debug.h"
 
 /* --- Estado de limpieza de parser ante longjmp --- */
 #define MAX_ACTIVE_PARSE_BLOCKS 256
@@ -1290,6 +1289,7 @@ NodeList parse_block(const char *terminator) {
     DEBUG_INFO("=== parse_block: bloque finalizado, %d sentencias ===", block.count);
     if (active_parse_block_count > 0 && active_parse_blocks[active_parse_block_count - 1] == &block)
         active_parse_block_count--;
+    DEBUG_INFO("=== parse_block: bloque finalizado, %d sentencias ===", block.count);
     return block;
 }
 }

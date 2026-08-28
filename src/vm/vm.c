@@ -14,6 +14,7 @@
 #include "runtime/evaluator/evaluator.h"
 #include "core/ast.h"
 #include "lexer/lexer.h"
+#include "developer/debug.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -231,7 +232,12 @@ extern Scope *global_scope;
 extern Scope *super_global_scope;
 
 Value vm_run(Chunk *chunk) {
-    if (!chunk || chunk->code_count == 0) return val_make_null();
+    if (!chunk || chunk->code_count == 0) {
+        DEBUG_WARN("vm_run: chunk vacío, devolviendo null");
+        return val_make_null();
+    }
+
+    DEBUG_INFO("vm_run: ejecutando %d instrucciones", chunk->code_count);
 
     Value *frame_sp = sp;
     Value *locals = NULL;
