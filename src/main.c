@@ -58,7 +58,10 @@ static void cleanup_runtime_state(void) {
         }
         free(entry->name);
         if (!shared_obj && obj) {
-            /* El Chunk ya fue liberado en vm_cleanup_state, así que no lo liberamos aquí */
+            if (obj->kind == FUNC_USER && obj->code) {
+                chunk_free(obj->code);   // liberamos el Chunk aquí
+                obj->code = NULL;
+            }
             free(obj);
         }
         free(entry);
