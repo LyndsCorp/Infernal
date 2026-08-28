@@ -1024,18 +1024,6 @@ Value vm_run(Chunk *chunk) {
     }
 }
 
-
-static void vm_chunk_free(Chunk *ch) {
-    if (!ch) return;
-    for (int i = 0; i < ch->const_count; i++) value_free(&ch->constants[i]);
-    free(ch->constants);
-    for (int i = 0; i < ch->local_count; i++) free(ch->local_names[i]);
-    free(ch->local_names);
-    free(ch->local_types);
-    free(ch->code);
-    free(ch);
-}
-
 void vm_cleanup_state(void) {
     if (active_locals) {
         for (int i = 0; i < active_local_count; i++)
