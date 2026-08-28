@@ -44,17 +44,22 @@ static char *parse_flag_name(int line) {
 
     const char *pieces[3];
     int piece_count = 0;
-    if (ts_peek().type == TOK_MINUS) {
-        Token tok = ts_advance();
-        pieces[piece_count++] = tok.lexeme;
-        if (ts_peek().type == TOK_MINUS) {
-            tok = ts_advance();
-            pieces[piece_count++] = tok.lexeme;
+    Token t = ts_peek();
+    if (t.type == TOK_MINUS || t.type == TOK_DEC) {
+        if (t.type == TOK_DEC) {
+            // -- es un solo token, lo tratamos como dos guiones
+            pieces[piece_count++] = "-";
+            pieces[piece_count++] = "-";
+            ts_advance();
+        } else {
+            // un solo -
+            pieces[piece_count++] = ts_advance().lexeme;
         }
-        if (ts_peek().type != TOK_IDENT)
+        if (ts_peek().type != TOK_IDENT) {
             error(line, "Se esperaba nombre del flag después de '-'/'--'");
+        }
         pieces[piece_count++] = ts_advance().lexeme;
-    } else if (ts_peek().type == TOK_IDENT && is_valid_flag_name(ts_peek().lexeme)) {
+    } else if (t.type == TOK_IDENT && is_valid_flag_name(t.lexeme)) {
         pieces[piece_count++] = ts_advance().lexeme;
     } else {
         error(line, "Se esperaba un flag (--nombre, -n o nombre)");
@@ -151,6 +156,13 @@ ASTNode *parse_flags() {
 
     while (!ts_match(TOK_RPAREN)) {
         ts_skip_newlines();
+
+        // Saltar comentarios (identificadores que empiezan con '#')
+        while (ts_peek().type == TOK_IDENT && ts_peek().lexeme[0] == '#') {
+            ts_advance();
+            ts_skip_newlines();
+        }
+
         FlagSpec spec;
         memset(&spec, 0, sizeof(spec));
         spec.is_empty = false;
