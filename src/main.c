@@ -45,12 +45,17 @@ static void cleanup_runtime_state(void) {
     if (global_scope) { scope_free(global_scope); global_scope = NULL; current_scope = NULL; }
     if (super_global_scope) { scope_free(super_global_scope); super_global_scope = NULL; }
 
+    /* Liberar funciones de usuario y sus Chunk */
     while (func_table) {
         FuncEntry *entry = func_table;
-        func_table = entry->next;
+        func_table = entry->next;  // avanzar antes de liberar
+
         FuncObject *obj = entry->obj;
         if (obj) {
-            /* El Chunk ya fue liberado en vm_cleanup_state, así que no lo tocamos */
+            if (obj->kind == FUNC_USER && obj->code) {
+                chunk_free(obj->code);
+                obj->code = NULL;
+            }
             free(obj);
         }
         free(entry->name);

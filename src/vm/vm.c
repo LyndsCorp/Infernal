@@ -1043,14 +1043,11 @@ void vm_cleanup_state(void) {
         vm_global_entries[i].name = NULL;
     }
     vm_global_count = 0;
-    /* Liberar los Chunk de funciones de usuario */
+    /* Limpiar nombres de funciones de usuario, pero NO liberar los Chunk */
     for (int i = 0; i < user_function_count; i++) {
         free(user_functions[i].name);
-        if (user_functions[i].code) {
-            vm_chunk_free(user_functions[i].code);
-            user_functions[i].code = NULL;
-        }
         user_functions[i].name = NULL;
+        user_functions[i].code = NULL;   // solo para evitar uso
     }
     user_function_count = 0;
 }
