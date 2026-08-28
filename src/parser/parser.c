@@ -1254,8 +1254,8 @@ NodeList parse_block(const char *terminator) {
                             expr->data.post_op.var && expr->data.post_op.var->kind == NODE_VAR &&
                             expr->data.post_op.var->data.var.clone) {
                             expr->data.post_op.statement_context = true;
-                        }
-                        stmt = node_create(NODE_EXPR_STMT, saved_t.line);
+                            }
+                            stmt = node_create(NODE_EXPR_STMT, saved_t.line);
                         stmt->data.expr_stmt.expr = expr;
                         nodelist_add(&block, stmt);
                         DEBUG_INFO("parse_block: post-inc/dec para '%s' en línea %d", saved_t.lexeme, stmt->line);
@@ -1263,37 +1263,32 @@ NodeList parse_block(const char *terminator) {
                         continue;
                     }
 
-                    /* COMANDO SHELL (cualquier otra cosa) */
+                    /* COMANDO SHELL (cualquier otra cosa) — NUEVO: preserva comillas */
                     {
                         ts.pos--;
-                        int start_pos = ts.pos;
+                        char *cmd = infernal_strdup("");
+                        size_t cmd_len = 0, cmd_cap = 1;
+                        Token prev_token = {TOK_EOF, "", 0, 0, 0};
+
                         while (ts_peek().type != TOK_NEWLINE && ts_peek().type != TOK_EOF) {
-                            ts_advance();
+                            Token ct = ts_advance();
+                            bool hay_espacio = prev_token.type != TOK_EOF && ct.start_col > prev_token.end_col;
+                            command_append_token(&cmd, &cmd_len, &cmd_cap, ct, hay_espacio);
+                            prev_token = ct;
                         }
-                        char *cmd_str = build_command_from_tokens(start_pos, ts.pos);
+
                         stmt = node_create(NODE_SHELL_CMD, saved_t.line);
-                        stmt->data.shell_cmd.cmd = cmd_str;
+                        stmt->data.shell_cmd.cmd = cmd;
                         nodelist_add(&block, stmt);
-                        DEBUG_INFO("parse_block: comando shell '%s' en línea %d", cmd_str, stmt->line);
+                        DEBUG_INFO("parse_block: comando shell '%s' en línea %d", cmd, stmt->line);
                         ts_skip_newlines();
                         continue;
                     }
             }
 
-            /* --- Token no reconocido --- */
-            error(t.line, "Sentencia no reconocida '%s'", t.lexeme);
-
-            if (stmt) {
-                nodelist_add(&block, stmt);
-                DEBUG_INFO("parse_block: añadida sentencia tipo %d en línea %d", stmt->kind, stmt->line);
-            }
-            ts_skip_newlines();
-            if (terminator && ts_peek().type == lookup_keyword(terminator)) break;
-            if (terminator && strcmp(terminator, "}") == 0 && ts_peek().type == TOK_RBRACE) break;
-    }
-
     DEBUG_INFO("=== parse_block: bloque finalizado, %d sentencias ===", block.count);
     if (active_parse_block_count > 0 && active_parse_blocks[active_parse_block_count - 1] == &block)
         active_parse_block_count--;
     return block;
+}
 }
