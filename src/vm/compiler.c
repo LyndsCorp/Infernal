@@ -662,22 +662,44 @@ static void compile_block(Compiler *c, NodeList *block) {
 }
 
 Chunk *compile_program(NodeList *program) {
+    /* --- VERIFICACIÓN DE SEGURIDAD: si el programa está vacío --- */
+    if (!program || program->count == 0 || !program->stmts) {
+        // Devolver un chunk vacío para evitar segfault
+        Chunk *empty = calloc(1, sizeof(Chunk));
+        if (!empty) {
+            error(0, "No se pudo reservar memoria para chunk vacío");
+        }
+        empty->code = NULL;
+        empty->code_count = 0;
+        empty->const_count = 0;
+        empty->local_count = 0;
+        empty->local_names = NULL;
+        empty->local_types = NULL;
+        return empty;
+    }
+
     Compiler c;
     memset(&c, 0, sizeof(c));
     c.chunk = calloc(1, sizeof(Chunk));
+    if (!c.chunk) {
+        error(0, "No se pudo reservar memoria para el chunk principal");
+    }
     c.in_function = false;
     active_compiler = &c;
     c.top_level = true;
     c.portals = NULL;
     c.portal_count = 0;
 
+    /* Recolectar portales en todo el programa */
     for (int i = 0; i < program->count; i++) {
         collect_portals_rec(program->stmts[i], &c);
     }
 
+    /* Compilar todas las sentencias del programa */
     compile_block(&c, program);
     emit(c.chunk, OP_RETURN, 0, 0);
 
+    /* Transferir información de locales al chunk */
     c.chunk->local_count = c.local_count;
     c.chunk->local_names = c.local_names;
     c.chunk->local_types = c.local_types;
@@ -686,7 +708,10 @@ Chunk *compile_program(NodeList *program) {
     c.local_count = 0;
     c.local_cap = 0;
 
-    for (int i = 0; i < c.portal_count; i++) free(c.portals[i].name);
+    /* Liberar portales */
+    for (int i = 0; i < c.portal_count; i++) {
+        free(c.portals[i].name);
+    }
     free(c.portals);
     c.portals = NULL;
 

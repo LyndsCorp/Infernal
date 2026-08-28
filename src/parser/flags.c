@@ -36,7 +36,6 @@ static void add_flag_name(FlagSpec *spec, const char *name, int line) {
     spec->names[spec->name_count++] = strdup(name);
 }
 
-/* --- Función auxiliar para parsear el nombre de un flag --- */
 static char *parse_flag_name(int line) {
     if (ts.pos >= ts.count) {
         error(line, "Se esperaba un flag pero no hay más tokens");
@@ -97,7 +96,7 @@ void parse_flag_body_tokens(Token **body_tokens, int *body_count, int already_co
         if (ts.pos >= ts.count || ts_peek().type != TOK_LBRACE) {
             error(ts_peek().line, "Se esperaba '{' para el bloque del flag");
         }
-        ts_advance(); // consumir '{'
+        ts_advance();
     }
 
     while (depth > 0 && ts.pos < ts.count) {
@@ -114,7 +113,6 @@ void parse_flag_body_tokens(Token **body_tokens, int *body_count, int already_co
         (*body_tokens)[(*body_count)++] = t;
     }
     if (depth != 0) {
-        // Si no se encontró '}', el último token consumido puede no existir
         int last_line = (ts.pos > 0) ? ts.tokens[ts.pos - 1].line : 0;
         error(last_line, "No se encontró '}' que cierra el bloque del flag");
     }
@@ -133,9 +131,7 @@ ASTNode *parse_flags() {
         if (mode < 0) error(mode_expr->line, "El modo de flags no puede ser negativo");
         if (mode >= MAX_FLAGS_MODES) error(mode_expr->line, "Modo de flags demasiado grande (máximo %d)", MAX_FLAGS_MODES - 1);
 
-        if (mode == 0) {
-            /* modo 0 siempre permitido */
-        } else {
+        if (mode != 0) {
             if (mode > 1 && !defined_flags_modes[mode - 1]) {
                 error(mode_expr->line,
                       "No se puede definir flags modo %d sin haber definido el modo %d antes",
@@ -158,7 +154,7 @@ ASTNode *parse_flags() {
     while (!ts_match(TOK_RPAREN)) {
         ts_skip_newlines();
 
-        // Saltar comentarios (identificadores que empiezan con '#')
+        // Saltar comentarios (tokens que empiezan con '#')
         while (ts.pos < ts.count && ts_peek().type == TOK_IDENT && ts_peek().lexeme[0] == '#') {
             ts_advance();
             ts_skip_newlines();
@@ -166,16 +162,14 @@ ASTNode *parse_flags() {
 
         FlagSpec spec;
         memset(&spec, 0, sizeof(spec));
-        spec.is_empty = false;
-        spec.is_global = false;
 
         /* --- empty --- */
         if (ts.pos < ts.count && ts_peek().type == TOK_IDENT && strcmp(ts_peek().lexeme, "empty") == 0) {
             if (node->data.flags.mode == 0) {
-                error(ts_peek().line, "'empty' solo se puede usar en modos > 0 (flags posicionales)");
+                error(ts_peek().line, "'empty' solo se puede usar en modos > 0");
             }
             if (++empty_count > 1) {
-                error(ts_peek().line, "No puede haber más de un 'empty' en la misma definición de flags");
+                error(ts_peek().line, "No puede haber más de un 'empty'");
             }
             ts_advance();
             spec.is_empty = true;
@@ -184,19 +178,16 @@ ASTNode *parse_flags() {
             }
             TokenType t = ts_peek().type;
             if (!(t == TOK_INT || t == TOK_FLOAT || t == TOK_BOOL || t == TOK_STRING || t == TOK_LIST)) {
-                error(ts_peek().line, "Se esperaba un tipo (int, float, bool, string, list) después de '='");
+                error(ts_peek().line, "Se esperaba un tipo después de '='");
             }
             spec.vtype = ts_advance().type;
             if (ts_peek().type != TOK_IDENT) {
-                error(ts_peek().line, "Se esperaba nombre de variable para el empty");
+                error(ts_peek().line, "Se esperaba nombre de variable");
             }
             spec.var_name = strdup(ts_advance().lexeme);
             if (ts_peek().type == TOK_LBRACE) {
                 ts_advance();
                 parse_flag_body_tokens(&spec.body_tokens, &spec.body_count, 1);
-            } else {
-                spec.body_tokens = NULL;
-                spec.body_count = 0;
             }
         }
         /* --- catch-all (*) --- */
@@ -211,12 +202,10 @@ ASTNode *parse_flags() {
         }
         /* --- flag normal --- */
         else {
-            // Parsear nombre principal
             char *name = parse_flag_name(ts_peek().line);
             add_flag_name(&spec, name, ts_peek().line);
             free(name);
 
-            // Parsear alias (separados por '|')
             while (ts.pos < ts.count && ts_peek().type == TOK_PIPE) {
                 ts_advance();
                 char *alias = parse_flag_name(ts_peek().line);
@@ -224,15 +213,13 @@ ASTNode *parse_flags() {
                 free(alias);
             }
 
-            // Verificar si hay bloque inmediato (sin '=')
             int has_block = 0;
             if (ts.pos < ts.count && ts_peek().type == TOK_LBRACE) {
                 has_block = 1;
-                ts_advance(); // consumir '{'
+                ts_advance();
                 parse_flag_body_tokens(&spec.body_tokens, &spec.body_count, 1);
             }
 
-            // Si no hay bloque, verificar '='
             if (!has_block && ts_match(TOK_EQ)) {
                 bool is_global = false;
                 TokenType peek = ts_peek().type;
@@ -245,26 +232,18 @@ ASTNode *parse_flags() {
                     ttype == TOK_STRING || ttype == TOK_LIST) {
                     spec.vtype = ts_advance().type;
                 if (ts_peek().type != TOK_IDENT || !is_valid_flag_name(ts_peek().lexeme)) {
-                    error(ts_peek().line, "Se esperaba nombre de variable para el flags");
+                    error(ts_peek().line, "Se esperaba nombre de variable");
                 }
                 spec.var_name = strdup(ts_advance().lexeme);
                 spec.is_global = is_global;
                     } else {
-                        error(ts_peek().line, "Se esperaba un tipo (int, float, bool, string, list) después de '='");
+                        error(ts_peek().line, "Se esperaba un tipo después de '='");
                     }
 
-                    // Después de '=', puede haber un bloque
                     if (ts_peek().type == TOK_LBRACE) {
                         ts_advance();
                         parse_flag_body_tokens(&spec.body_tokens, &spec.body_count, 1);
-                    } else {
-                        spec.body_tokens = NULL;
-                        spec.body_count = 0;
                     }
-            } else if (!has_block) {
-                // No hay '=' ni bloque, flag sin valor ni cuerpo
-                spec.body_tokens = NULL;
-                spec.body_count = 0;
             }
         }
 
