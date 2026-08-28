@@ -169,14 +169,14 @@ static int find_switch_boundary(int start_pos) {
         if (type == TOK_IF || type == TOK_WHILE || type == TOK_FOR ||
             type == TOK_FUNCTION || type == TOK_TRY || type == TOK_SWITCH) {
             depth++;
-            continue;
-        }
-        if (type == TOK_FI) {
-            if (depth == 0) return i;
-            depth--;
-            continue;
-        }
-        if (depth == 0 && (type == TOK_CASE || type == TOK_DEFAULT)) return i;
+        continue;
+            }
+            if (type == TOK_FI) {
+                if (depth == 0) return i;
+                depth--;
+                continue;
+            }
+            if (depth == 0 && (type == TOK_CASE || type == TOK_DEFAULT)) return i;
     }
     return -1;
 }
@@ -224,13 +224,7 @@ static ASTNode *parse_switch_statement(void) {
             ts.tokens[boundary].type = saved_type;
             ts.pos = boundary;
 
-            /* Validate before attaching the partially parsed case to the
-             * switch AST.  On parser errors error() longjmps to the outer
-             * cleanup path, so keeping ownership unambiguous here avoids
-             * double-freeing partially constructed switch nodes. */
             if (!validate_switch_body(&body)) {
-                /* `body` is not owned by the switch yet.  Free its NodeList
-                 * storage before jumping out through the parser error path. */
                 nodelist_free(&body);
                 error(head.line, "El case debe terminar con 'break'");
             }
@@ -261,8 +255,6 @@ static ASTNode *parse_switch_statement(void) {
             ts.tokens[boundary].type = saved_type;
             ts.pos = boundary;
 
-            /* Same ownership rule as cases: validate before attaching the
-             * block so a syntax error cannot leave duplicate ownership. */
             if (!validate_switch_body(&body)) {
                 nodelist_free(&body);
                 error(head.line, "El default debe terminar con 'break'");
@@ -779,6 +771,7 @@ NodeList parse_block(const char *terminator) {
                 func_register(prefixed, stmt);
             }
 
+            /* NO compilar aquí. La compilación se hará en compile_program */
             DEBUG_INFO("parse_block: añadido NODE_FUNC_DEF en línea %d", stmt->line);
             ts_skip_newlines();
             continue;
@@ -794,12 +787,12 @@ NodeList parse_block(const char *terminator) {
             if (tt == TOK_INT || tt == TOK_FLOAT || tt == TOK_BOOL ||
                 tt == TOK_STRING || tt == TOK_LIST || tt == TOK_MAP) {
                 rtype = ts_advance().type;
-                if (ts_peek().type == TOK_NEWLINE || ts_peek().type == TOK_FI || ts_peek().type == TOK_EOF)
-                    error(t.line, "Se esperaba un valor después del tipo de retorno '%s'", type_name(rtype));
-            }
+            if (ts_peek().type == TOK_NEWLINE || ts_peek().type == TOK_FI || ts_peek().type == TOK_EOF)
+                error(t.line, "Se esperaba un valor después del tipo de retorno '%s'", type_name(rtype));
+                }
 
-            if (ts_peek().type != TOK_NEWLINE && ts_peek().type != TOK_FI && ts_peek().type != TOK_EOF)
-                expr = parse_expression(0);
+                if (ts_peek().type != TOK_NEWLINE && ts_peek().type != TOK_FI && ts_peek().type != TOK_EOF)
+                    expr = parse_expression(0);
 
             if (rtype != 0 && !expr)
                 error(t.line, "Se esperaba un valor después de 'return %s'", type_name(rtype));
@@ -956,14 +949,14 @@ NodeList parse_block(const char *terminator) {
             current_import_prefix = old_prefix;
 
             /* El stream del módulo ya no se necesita después del parseo.
-             * Liberarlo evita que cada import embebido pierda sus tokens. */
+             *              Liberarlo evita que cada import embebido pierda sus tokens. */
             for (int i = 0; i < ts.count; i++) free(ts.tokens[i].lexeme);
             free(ts.tokens);
             ts = old_ts;
 
             /* tokenize_file() mantiene sus propias source_lines. Restauramos
-             * las del script principal para que los comandos posteriores y
-             * los mensajes de error sigan apuntando al archivo correcto. */
+             *              las del script principal para que los comandos posteriores y
+             *              los mensajes de error sigan apuntando al archivo correcto. */
             for (int i = 0; i < source_line_count; i++) free(source_lines[i]);
             free(source_lines);
             source_lines = old_source_lines;
@@ -1021,122 +1014,40 @@ NodeList parse_block(const char *terminator) {
                 ts_peek().type == TOK_BOOL || ts_peek().type == TOK_STRING ||
                 ts_peek().type == TOK_LIST || ts_peek().type == TOK_MAP) {
                 vtype = ts_advance().type;
-            } else if (ts_peek().type != TOK_IDENT) {
-                error(t.line, "Se esperaba un tipo (int, float, bool, string, list, map) o un nombre de variable");
-            }
+                } else if (ts_peek().type != TOK_IDENT) {
+                    error(t.line, "Se esperaba un tipo (int, float, bool, string, list, map) o un nombre de variable");
+                }
 
-            /* Una sola línea puede declarar varias variables, pero todas
-             * comparten exactamente el mismo scope y tipo definidos arriba. */
-            while (1) {
-                if (ts_peek().type != TOK_IDENT)
-                    error(t.line, "Se esperaba nombre de variable después del tipo o de ','");
+                /* Una sola línea puede declarar varias variables, pero todas
+                 *              comparten exactamente el mismo scope y tipo definidos arriba. */
+                while (1) {
+                    if (ts_peek().type != TOK_IDENT)
+                        error(t.line, "Se esperaba nombre de variable después del tipo o de ','");
 
-                char *vname = clean_var_name(ts_advance().lexeme);
-                validate_var_name(vname, t.line);
+                    char *vname = clean_var_name(ts_advance().lexeme);
+                    validate_var_name(vname, t.line);
 
-                if (ts_peek().type == TOK_LOCAL || ts_peek().type == TOK_GLOBAL)
-                    error(t.line, "No se puede cambiar el scope dentro de una declaración múltiple; todas las variables deben compartir scope y tipo");
+                    if (ts_peek().type == TOK_LOCAL || ts_peek().type == TOK_GLOBAL)
+                        error(t.line, "No se puede cambiar el scope dentro de una declaración múltiple; todas las variables deben compartir scope y tipo");
 
-                if (ts_peek().type == TOK_LBRACKET)
-                    error(t.line, "No se puede usar indexación al declarar una variable");
+                    if (ts_peek().type == TOK_LBRACKET)
+                        error(t.line, "No se puede usar indexación al declarar una variable");
 
-                ASTNode *value = NULL;
-                bool is_cmd = false;
-                char *cmd_str = NULL;
+                    ASTNode *value = NULL;
+                    bool is_cmd = false;
+                    char *cmd_str = NULL;
 
-                if (ts_match(TOK_EQ)) {
-                    Token next_token = ts_peek();
-                    if (next_token.type == TOK_IDENT && next_token.lexeme[0] != '$' && next_token.lexeme[0] != '?') {
-                        int next_pos = ts.pos + 1;
-                        TokenType rhs_follow = (next_pos < ts.count) ? ts.tokens[next_pos].type : TOK_EOF;
+                    if (ts_match(TOK_EQ)) {
+                        Token next_token = ts_peek();
+                        if (next_token.type == TOK_IDENT && next_token.lexeme[0] != '$' && next_token.lexeme[0] != '?') {
+                            int next_pos = ts.pos + 1;
+                            TokenType rhs_follow = (next_pos < ts.count) ? ts.tokens[next_pos].type : TOK_EOF;
 
-                        /*
-                         * Un comando simple sigue siendo válido (p. ej. `host = hostname`).
-                         * En cambio, si después del identificador viene un operador, debemos
-                         * tratarlo como expresión para que referencias de variables como
-                         * `contador_test = contador_test + 1` no terminen ejecutándose como
-                         * comandos del shell.
-                         */
-                        bool simple_command =
+                            bool simple_command =
                             rhs_follow == TOK_NEWLINE || rhs_follow == TOK_EOF ||
                             rhs_follow == TOK_COMMA;
 
-                        if (rhs_follow == TOK_LPAREN || rhs_follow == TOK_LBRACKET || !simple_command) {
-                            value = parse_expression(0);
-                        } else {
-                            is_cmd = true;
-                            cmd_str = extract_literal_command(t.line);
-                            while (ts_peek().type != TOK_NEWLINE && ts_peek().type != TOK_EOF) ts_advance();
-                        }
-                    } else {
-                        value = parse_expression(0);
-                    }
-                }
-
-                stmt = node_create(NODE_ASSIGN, t.line);
-                stmt->data.assign.name = vname;
-                stmt->data.assign.is_cmd = is_cmd;
-                stmt->data.assign.cmd_str = cmd_str;
-                stmt->data.assign.value = value; /* NULL = valor por defecto del tipo */
-                stmt->data.assign.vtype = vtype;
-                stmt->data.assign.is_local = is_local;
-                stmt->data.assign.is_global = is_global;
-                stmt->data.assign.lhs_index = NULL;
-                nodelist_add(&block, stmt);
-
-                if (is_cmd) {
-                    /* extract_literal_command consume el resto de la línea. */
-                    break;
-                }
-
-                if (!ts_match(TOK_COMMA))
-                    break;
-
-                /* El tipado automático (vtype == 0) solo puede declarar una
-                 * variable por línea. Las declaraciones múltiples requieren
-                 * un tipo explícito común para todas. */
-                if (vtype == 0)
-                    error(t.line, "Las declaraciones múltiples requieren un tipo explícito");
-
-                /* Después de ',' debe venir solamente otro identificador.
-                 * Por tanto 'global a, local b' queda rechazado. */
-                if (ts_peek().type != TOK_IDENT)
-                    error(t.line, "Después de ',' se esperaba otra variable; no se puede cambiar el scope o tipo dentro de la misma línea");
-            }
-
-            ts_skip_newlines();
-            continue;
-        }
-
-        /* --- TIPO + IDENT (int x = 5, int a, b, c) --- */
-        if (t.type == TOK_INT || t.type == TOK_FLOAT || t.type == TOK_BOOL ||
-            t.type == TOK_STRING || t.type == TOK_LIST || t.type == TOK_MAP) {
-            int vtype = ts_advance().type;
-
-            while (1) {
-                if (ts_peek().type != TOK_IDENT)
-                    error(t.line, "Se esperaba nombre de variable después del tipo o de ','");
-
-                char *vname = clean_var_name(ts_advance().lexeme);
-                validate_var_name(vname, t.line);
-
-                if (ts_peek().type == TOK_LOCAL || ts_peek().type == TOK_GLOBAL)
-                    error(t.line, "No se puede cambiar el scope dentro de una declaración múltiple; todas las variables deben compartir scope y tipo");
-
-                if (ts_peek().type == TOK_LBRACKET)
-                    error(t.line, "No se puede usar indexación al declarar una variable");
-
-                ASTNode *value = NULL;
-                bool is_cmd = false;
-                char *cmd_str = NULL;
-
-                if (ts_match(TOK_EQ)) {
-                    Token next_token = ts_peek();
-                    if (next_token.type == TOK_IDENT && next_token.lexeme[0] != '$' && next_token.lexeme[0] != '?') {
-                        int next_pos = ts.pos + 1;
-                        if (next_pos < ts.count) {
-                            Token next_next = ts.tokens[next_pos];
-                            if (next_next.type == TOK_LPAREN || next_next.type == TOK_LBRACKET) {
+                            if (rhs_follow == TOK_LPAREN || rhs_follow == TOK_LBRACKET || !simple_command) {
                                 value = parse_expression(0);
                             } else {
                                 is_cmd = true;
@@ -1144,38 +1055,113 @@ NodeList parse_block(const char *terminator) {
                                 while (ts_peek().type != TOK_NEWLINE && ts_peek().type != TOK_EOF) ts_advance();
                             }
                         } else {
+                            value = parse_expression(0);
+                        }
+                    }
+
+                    stmt = node_create(NODE_ASSIGN, t.line);
+                    stmt->data.assign.name = vname;
+                    stmt->data.assign.is_cmd = is_cmd;
+                    stmt->data.assign.cmd_str = cmd_str;
+                    stmt->data.assign.value = value; /* NULL = valor por defecto del tipo */
+                    stmt->data.assign.vtype = vtype;
+                    stmt->data.assign.is_local = is_local;
+                    stmt->data.assign.is_global = is_global;
+                    stmt->data.assign.lhs_index = NULL;
+                    nodelist_add(&block, stmt);
+
+                    if (is_cmd) {
+                        /* extract_literal_command consume el resto de la línea. */
+                        break;
+                    }
+
+                    if (!ts_match(TOK_COMMA))
+                        break;
+
+                    /* El tipado automático (vtype == 0) solo puede declarar una
+                     * variable por línea. Las declaraciones múltiples requieren
+                     * un tipo explícito común para todas. */
+                    if (vtype == 0)
+                        error(t.line, "Las declaraciones múltiples requieren un tipo explícito");
+
+                    /* Después de ',' debe venir solamente otro identificador.
+                     * Por tanto 'global a, local b' queda rechazado. */
+                    if (ts_peek().type != TOK_IDENT)
+                        error(t.line, "Después de ',' se esperaba otra variable; no se puede cambiar el scope o tipo dentro de la misma línea");
+                }
+
+                ts_skip_newlines();
+                continue;
+        }
+
+        /* --- TIPO + IDENT (int x = 5, int a, b, c) --- */
+        if (t.type == TOK_INT || t.type == TOK_FLOAT || t.type == TOK_BOOL ||
+            t.type == TOK_STRING || t.type == TOK_LIST || t.type == TOK_MAP) {
+            int vtype = ts_advance().type;
+
+        while (1) {
+            if (ts_peek().type != TOK_IDENT)
+                error(t.line, "Se esperaba nombre de variable después del tipo o de ','");
+
+            char *vname = clean_var_name(ts_advance().lexeme);
+            validate_var_name(vname, t.line);
+
+            if (ts_peek().type == TOK_LOCAL || ts_peek().type == TOK_GLOBAL)
+                error(t.line, "No se puede cambiar el scope dentro de una declaración múltiple; todas las variables deben compartir scope y tipo");
+
+            if (ts_peek().type == TOK_LBRACKET)
+                error(t.line, "No se puede usar indexación al declarar una variable");
+
+            ASTNode *value = NULL;
+            bool is_cmd = false;
+            char *cmd_str = NULL;
+
+            if (ts_match(TOK_EQ)) {
+                Token next_token = ts_peek();
+                if (next_token.type == TOK_IDENT && next_token.lexeme[0] != '$' && next_token.lexeme[0] != '?') {
+                    int next_pos = ts.pos + 1;
+                    if (next_pos < ts.count) {
+                        Token next_next = ts.tokens[next_pos];
+                        if (next_next.type == TOK_LPAREN || next_next.type == TOK_LBRACKET) {
+                            value = parse_expression(0);
+                        } else {
                             is_cmd = true;
                             cmd_str = extract_literal_command(t.line);
                             while (ts_peek().type != TOK_NEWLINE && ts_peek().type != TOK_EOF) ts_advance();
                         }
                     } else {
-                        value = parse_expression(0);
+                        is_cmd = true;
+                        cmd_str = extract_literal_command(t.line);
+                        while (ts_peek().type != TOK_NEWLINE && ts_peek().type != TOK_EOF) ts_advance();
                     }
+                } else {
+                    value = parse_expression(0);
                 }
-
-                stmt = node_create(NODE_ASSIGN, t.line);
-                stmt->data.assign.name = vname;
-                stmt->data.assign.is_cmd = is_cmd;
-                stmt->data.assign.cmd_str = cmd_str;
-                stmt->data.assign.value = value; /* NULL = valor por defecto del tipo */
-                stmt->data.assign.vtype = vtype;
-                stmt->data.assign.is_local = false;
-                stmt->data.assign.is_global = false;
-                stmt->data.assign.lhs_index = NULL;
-                nodelist_add(&block, stmt);
-                DEBUG_INFO("parse_block: añadida declaración tipada de '%s' en línea %d", vname, stmt->line);
-
-                if (is_cmd)
-                    break;
-                if (!ts_match(TOK_COMMA))
-                    break;
-                if (ts_peek().type != TOK_IDENT)
-                    error(t.line, "Después de ',' se esperaba otra variable; no se puede cambiar el scope o tipo dentro de la misma línea");
             }
 
-            ts_skip_newlines();
-            continue;
+            stmt = node_create(NODE_ASSIGN, t.line);
+            stmt->data.assign.name = vname;
+            stmt->data.assign.is_cmd = is_cmd;
+            stmt->data.assign.cmd_str = cmd_str;
+            stmt->data.assign.value = value; /* NULL = valor por defecto del tipo */
+            stmt->data.assign.vtype = vtype;
+            stmt->data.assign.is_local = false;
+            stmt->data.assign.is_global = false;
+            stmt->data.assign.lhs_index = NULL;
+            nodelist_add(&block, stmt);
+            DEBUG_INFO("parse_block: añadida declaración tipada de '%s' en línea %d", vname, stmt->line);
+
+            if (is_cmd)
+                break;
+            if (!ts_match(TOK_COMMA))
+                break;
+            if (ts_peek().type != TOK_IDENT)
+                error(t.line, "Después de ',' se esperaba otra variable; no se puede cambiar el scope o tipo dentro de la misma línea");
         }
+
+        ts_skip_newlines();
+        continue;
+            }
 
             /* --- IDENT (x = 0, print(...), etc.) --- */
             if (t.type == TOK_IDENT) {
@@ -1286,10 +1272,32 @@ NodeList parse_block(const char *terminator) {
                     }
             }
 
+            /* --- Token no reconocido --- */
+            error(t.line, "Sentencia no reconocida '%s'", t.lexeme);
+
+            if (stmt) {
+                nodelist_add(&block, stmt);
+                DEBUG_INFO("parse_block: añadida sentencia tipo %d en línea %d", stmt->kind, stmt->line);
+            }
+            ts_skip_newlines();
+            if (terminator && ts_peek().type == lookup_keyword(terminator)) break;
+            if (terminator && strcmp(terminator, "}") == 0 && ts_peek().type == TOK_RBRACE) break;
+    }
+
     DEBUG_INFO("=== parse_block: bloque finalizado, %d sentencias ===", block.count);
     if (active_parse_block_count > 0 && active_parse_blocks[active_parse_block_count - 1] == &block)
         active_parse_block_count--;
-    DEBUG_INFO("=== parse_block: bloque finalizado, %d sentencias ===", block.count);
+
+    /* Garantizar que el NodeList siempre sea válido incluso si no hay sentencias */
+    if (block.count == 0 && block.stmts == NULL) {
+        // Ya está vacío y válido
+    } else if (block.count > 0 && block.stmts == NULL) {
+        // Inconsistencia: corregir
+        block.stmts = NULL;
+        block.count = 0;
+        block.cap = 0;
+        DEBUG_WARN("parse_block: inconsistencia detectada (count>0 pero stmts=NULL), reiniciando");
+    }
+
     return block;
-}
 }
