@@ -38,6 +38,10 @@ static void add_flag_name(FlagSpec *spec, const char *name, int line) {
 
 /* --- Función auxiliar para parsear el nombre de un flag --- */
 static char *parse_flag_name(int line) {
+    if (ts.pos >= ts.count) {
+        error(line, "Se esperaba un flag pero no hay más tokens");
+    }
+
     char *name = strdup("");
     size_t len = 0;
     size_t cap = 1;
@@ -45,17 +49,16 @@ static char *parse_flag_name(int line) {
     const char *pieces[3];
     int piece_count = 0;
     Token t = ts_peek();
+
     if (t.type == TOK_MINUS || t.type == TOK_DEC) {
         if (t.type == TOK_DEC) {
-            // -- es un solo token, lo tratamos como dos guiones
             pieces[piece_count++] = "-";
             pieces[piece_count++] = "-";
             ts_advance();
         } else {
-            // un solo -
             pieces[piece_count++] = ts_advance().lexeme;
         }
-        if (ts_peek().type != TOK_IDENT) {
+        if (ts.pos >= ts.count || ts_peek().type != TOK_IDENT) {
             error(line, "Se esperaba nombre del flag después de '-'/'--'");
         }
         pieces[piece_count++] = ts_advance().lexeme;
@@ -74,7 +77,7 @@ static char *parse_flag_name(int line) {
         if (len + add + 1 > cap) {
             while (cap < len + add + 1) cap *= 2;
             char *tmp = realloc(name, cap);
-            if (!tmp) { free(name); error(line, "Memoria insuficiente al construir flag"); }
+            if (!tmp) { free(name); error(line, "Memoria insuficiente"); }
             name = tmp;
         }
         memcpy(name + len, pieces[i], add);
@@ -91,9 +94,10 @@ void parse_flag_body_tokens(Token **body_tokens, int *body_count, int already_co
     int cap = 0;
 
     if (!already_consumed_brace) {
-        if (ts_peek().type != TOK_LBRACE)
+        if (ts.pos >= ts.count || ts_peek().type != TOK_LBRACE) {
             error(ts_peek().line, "Se esperaba '{' para el bloque del flag");
-        ts_advance(); // consumir el '{'
+        }
+        ts_advance(); // consumir '{'
     }
 
     while (depth > 0 && ts.pos < ts.count) {
@@ -110,7 +114,9 @@ void parse_flag_body_tokens(Token **body_tokens, int *body_count, int already_co
         (*body_tokens)[(*body_count)++] = t;
     }
     if (depth != 0) {
-        error(ts.tokens[ts.pos-1].line, "No se encontró '}' que cierra el bloque del flag");
+        // Si no se encontró '}', el último token consumido puede no existir
+        int last_line = (ts.pos > 0) ? ts.tokens[ts.pos - 1].line : 0;
+        error(last_line, "No se encontró '}' que cierra el bloque del flag");
     }
 }
 
@@ -124,15 +130,11 @@ ASTNode *parse_flags() {
 
     if (mode_expr->kind == NODE_LITERAL && mode_expr->data.lit.type == TOK_INT) {
         int mode = mode_expr->data.lit.ival;
-        if (mode < 0) {
-            error(mode_expr->line, "El modo de flags no puede ser negativo");
-        }
-        if (mode >= MAX_FLAGS_MODES) {
-            error(mode_expr->line, "Modo de flags demasiado grande (máximo %d)", MAX_FLAGS_MODES - 1);
-        }
+        if (mode < 0) error(mode_expr->line, "El modo de flags no puede ser negativo");
+        if (mode >= MAX_FLAGS_MODES) error(mode_expr->line, "Modo de flags demasiado grande (máximo %d)", MAX_FLAGS_MODES - 1);
 
         if (mode == 0) {
-            /* Modo 0: siempre permitido */
+            /* modo 0 siempre permitido */
         } else {
             if (mode > 1 && !defined_flags_modes[mode - 1]) {
                 error(mode_expr->line,
@@ -140,8 +142,7 @@ ASTNode *parse_flags() {
                       mode, mode - 1);
             }
             if (defined_flags_modes[mode]) {
-                error(mode_expr->line,
-                      "El modo %d de flags ya fue definido anteriormente", mode);
+                error(mode_expr->line, "El modo %d de flags ya fue definido anteriormente", mode);
             }
             defined_flags_modes[mode] = 1;
         }
@@ -158,7 +159,7 @@ ASTNode *parse_flags() {
         ts_skip_newlines();
 
         // Saltar comentarios (identificadores que empiezan con '#')
-        while (ts_peek().type == TOK_IDENT && ts_peek().lexeme[0] == '#') {
+        while (ts.pos < ts.count && ts_peek().type == TOK_IDENT && ts_peek().lexeme[0] == '#') {
             ts_advance();
             ts_skip_newlines();
         }
@@ -168,8 +169,8 @@ ASTNode *parse_flags() {
         spec.is_empty = false;
         spec.is_global = false;
 
-        /* --- DETECTAR 'empty' ----------------------------------- */
-        if (ts_peek().type == TOK_IDENT && strcmp(ts_peek().lexeme, "empty") == 0) {
+        /* --- empty --- */
+        if (ts.pos < ts.count && ts_peek().type == TOK_IDENT && strcmp(ts_peek().lexeme, "empty") == 0) {
             if (node->data.flags.mode == 0) {
                 error(ts_peek().line, "'empty' solo se puede usar en modos > 0 (flags posicionales)");
             }
@@ -197,7 +198,9 @@ ASTNode *parse_flags() {
                 spec.body_tokens = NULL;
                 spec.body_count = 0;
             }
-        } else if (ts_peek().type == TOK_STAR) {
+        }
+        /* --- catch-all (*) --- */
+        else if (ts.pos < ts.count && ts_peek().type == TOK_STAR) {
             ts_advance();
             spec.catch_all = true;
             ts_skip_newlines();
@@ -205,27 +208,32 @@ ASTNode *parse_flags() {
                 error(ts_peek().line, "Se esperaba '{' después de '*'");
             }
             parse_flag_body_tokens(&spec.body_tokens, &spec.body_count, 1);
-        } else {
-            /* --- FLAG NORMAL (con nombre) ---------------------- */
-            // Parsear el nombre principal
+        }
+        /* --- flag normal --- */
+        else {
+            // Parsear nombre principal
             char *name = parse_flag_name(ts_peek().line);
             add_flag_name(&spec, name, ts_peek().line);
             free(name);
 
-            // Parsear aliases (separados por '|')
-            while (ts_peek().type == TOK_PIPE) {
+            // Parsear alias (separados por '|')
+            while (ts.pos < ts.count && ts_peek().type == TOK_PIPE) {
                 ts_advance();
                 char *alias = parse_flag_name(ts_peek().line);
                 add_flag_name(&spec, alias, ts_peek().line);
                 free(alias);
             }
 
-            // Verificar si hay un bloque inmediato (sin '=')
-            ts_skip_newlines();
-            if (ts_peek().type == TOK_LBRACE) {
+            // Verificar si hay bloque inmediato (sin '=')
+            int has_block = 0;
+            if (ts.pos < ts.count && ts_peek().type == TOK_LBRACE) {
+                has_block = 1;
                 ts_advance(); // consumir '{'
                 parse_flag_body_tokens(&spec.body_tokens, &spec.body_count, 1);
-            } else if (ts_match(TOK_EQ)) {
+            }
+
+            // Si no hay bloque, verificar '='
+            if (!has_block && ts_match(TOK_EQ)) {
                 bool is_global = false;
                 TokenType peek = ts_peek().type;
                 if (peek == TOK_GLOBAL || peek == TOK_LOCAL) {
@@ -253,7 +261,7 @@ ASTNode *parse_flags() {
                         spec.body_tokens = NULL;
                         spec.body_count = 0;
                     }
-            } else {
+            } else if (!has_block) {
                 // No hay '=' ni bloque, flag sin valor ni cuerpo
                 spec.body_tokens = NULL;
                 spec.body_count = 0;
@@ -261,7 +269,7 @@ ASTNode *parse_flags() {
         }
 
         node->data.flags.specs = realloc(node->data.flags.specs,
-                                         (node->data.flags.spec_count+1)*sizeof(FlagSpec));
+                                         (node->data.flags.spec_count + 1) * sizeof(FlagSpec));
         node->data.flags.specs[node->data.flags.spec_count++] = spec;
 
         ts_skip_newlines();
