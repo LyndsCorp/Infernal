@@ -1,7 +1,7 @@
-Infernal 1.35 (Testing, parcheando)
+Infernal 1.36 (Estable+++)
 ──────────────────────────────────────────────
 
-Versión:           1.35
+Versión:           1.36
 Edición:           Código fuente de Infernal
 Arquitectura:      La que compiles
 Sistema operativo: POSIX (Linux, macOS)
@@ -11,9 +11,11 @@ Proyecto:          Aros Legendarios
 Licencia:          Apache 2.0
 
 
-Código fuente:     https://github.com/LyndsCorp/Infernal/tree/testing
+Código fuente:     https://github.com/LyndsCorp/Infernal/tree/main
 Repositorio:       https://github.com/LyndsCorp/Infernal
+
 Documentación:     https://github.com/LyndsCorp/Infernal-Documentation
+                   https://lyndscorp.com/infernal
 
 Copyright (C) 2026 David Baña Szymaniak
 Hecho con <3 por David Baña Szymaniak
