@@ -154,12 +154,8 @@ ASTNode *parse_flags() {
     node->data.flags.spec_count = 0;
     int empty_count = 0;
 
-    while (1) {
+    while (!ts_match(TOK_RPAREN)) {
         ts_skip_newlines();
-        if (ts_peek().type == TOK_EOF) {
-            error(ts_peek().line, "Falta ')' al final de la declaración de flags");
-        }
-        if (ts_match(TOK_RPAREN)) break;
 
         // Saltar comentarios (identificadores que empiezan con '#')
         while (ts_peek().type == TOK_IDENT && ts_peek().lexeme[0] == '#') {
@@ -225,15 +221,11 @@ ASTNode *parse_flags() {
             }
 
             // Verificar si hay un bloque inmediato (sin '=')
-            int has_block = 0;
+            ts_skip_newlines();
             if (ts_peek().type == TOK_LBRACE) {
-                has_block = 1;
                 ts_advance(); // consumir '{'
                 parse_flag_body_tokens(&spec.body_tokens, &spec.body_count, 1);
-            }
-
-            // Si no hay bloque, verificar si hay '=' para tipo/variable
-            if (!has_block && ts_match(TOK_EQ)) {
+            } else if (ts_match(TOK_EQ)) {
                 bool is_global = false;
                 TokenType peek = ts_peek().type;
                 if (peek == TOK_GLOBAL || peek == TOK_LOCAL) {
@@ -261,7 +253,7 @@ ASTNode *parse_flags() {
                         spec.body_tokens = NULL;
                         spec.body_count = 0;
                     }
-            } else if (!has_block) {
+            } else {
                 // No hay '=' ni bloque, flag sin valor ni cuerpo
                 spec.body_tokens = NULL;
                 spec.body_count = 0;
@@ -276,8 +268,6 @@ ASTNode *parse_flags() {
         if (ts_peek().type == TOK_COMMA) {
             ts_advance();
             ts_skip_newlines();
-        } else if (ts_peek().type != TOK_RPAREN && ts_peek().type != TOK_EOF) {
-            error(ts_peek().line, "Se esperaba ',' o ')' después del flag");
         }
     }
 
