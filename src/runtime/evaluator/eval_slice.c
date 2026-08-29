@@ -38,6 +38,7 @@ Value eval_slice(ASTNode *node) {
     int len = list.data.list.count;
     if (len == 0) {
         DEBUG_INFO("eval_slice: lista vacía, devolviendo lista vacía");
+        value_free(&list);
         return val_list_empty();
     }
 

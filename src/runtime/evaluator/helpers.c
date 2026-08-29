@@ -106,15 +106,28 @@ int get_node_line(ASTNode *node) {
 
 Value resolve_reference(Value v, int line) {
     if (v.type != VAL_REFERENCE) return v;
-    VarEntry *list_var = scope_find(current_scope, v.data.ref.list_name);
+
+    /*
+     * VAL_REFERENCE solo describe una posición de una lista; no es dueño del
+     * Value apuntado. Devuelve SIEMPRE una copia profunda para que el llamador
+     * pueda tratar el resultado como un Value normal y liberar su memoria sin
+     * tocar la lista original.
+     */
+    const char *list_name = v.data.ref.list_name ? v.data.ref.list_name : "";
+    VarEntry *list_var = scope_find(current_scope, list_name);
     if (!list_var || list_var->value.type != VAL_LIST) {
-        error(line, "La referencia apunta a una lista inexistente '%s'", v.data.ref.list_name);
+        error(line, "La referencia apunta a una lista inexistente '%s'", list_name);
     }
+
     int idx = v.data.ref.index;
     if (idx < 1 || idx > list_var->value.data.list.count) {
         error(line, "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
     }
-    return list_var->value.data.list.items[idx - 1];
+
+    Value result = copy_value_secure(list_var->value.data.list.items[idx - 1]);
+    free(v.data.ref.list_name);
+    v.data.ref.list_name = NULL;
+    return result;
 }
 
 int extract_integer_index(ASTNode *node, int line) {

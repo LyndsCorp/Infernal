@@ -61,6 +61,12 @@ Value copy_value_secure(Value src) {
         return new_list;
     } else if (src.type == VAL_MAP) {
         return val_map_copy(&src);
+    } else if (src.type == VAL_REFERENCE) {
+        Value v;
+        v.type = VAL_REFERENCE;
+        v.data.ref.list_name = infernal_strdup(src.data.ref.list_name);
+        v.data.ref.index = src.data.ref.index;
+        return v;
     } else {
         return src;
     }

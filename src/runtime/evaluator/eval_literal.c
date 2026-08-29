@@ -46,8 +46,7 @@ Value eval_var(ASTNode *expr) {
 
     VarEntry *e = scope_find(current_scope, name);
     if (!e) {
-        DEBUG_INFO("eval_var: variable '%s' no encontrada, devolviendo NULL", name);
-        return val_make_null();
+        error(expr->line, "Variable '%s' no definida", name);
     }
     DEBUG_INFO("eval_var: variable '%s' encontrada, valor tipo %d", name, e->value.type);
     return copy_value_secure(e->value);

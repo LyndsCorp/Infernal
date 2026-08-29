@@ -14,7 +14,9 @@
 Value eval_unary(ASTNode *expr) {
     if (expr->data.unary.op == TOK_NOT) {
         Value v = eval_expr(expr->data.unary.operand);
-        return val_bool(!val_is_truthy(v));
+        Value result = val_bool(!val_is_truthy(v));
+        value_free(&v);
+        return result;
     }
     error(expr->line, "Operador unario no implementado");
     return val_make_null();
