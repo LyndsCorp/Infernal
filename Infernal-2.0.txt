@@ -1,0 +1,67 @@
+Nuevas palabras:
+
+when algo then
+fi
+Sería diferente a un while que se ejecuta cuando le toca, este se ejecutaría cuando eso se cumpla, independientemente de su posición. Sería un bucle también, por eso que tenga break.
+
+task funcion()
+task funcion()
+task comando
+Serviría para ejecutar eso en segundo plano, así puedes ejecutar más de un comando o función a la vez sin que se ralentice por ir uno a uno
+
+global function()
+fi
+Lo mismo que una función normal, pero que se comparta entre todos los scripts compartidos por execute, como las variables globales
+
+printAllFunctions()
+Ya que existe printAllVars(), debería existir lo mismo para funciones
+
+task execute script
+Este sería buenísimo para utilizar Infernal en un entorno de videojuegos. Sería ejecutar otro script de Infernal en segundo plano, compartiendo las variables globales y las funciones globales como hace execute normal. Las variables globales creadas en este se comparten también todos en un mismo ámbito global, así puedes hacer en uno:
+``` Infernal
+task execute script.inf #esto en algún momento hará "global existe = true" y se ejecutará el bloque del when. Mientras tanto, no
+when existe then #o sea, si es true
+    start()
+    break
+fi
+```
+En cuanto termina el script (el cuerpo) el script ese NO termina, pues aún está ejecutando el task en segundo plano. Cuando el task termine, allí sí se termina. El task se detecta en recursiva con los scripts que ejecutó en recursiva el task. En cuanto ningún script quede vivo, el when se rinde.
+
+Objetos
+Se crearían así:
+@objeto: #o con then también opcional
+    name = "algo"
+    int daño = 6
+    function saltar()
+        ...
+    fi
+fi
+Y que se puedan llamar con @objeto:saltar() las funciones de los objetos.
+Para aclarar: los portales serian objetos también, pero como están solos (sin : o then), apunten a algo abstracto: una línea en el script. Y pues se llaman con repeat.
+
+Funciones bonitas
+Que se pueda hacer
+``` Infernal
+var = "hola"
+if var:head("hola") then
+fi
+```
+Además del actual:
+``` Infernal
+var = "hola"
+if head(var, "hola") then
+fi
+```
+Pasando el primer argumento de la variable como el valor de var
+
+Para las variables dentro de objetos, se llaman con : (por eso definir los objetos puede usar :). Por ejemplo:
+``` Infernal
+@gato:
+    edad = 4
+    nombre = "Ay mi gatito no paras de morder"
+fi
+if @gato:edad == 4 then #se diferencia de las funciones bonitas por el @
+    echo "miau"
+    print("miau") #lo mismo pero sin comando
+fi
+```
