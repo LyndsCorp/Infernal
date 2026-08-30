@@ -9,7 +9,7 @@ task funcion()
 task comando
 Serviría para ejecutar eso en segundo plano, así puedes ejecutar más de un comando o función a la vez sin que se ralentice por ir uno a uno
 
-global function()
+global function algo()
 fi
 Lo mismo que una función normal, pero que se comparta entre todos los scripts compartidos por execute, como las variables globales
 
