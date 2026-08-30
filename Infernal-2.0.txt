@@ -3,7 +3,7 @@ Nuevas palabras:
 when algo then
 fi
 Sería diferente a un while que se ejecuta cuando le toca, este se ejecutaría cuando eso se cumpla, independientemente de su posición. Sería un bucle también, por eso que tenga break. Si no pone break, pues será en bucle mientras se cumpla. El break además de terminarlo, hace como que el when deje de existir.
-Para no fundir la CPU, solo reevalúa cuando una variable global cambia.
+Para no fundir la CPU, solo reevalúa cuando una variable de los scopes que necesita el when cambia.
 
 task funcion()
 task funcion()
@@ -39,8 +39,23 @@ Se crearían así:
 fi
 Y que se puedan llamar con @objeto:saltar() las funciones de los objetos.
 Para aclarar: los portales serian objetos también, pero como están solos (sin : o then), apunten a algo abstracto: una línea en el script. Y pues se llaman con repeat.
+Ejemplo:
+``` Infernal
+import lynter
 
-Funciones bonitas
+@ventana = lynter.mkwin("Mi App")
+@ventana:width = 800
+@ventana:height = 600
+
+@boton = lynter.mkbutton(@ventana, "Click me")
+
+when @boton:clicked == true then
+    print("¡Click!")
+    @boton:clicked = false # reseteas el evento
+    # si no pones break, sigue escuchando para siempre, aunque como lo pusimos false, no sé cumple sin parar el when, solo sigue vivo
+fi
+```
+
 Que se pueda hacer
 ``` Infernal
 var = "hola"
