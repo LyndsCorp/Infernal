@@ -2,7 +2,7 @@ Nuevas palabras:
 
 when algo then
 fi
-Sería diferente a un while que se ejecuta cuando le toca, este se ejecutaría cuando eso se cumpla, independientemente de su posición. Sería un bucle también, por eso que tenga break.
+Sería diferente a un while que se ejecuta cuando le toca, este se ejecutaría cuando eso se cumpla, independientemente de su posición. Sería un bucle también, por eso que tenga break. Si no pone break, pues será en bucle mientras se cumpla. El break además de terminarlo, hace como que el when deje de existir.
 
 task funcion()
 task funcion()
@@ -65,3 +65,29 @@ if @gato:edad == 4 then #se diferencia de las funciones bonitas por el @
     print("miau") #lo mismo pero sin comando
 fi
 ```
+
+objAddFunction() y objAddVar() servirian para el backend de librerías. Haces algo tipo:
+``` Infernal
+import lynter
+@ventana = lynter.mkwin("Mi ventana") #el primer argumento de la función es el @ventana
+```
+O:
+``` Infernal
+import lynter
+object @ventana #se crea el objeto "ventana"
+lynter.mkwin(@ventana, "Mi ventana")
+```
+Y el lynter.fire tendría:
+``` Infernal Fire
+function mkwin(@ventana, string title)
+    objAddVar(objecto
+fi
+```
+
+mkvar() sería simplemente para crear variables en el tiempo de ejecución. Sería una variable especial:
+mkvar(nombre, valor)
+mkvar(tipo, nombre, valor)
+mkvar(scope, tipo, nombre, valor)
+Todo eso relativamente.
+
+Lava sería como Fire, pero en lugar de ser un script con funciones, sería un binario nativo de C con funciones y que se pueda importar y todo eso pero más rápido.
