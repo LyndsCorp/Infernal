@@ -1277,17 +1277,25 @@ NodeList parse_block(const char *terminator) {
                         }
                     }
 
-                    /* POST-INCREMENTO/DECREMENTO (i++ o i--)
+                    /* POST-INCREMENTO/DECREMENTO (g++ o g--)
                      *
-                     * Un identificador seguido de ++/-- solo es una expresión
-                     * cuando el operador termina la línea. Si después hay más
-                     * tokens (por ejemplo `g++ --help`), la línea es un comando
-                     * normal y debe llegar a NODE_SHELL_CMD. */
+                     * Regla inequívoca para comandos que contienen `++`/`--`:
+                     *
+                     *   g++          -> variable `g`, post-incremento
+                     *   g--          -> variable `g`, post-decremento
+                     *   g++ --help   -> comando shell completo
+                     *   g++ archivo  -> comando shell completo
+                     *
+                     * Es decir, solo reconocemos el operador como post-op cuando
+                     * NO queda ningún token después de ++/-- en esa línea. En cuanto
+                     * hay un argumento, `++`/`--` forma parte del comando. */
                     if (next_tok.type == TOK_INC || next_tok.type == TOK_DEC) {
                         Token after_op = (ts.pos + 1 < ts.count)
                                          ? ts.tokens[ts.pos + 1]
                                          : (Token){TOK_EOF, "", 0, 0, 0};
-                        if (after_op.type == TOK_NEWLINE || after_op.type == TOK_EOF) {
+                        bool post_op_only = (after_op.type == TOK_NEWLINE ||
+                                             after_op.type == TOK_EOF);
+                        if (post_op_only) {
                             ts.pos--;
                             ASTNode *expr = parse_expression(0);
                             stmt = node_create(NODE_EXPR_STMT, saved_t.line);
@@ -1297,7 +1305,7 @@ NodeList parse_block(const char *terminator) {
                             ts_skip_newlines();
                             continue;
                         }
-                        /* Hay argumentos tras ++/--; es un comando shell. */
+                        /* Quedan tokens tras ++/--; toda la línea es un comando shell. */
                     }
 
                     /* COMANDO SHELL (cualquier otra cosa) — NUEVO: preserva comillas */
