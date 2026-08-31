@@ -2,23 +2,29 @@
 
 print("=== DEMO DE CLONACION ===")
 
+# $ crea un clon temporal: la operación NO modifica la variable original.
 x = 2
 var = $x++
-print("x = ", x)
-print("var = ", var)
+print("x = ", x)          # 2
+print("var = ", var)      # 3
 
-$x++
-print("x tras $x++ = ", x)
-
+# Sin $, la operación modifica la variable.
 var++
-print("var tras var++ = ", var)
+print("var tras var++ = ", var)  # 4
 
+# Como sentencia, $x++ también trabaja solo con el clon y su resultado se descarta.
+x = 2
+$x++
+print("x tras $x++ = ", x)       # 2
+
+# En una asignación normal, x++ actualiza x y devuelve el valor nuevo.
 x = 2
 var = x++
-print("x = ", x)
-print("var = ", var)
+print("x tras x++ = ", x)        # 3
+print("var tras x++ = ", var)    # 3
 
-x--
-print("x tras x-- = ", x)
+# Una línea con argumentos que empieza por N++ es un comando, no un incremento.
+# g no existe como variable, así que `g++ --version` se ejecuta como comando normal.
+g++ --version
 
 print("=== FIN ===")

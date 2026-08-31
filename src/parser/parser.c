@@ -1277,16 +1277,27 @@ NodeList parse_block(const char *terminator) {
                         }
                     }
 
-                    /* POST-INCREMENTO/DECREMENTO (i++ o i--) */
+                    /* POST-INCREMENTO/DECREMENTO (i++ o i--)
+                     *
+                     * Un identificador seguido de ++/-- solo es una expresión
+                     * cuando el operador termina la línea. Si después hay más
+                     * tokens (por ejemplo `g++ --help`), la línea es un comando
+                     * normal y debe llegar a NODE_SHELL_CMD. */
                     if (next_tok.type == TOK_INC || next_tok.type == TOK_DEC) {
-                        ts.pos--;
-                        ASTNode *expr = parse_expression(0);
-                        stmt = node_create(NODE_EXPR_STMT, saved_t.line);
-                        stmt->data.expr_stmt.expr = expr;
-                        nodelist_add(&block, stmt);
-                        DEBUG_INFO("parse_block: post-inc/dec para '%s' en línea %d", saved_t.lexeme, stmt->line);
-                        ts_skip_newlines();
-                        continue;
+                        Token after_op = (ts.pos + 1 < ts.count)
+                                         ? ts.tokens[ts.pos + 1]
+                                         : (Token){TOK_EOF, "", 0, 0, 0};
+                        if (after_op.type == TOK_NEWLINE || after_op.type == TOK_EOF) {
+                            ts.pos--;
+                            ASTNode *expr = parse_expression(0);
+                            stmt = node_create(NODE_EXPR_STMT, saved_t.line);
+                            stmt->data.expr_stmt.expr = expr;
+                            nodelist_add(&block, stmt);
+                            DEBUG_INFO("parse_block: post-inc/dec para '%s' en línea %d", saved_t.lexeme, stmt->line);
+                            ts_skip_newlines();
+                            continue;
+                        }
+                        /* Hay argumentos tras ++/--; es un comando shell. */
                     }
 
                     /* COMANDO SHELL (cualquier otra cosa) — NUEVO: preserva comillas */
