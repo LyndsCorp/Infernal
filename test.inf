@@ -1,0 +1,6 @@
+var = 1
+var2 = 1
+g++ --help
+var++
+$var2++
+printAllVars()

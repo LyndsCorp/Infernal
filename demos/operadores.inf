@@ -4,16 +4,16 @@ a += 3
 print(a)          # 8
 
 b = 2
-c = $b ** 3
+c = b ** 3
 print(c)          # 8
 
 x = 10
-y = $x++
-print(x + " " + y)       # 11 10
+y = x++
+print(x + " " + y)       # 11 11
 
 x = 10
-y = $x--
-print(x + " " + y)       # 9 10
+y = x--
+print(x + " " + y)       # 9 9
 
 print((13 + 7) * 4)  #80
 print(13 + 7 * 4)    #41
@@ -21,3 +21,11 @@ print(13 + 7 * 4)    #41
 print(2 ** 3 ** 2)   # 512
 print(-2 ** 2)       # -4
 print((-2) ** 2)     # 4
+
+
+# Clonacion temporal: no modifica la variable original.
+x = 20
+$x++
+print("clone: " + x)
+print("normal: " + (x++))
+print("despues: " + x)

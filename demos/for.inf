@@ -69,7 +69,7 @@ local limite = 100
 for local x = 0, x < limite, i++ then
     print(x)
     print(i)
-    $x += 1
+    x += 1
 fi
 
 
@@ -160,7 +160,7 @@ print("=== TEST 20: modificar variable externa ===")
 local contador = 0
 
 for local i = 0, i < 10, i++ then
-    $contador++
+    contador++
 fi
 
 print(contador)
@@ -245,7 +245,7 @@ local total = 0
 
 for local i = 0, i < 5, i++ then
     for local j = 0, j < 5, j++ then
-        $total++
+        total++
     fi
 fi
 

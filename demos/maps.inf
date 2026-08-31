@@ -75,23 +75,23 @@ print("")
 print("--- Acceso ---")
 
 print("username:")
-print($stats["username"])
+print(stats["username"])
 
 print("vida:")
-print($stats["vida"])
+print(stats["vida"])
 
 print("fuerza:")
-print($stats["fuerza"])
+print(stats["fuerza"])
 
-if $stats["username"] == "Monojo" then
+if stats["username"] == "Monojo" then
     print("OK: username")
 fi
 
-if $stats["vida"] == 800 then
+if stats["vida"] == 800 then
     print("OK: vida")
 fi
 
-if $stats["fuerza"] == 600 then
+if stats["fuerza"] == 600 then
     print("OK: fuerza")
 fi
 
@@ -128,9 +128,9 @@ print("--- Modificación ---")
 stats["vida"] = 1000
 
 print("Nueva vida:")
-print($stats["vida"])
+print(stats["vida"])
 
-if $stats["vida"] == 1000 then
+if stats["vida"] == 1000 then
     print("OK: vida modificada")
 fi
 
@@ -144,7 +144,7 @@ print("--- Añadir clave ---")
 stats["mana"] = 500
 
 print("Mana:")
-print($stats["mana"])
+print(stats["mana"])
 
 print("Nuevo tamaño:")
 print(size(stats))
@@ -167,9 +167,9 @@ print("--- Modificar clave existente ---")
 stats["fuerza"] = 900
 
 print("Nueva fuerza:")
-print($stats["fuerza"])
+print(stats["fuerza"])
 
-if $stats["fuerza"] == 900 then
+if stats["fuerza"] == 900 then
     print("OK: fuerza modificada")
 fi
 
@@ -191,29 +191,29 @@ mixed = [
 print("Mapa mixto:")
 print(mixed)
 
-print($mixed["texto"])
-print($mixed["entero"])
-print($mixed["decimal"])
-print($mixed["verdadero"])
-print($mixed["falso"])
+print(mixed["texto"])
+print(mixed["entero"])
+print(mixed["decimal"])
+print(mixed["verdadero"])
+print(mixed["falso"])
 
-if $mixed["texto"] == "Hola" then
+if mixed["texto"] == "Hola" then
     print("OK: string")
 fi
 
-if $mixed["entero"] == 123 then
+if mixed["entero"] == 123 then
     print("OK: int")
 fi
 
-if $mixed["decimal"] == 3.14 then
+if mixed["decimal"] == 3.14 then
     print("OK: float")
 fi
 
-if $mixed["verdadero"] == true then
+if mixed["verdadero"] == true then
     print("OK: bool true")
 fi
 
-if $mixed["falso"] == false then
+if mixed["falso"] == false then
     print("OK: bool false")
 fi
 
@@ -233,16 +233,16 @@ print("Inventario:")
 print(inventory)
 
 print("Items:")
-print($inventory["items"])
+print(inventory["items"])
 
 print("Oro:")
-print($inventory["oro"])
+print(inventory["oro"])
 
-if size($inventory["items"]) == 3 then
+if size(inventory["items"]) == 3 then
     print("OK: lista dentro del mapa")
 fi
 
-if $inventory["oro"] == 1500 then
+if inventory["oro"] == 1500 then
     print("OK: valor del mapa")
 fi
 
@@ -265,12 +265,12 @@ print("Jugador:")
 print(player)
 
 print("Nombre:")
-print($player["nombre"])
+print(player["nombre"])
 
 print("Stats:")
-print($player["stats"])
+print(player["stats"])
 
-if $player["nombre"] == "Monojo" then
+if player["nombre"] == "Monojo" then
     print("OK: mapa exterior")
 fi
 
@@ -369,7 +369,7 @@ if has(empty, "hello") == true then
     print("OK: clave encontrada")
 fi
 
-if $empty["hello"] == "world" then
+if empty["hello"] == "world" then
     print("OK: valor correcto")
 fi
 

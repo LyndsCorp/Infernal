@@ -21,6 +21,8 @@
 #include "core/value.h"
 #include "runtime/scope.h"
 #include "runtime/globals.h"
+#include "runtime/command.h"
+#include <stdlib.h>
 
 /* --- eval_expr (orquestador de expresiones) --- */
 Value eval_expr(ASTNode *expr) {
@@ -43,40 +45,57 @@ Value eval_expr(ASTNode *expr) {
             const char *name = raw_name;
             if (name[0] == '$' || name[0] == '?') name++;
             VarEntry *e = scope_find(current_scope, name);
-            if (!e) error(expr->line, "Variable '%s' no definida", name);
+            if (!e) {
+                if (var_node->data.var.clone) {
+                    error(expr->line, "Variable '%s' no definida", name);
+                }
 
-            Value old = e->value;
+                /* Un identificador seguido de ++ también puede ser un comando
+                 * cuyo nombre contiene '+'. Solo si ese comando no existe,
+                 * informamos de que no hay variable. */
+                char *command = NULL;
+                if (asprintf(&command, "%s%s", name,
+                             expr->kind == NODE_POST_INC ? "++" : "--") < 0 || !command) {
+                    error(expr->line, "Memoria insuficiente al resolver '%s'", name);
+                }
+                int status = run_command_get_exit_code(command);
+                free(command);
+                if (status == 0) {
+                    return val_make_null();
+                }
+                error(expr->line, "Variable '%s' no existe y tampoco existe el comando asociado", name);
+            }
+
+            Value base = copy_value_secure(e->value);
             Value new_val;
             if (expr->kind == NODE_POST_INC) {
-                if (old.type == VAL_INT) new_val = val_int(old.data.ival + 1);
-                else if (old.type == VAL_FLOAT) new_val = val_float(old.data.fval + 1.0);
-                else error(expr->line, "Incremento solo aplicable a números");
+                if (base.type == VAL_INT) new_val = val_int(base.data.ival + 1);
+                else if (base.type == VAL_FLOAT) new_val = val_float(base.data.fval + 1.0);
+                else {
+                    value_free(&base);
+                    error(expr->line, "Incremento solo aplicable a números");
+                }
             } else {
-                if (old.type == VAL_INT) new_val = val_int(old.data.ival - 1);
-                else if (old.type == VAL_FLOAT) new_val = val_float(old.data.fval - 1.0);
-                else error(expr->line, "Decremento solo aplicable a números");
+                if (base.type == VAL_INT) new_val = val_int(base.data.ival - 1);
+                else if (base.type == VAL_FLOAT) new_val = val_float(base.data.fval - 1.0);
+                else {
+                    value_free(&base);
+                    error(expr->line, "Decremento solo aplicable a números");
+                }
             }
+            value_free(&base);
 
             if (var_node->data.var.clone) {
-                /* $x es una clonación temporal: $x++ produce el valor
-                 * incrementado, pero no modifica x. En una línea propia,
-                 * marcada por el parser como statement_context, sí se usa
-                 * explícitamente para actualizar la variable. */
-                Value result = copy_value_secure(new_val);
-                if (expr->data.post_op.statement_context) {
-                    value_free(&e->value);
-                    e->value = copy_value_secure(new_val);
-                }
-                value_free(&new_val);
-                return result;
+                /* $ es la máquina de clonación: la operación solo modifica la
+                 * copia temporal y devuelve el resultado de esa copia. */
+                return new_val;
             }
 
-            /* x++ mantiene la semántica post-incremento clásica: devuelve
-             * la copia antigua y después actualiza la variable. */
-            Value result = copy_value_secure(old);
+            /* Aunque la sintaxis sea x++, en Infernal la operación devuelve
+             * el valor ya incrementado/decrementado. */
             value_free(&e->value);
-            e->value = new_val;
-            return result;
+            e->value = copy_value_secure(new_val);
+            return new_val;
         }
         default:
             error(expr->line, "Se encontró una sentencia donde se esperaba una expresión. "

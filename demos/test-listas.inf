@@ -7,13 +7,13 @@ print(lista)
 
 print("=== Añadir elemento ===")
 
-lista = $lista + "Abracitos"[3]
+lista = lista + "Abracitos"[3]
 print(lista)
 
 
 print("=== Eliminar índice concreto ===")
 
-lista = $lista - [3]
+lista = lista - [3]
 print(lista)
 
 
@@ -22,7 +22,7 @@ print("=== Eliminar desde índice ===")
 lista = ["a", "b", "c", "d", "e"]
 print(lista)
 
-lista = $lista - [3*]
+lista = lista - [3*]
 print(lista)
 
 
@@ -30,21 +30,21 @@ print(lista)
 print("=== Vaciar lista completa ===")
 
 lista = ["a", "b", "c"]
-lista = $lista - [*]
+lista = lista - [*]
 print(lista)
 
 
 print("=== Eliminar antes del índice ===")
 
 lista = ["a", "b", "c", "d", "e"]
-lista = $lista - [*3]
+lista = lista - [*3]
 print(lista)
 
 
 print("=== Mantener solo índice ===")
 
 lista = ["a", "b", "c", "d", "e"]
-lista = $lista - [*3*]
+lista = lista - [*3*]
 print(lista)
 
 
@@ -53,7 +53,7 @@ print("=== Rangos ===")
 
 lista = ["a", "b", "c", "d", "e", "f"]
 
-lista = $lista - [2:5]
+lista = lista - [2:5]
 
 print(lista)
 
@@ -62,7 +62,7 @@ print("=== Rango de un elemento ===")
 
 lista = ["a", "b", "c"]
 
-lista = $lista - [3:3]
+lista = lista - [3:3]
 
 print(lista)
 

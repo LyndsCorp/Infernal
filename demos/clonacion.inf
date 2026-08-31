@@ -1,0 +1,24 @@
+#!../infernal
+
+print("=== DEMO DE CLONACION ===")
+
+x = 2
+var = $x++
+print("x = ", x)
+print("var = ", var)
+
+$x++
+print("x tras $x++ = ", x)
+
+var++
+print("var tras var++ = ", var)
+
+x = 2
+var = x++
+print("x = ", x)
+print("var = ", var)
+
+x--
+print("x tras x-- = ", x)
+
+print("=== FIN ===")

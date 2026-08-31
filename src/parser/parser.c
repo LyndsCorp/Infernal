@@ -10,6 +10,7 @@
 #include <string.h>
 #include <ctype.h>
 #include <stdint.h>
+#include <unistd.h>
 #include "parser.h"
 #include "core/ast.h"
 #include "lexer/lexer.h"
@@ -85,6 +86,45 @@ static bool valid_module_name(const char *name) {
         if (!(isalnum((unsigned char)*p) || *p == '_' || *p == '-')) return false;
     }
     return true;
+}
+
+static bool command_exists(const char *name) {
+    if (!name || !*name) return false;
+
+    /* Los comandos con una ruta explícita se comprueban directamente. */
+    if (strchr(name, '/') != NULL)
+        return access(name, X_OK) == 0;
+
+    const char *path = getenv("PATH");
+    if (!path) return false;
+
+    char *copy = strdup(path);
+    if (!copy) return false;
+
+    bool found = false;
+    for (char *part = copy; ; ) {
+        char *next = strchr(part, ':');
+        if (next) *next = '\0';
+
+        const char *dir = (*part != '\0') ? part : ".";
+        size_t len = strlen(dir) + 1 + strlen(name) + 1;
+        char *candidate = malloc(len);
+        if (candidate) {
+            snprintf(candidate, len, "%s/%s", dir, name);
+            if (access(candidate, X_OK) == 0) {
+                found = true;
+                free(candidate);
+                break;
+            }
+            free(candidate);
+        }
+
+        if (!next) break;
+        part = next + 1;
+    }
+
+    free(copy);
+    return found;
 }
 
 static bool safe_module_path(const char *path) {
@@ -328,10 +368,14 @@ ASTNode *parse_assignment_expr(int line) {
         DEBUG_INFO("parse_assignment_expr: valor siguiente '%s' (tipo %d)", next_token.lexeme, next_token.type);
         if (next_token.type == TOK_IDENT && next_token.lexeme[0] != '$' && next_token.lexeme[0] != '?') {
             int save_pos = ts.pos;
-            ts_advance();
+            Token rhs_ident = ts_advance();
             Token next_next = ts_peek();
             ts.pos = save_pos;
-            if (next_next.type != TOK_LPAREN && next_next.type != TOK_LBRACKET) {
+
+            bool rhs_is_command = command_exists(rhs_ident.lexeme);
+
+            if (rhs_is_command &&
+                next_next.type != TOK_LPAREN && next_next.type != TOK_LBRACKET) {
                 is_cmd = true;
                 cmd_str = extract_literal_command(line);
                 DEBUG_INFO("parse_assignment_expr: comando detectado: '%s'", cmd_str);
@@ -1040,19 +1084,20 @@ NodeList parse_block(const char *terminator) {
                     if (ts_match(TOK_EQ)) {
                         Token next_token = ts_peek();
                         if (next_token.type == TOK_IDENT && next_token.lexeme[0] != '$' && next_token.lexeme[0] != '?') {
-                            int next_pos = ts.pos + 1;
-                            TokenType rhs_follow = (next_pos < ts.count) ? ts.tokens[next_pos].type : TOK_EOF;
+                            int save_pos = ts.pos;
+                            Token rhs_ident = ts_advance();
+                            Token rhs_follow = ts_peek();
+                            ts.pos = save_pos;
 
-                            bool simple_command =
-                            rhs_follow == TOK_NEWLINE || rhs_follow == TOK_EOF ||
-                            rhs_follow == TOK_COMMA;
+                            bool rhs_is_command = command_exists(rhs_ident.lexeme);
 
-                            if (rhs_follow == TOK_LPAREN || rhs_follow == TOK_LBRACKET || !simple_command) {
-                                value = parse_expression(0);
-                            } else {
+                            if (rhs_is_command &&
+                                rhs_follow.type != TOK_LPAREN && rhs_follow.type != TOK_LBRACKET) {
                                 is_cmd = true;
                                 cmd_str = extract_literal_command(t.line);
                                 while (ts_peek().type != TOK_NEWLINE && ts_peek().type != TOK_EOF) ts_advance();
+                            } else {
+                                value = parse_expression(0);
                             }
                         } else {
                             value = parse_expression(0);
@@ -1119,20 +1164,20 @@ NodeList parse_block(const char *terminator) {
             if (ts_match(TOK_EQ)) {
                 Token next_token = ts_peek();
                 if (next_token.type == TOK_IDENT && next_token.lexeme[0] != '$' && next_token.lexeme[0] != '?') {
-                    int next_pos = ts.pos + 1;
-                    if (next_pos < ts.count) {
-                        Token next_next = ts.tokens[next_pos];
-                        if (next_next.type == TOK_LPAREN || next_next.type == TOK_LBRACKET) {
-                            value = parse_expression(0);
-                        } else {
-                            is_cmd = true;
-                            cmd_str = extract_literal_command(t.line);
-                            while (ts_peek().type != TOK_NEWLINE && ts_peek().type != TOK_EOF) ts_advance();
-                        }
-                    } else {
+                    int save_pos = ts.pos;
+                    Token rhs_ident = ts_advance();
+                    Token rhs_follow = ts_peek();
+                    ts.pos = save_pos;
+
+                    bool rhs_is_command = command_exists(rhs_ident.lexeme);
+
+                    if (rhs_is_command &&
+                        rhs_follow.type != TOK_LPAREN && rhs_follow.type != TOK_LBRACKET) {
                         is_cmd = true;
                         cmd_str = extract_literal_command(t.line);
                         while (ts_peek().type != TOK_NEWLINE && ts_peek().type != TOK_EOF) ts_advance();
+                    } else {
+                        value = parse_expression(0);
                     }
                 } else {
                     value = parse_expression(0);
@@ -1236,12 +1281,7 @@ NodeList parse_block(const char *terminator) {
                     if (next_tok.type == TOK_INC || next_tok.type == TOK_DEC) {
                         ts.pos--;
                         ASTNode *expr = parse_expression(0);
-                        if ((expr->kind == NODE_POST_INC || expr->kind == NODE_POST_DEC) &&
-                            expr->data.post_op.var && expr->data.post_op.var->kind == NODE_VAR &&
-                            expr->data.post_op.var->data.var.clone) {
-                            expr->data.post_op.statement_context = true;
-                            }
-                            stmt = node_create(NODE_EXPR_STMT, saved_t.line);
+                        stmt = node_create(NODE_EXPR_STMT, saved_t.line);
                         stmt->data.expr_stmt.expr = expr;
                         nodelist_add(&block, stmt);
                         DEBUG_INFO("parse_block: post-inc/dec para '%s' en línea %d", saved_t.lexeme, stmt->line);

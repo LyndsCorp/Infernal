@@ -397,12 +397,12 @@ static void compile_expr(Compiler *c, ASTNode *expr) {
                                         int slot = resolve_local(c, name);
                                         if (slot >= 0) {
                                             emit(c->chunk, OP_LOAD_VAR, slot, expr->line);
-                                            emit(c->chunk, OP_DUP, 0, expr->line);
                                             emit(c->chunk, OP_PUSH_INT, add_constant(c, val_int(1)), expr->line);
                                             if (expr->kind == NODE_POST_INC)
                                                 emit(c->chunk, OP_ADD, 0, expr->line);
                                             else
                                                 emit(c->chunk, OP_SUB, 0, expr->line);
+                                            emit(c->chunk, OP_DUP, 0, expr->line);
                                             emit(c->chunk, OP_STORE_VAR, slot, expr->line);
                                         } else {
                                             int gidx = vm_find_global_index(name);
@@ -413,12 +413,12 @@ static void compile_expr(Compiler *c, ASTNode *expr) {
                                                 }
                                             }
                                             emit(c->chunk, OP_LOAD_GLOBAL, gidx, expr->line);
-                                            emit(c->chunk, OP_DUP, 0, expr->line);
                                             emit(c->chunk, OP_PUSH_INT, add_constant(c, val_int(1)), expr->line);
                                             if (expr->kind == NODE_POST_INC)
                                                 emit(c->chunk, OP_ADD, 0, expr->line);
                                             else
                                                 emit(c->chunk, OP_SUB, 0, expr->line);
+                                            emit(c->chunk, OP_DUP, 0, expr->line);
                                             emit(c->chunk, OP_STORE_GLOBAL, gidx, expr->line);
                                             c->chunk->code[c->chunk->code_count - 1].operand2 = GLOBAL_SCRIPT;
                                         }
