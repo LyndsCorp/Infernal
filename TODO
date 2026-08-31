@@ -1,8 +1,8 @@
-[] Cuando ejecuto la 1.36 en Android sale:
+[ ] Cuando ejecuto la 1.36 en Android sale:
 Pointer tag for 0x7ffdfc8550 was truncated, see 'https://source.android.com/devices/tech/debug/tagged-pointers'.
 Aborted                    infernal script.inf
 
-[] El $ debe ser la máquina de clonación.
+[X] El $ debe ser la máquina de clonación.
 Solo crear un clon temporal, entonces:
 ```
 x = 2
@@ -21,7 +21,7 @@ var = x++
 ```
 Entonces var es 3 y x también es 3, porque no usó el $. Al declarar variables, nunca vas a necesitar la salida de g++, solo al ejecutar comandos normales.
 
-Portales se escriben:
+[ ] Portales se escriben:
 ```
 @portal
 repeat @portal
@@ -33,10 +33,10 @@ repeat portal-name
 ```
 Y ya.
 
-Que print(lista) no imprima:
+[ ] Que print(lista) no imprima:
 [Hola, 6]
 Cuando la lista es:
 ["Hola", 6]
 Debería imprimir con las comillas
 
-Función listLatest(lista) que devuelva el string (o int) del último elemento de la lista, muy útil para for in
+[ ] Función listLatest(lista) que devuelva el string (o int) del último elemento de la lista, muy útil para for in
