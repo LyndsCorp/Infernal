@@ -33,18 +33,21 @@ static const struct {
     {NULL, NULL}
 };
 
-/* --- Función global de impresión (sin static) -------------- */
+/* --- Representación para print() --------------------------- */
+static void print_value_literal(Value v);
+
+/* Imprime un valor en su forma normal de salida. */
 void print_value(Value v) {
     switch (v.type) {
         case VAL_INT:    printf("%d", v.data.ival); break;
         case VAL_FLOAT:  printf("%g", v.data.fval); break;
         case VAL_BOOL:   printf("%s", v.data.bval ? "true" : "false"); break;
-        case VAL_STRING: printf("%s", v.data.sval); break;
+        case VAL_STRING: printf("%s", v.data.sval ? v.data.sval : ""); break;
         case VAL_LIST:
             printf("[");
             for (int j = 0; j < v.data.list.count; j++) {
                 if (j > 0) printf(", ");
-                print_value(v.data.list.items[j]);
+                print_value_literal(v.data.list.items[j]);
             }
             printf("]");
             break;
@@ -74,6 +77,53 @@ void print_value(Value v) {
             } else {
                 printf("?");
             }
+            break;
+    }
+}
+
+/* Representa strings dentro de contenedores con comillas, sin cambiar
+ * el comportamiento de print("texto") fuera de una lista/mapa. */
+static void print_value_literal(Value v) {
+    switch (v.type) {
+        case VAL_STRING:
+            putchar('"');
+            if (v.data.sval) {
+                for (const unsigned char *p = (const unsigned char *)v.data.sval; *p; ++p) {
+                    switch (*p) {
+                        case '\\': printf("\\\\"); break;
+                        case '"':  printf("\\\""); break;
+                        case '\n': printf("\\n"); break;
+                        case '\r': printf("\\r"); break;
+                        case '\t': printf("\\t"); break;
+                        default:   putchar(*p); break;
+                    }
+                }
+            }
+            putchar('"');
+            break;
+        case VAL_LIST:
+            printf("[");
+            for (int i = 0; i < v.data.list.count; i++) {
+                if (i > 0) printf(", ");
+                print_value_literal(v.data.list.items[i]);
+            }
+            printf("]");
+            break;
+        case VAL_MAP: {
+            printf("[");
+            MapData *md = v.data.map;
+            if (md) {
+                for (int i = 0; i < md->count; i++) {
+                    if (i > 0) printf(", ");
+                    printf("\"%s\" = ", md->pairs[i].key ? md->pairs[i].key : "");
+                    print_value_literal(md->pairs[i].value);
+                }
+            }
+            printf("]");
+            break;
+        }
+        default:
+            print_value(v);
             break;
     }
 }

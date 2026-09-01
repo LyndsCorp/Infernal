@@ -21,7 +21,7 @@ var = x++
 ```
 Entonces var es 3 y x también es 3, porque no usó el $. Al declarar variables, nunca vas a necesitar la salida de g++, solo al ejecutar comandos normales.
 
-[ ] Portales se escriben:
+[X] Portales se escriben:
 ```
 @portal
 repeat @portal
@@ -33,7 +33,7 @@ repeat portal-name
 ```
 Y ya.
 
-[ ] Que print(lista) no imprima:
+[X] Que print(lista) no imprima:
 [Hola, 6]
 Cuando la lista es:
 ["Hola", 6]
