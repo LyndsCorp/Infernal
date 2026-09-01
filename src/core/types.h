@@ -32,7 +32,7 @@ typedef enum {
     TOK_IN,
     TOK_FLAG,
     TOK_BANG,
-    TOK_AT,
+    TOK_PORTAL,
     TOK_LINE,
     TOK_COLON,
     TOK_EXECUTE,

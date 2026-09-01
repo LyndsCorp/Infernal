@@ -1,6 +1,3 @@
-var = 1
-var2 = 1
-g++ --help
-var++
-$var2++
-printAllVars()
+portal a
+print("hola")
+repeat a

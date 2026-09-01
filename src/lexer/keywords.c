@@ -32,6 +32,7 @@ TokenType lookup_keyword(const char *lexeme) {
     // Bucles
     if (strcmp(lexeme, "break") == 0) return TOK_BREAK;
     if (strcmp(lexeme, "repeat") == 0) return TOK_REPEAT;
+    if (strcmp(lexeme, "portal") == 0) return TOK_PORTAL;
     if (strcmp(lexeme, "continue") == 0) return TOK_CONTINUE;
 
     // Módulos Fire

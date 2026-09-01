@@ -35,13 +35,52 @@ void exec_block_impl(NodeList *block) {
 }
 
 void exec_block_from_impl(NodeList *block, int start_index) {
-    for (int i = start_index; i < block->count; i++) {
+    int i = start_index;
+
+    while (i < block->count) {
+        if (control_flow == CF_REPEAT_LINE) {
+            /* repeat <portal> solicita volver al primer statement que sigue
+             * al portal. El salto puede haberse producido dentro de un
+             * bloque anidado, por lo que solo lo consumimos aquí si el
+             * destino pertenece a este bloque; en caso contrario lo
+             * propagamos al bloque padre. */
+            int target_line = repeat_line_target;
+            int target_index = -1;
+            for (int j = 0; j < block->count; j++) {
+                ASTNode *candidate = block->stmts[j];
+                if (candidate && candidate->line == target_line) {
+                    target_index = j;
+                    break;
+                }
+            }
+
+            if (target_index < 0) {
+                /* El portal pertenece a otro ámbito de bloque. */
+                return;
+            }
+
+            DEBUG_INFO("exec_block: repeat -> línea %d (índice %d)",
+                       target_line, target_index);
+            control_flow = CF_NONE;
+            i = target_index;
+            continue;
+        }
+
         if (control_flow != CF_NONE) break;
         ASTNode *stmt = block->stmts[i];
         current_eval_line = stmt->line;
         DEBUG_INFO("exec_block: ejecutando sentencia tipo %d en línea %d", stmt->kind, stmt->line);
         exec_stmt(stmt);
-        if (control_flow != CF_NONE) break;
+
+        /* repeat necesita ser procesado por el orquestador del bloque
+         * antes de avanzar al siguiente statement. Si incrementamos i aquí,
+         * un repeat que sea la última sentencia del bloque se perdería y el
+         * bloque terminaría inmediatamente. */
+        if (control_flow == CF_REPEAT_LINE) {
+            continue;
+        }
+
+        ++i;
     }
 }
 
@@ -347,7 +386,6 @@ void exec_stmt(ASTNode *stmt) {
             } else {
                 exec_block_impl(&stmt->data.if_stmt.else_block);
             }
-            if (control_flow == CF_REPEAT_LINE) return;
             break;
         }
 

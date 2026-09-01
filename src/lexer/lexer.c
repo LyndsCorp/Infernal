@@ -239,13 +239,6 @@ void tokenize_file(FILE *fp) {
                 continue;
             }
 
-            if (*p == '@') {
-                Token t = {TOK_AT, strdup("@"), lineno, start_col, start_col + 1};
-                ts_add(t);
-                p++;
-                continue;
-            }
-
             if (*p == '\'' || *p == '"') {
                 char quote = *p++;
                 size_t cap = 64, bi = 0;

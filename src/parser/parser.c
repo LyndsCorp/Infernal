@@ -576,10 +576,11 @@ NodeList parse_block(const char *terminator) {
             continue;
         }
 
-        /* --- Portal @ --- */
-        if (t.type == TOK_AT) {
+        /* --- PORTAL --- */
+        if (t.type == TOK_PORTAL) {
             ts_advance();
-            if (ts_peek().type != TOK_IDENT) error(t.line, "Se esperaba nombre de portal después de '@'");
+            if (ts_peek().type != TOK_IDENT)
+                error(t.line, "Se esperaba nombre de portal después de 'portal'");
             char *portal_name = strdup(ts_advance().lexeme);
             stmt = node_create(NODE_PORTAL, t.line);
             stmt->data.portal.name = portal_name;
@@ -873,9 +874,7 @@ NodeList parse_block(const char *terminator) {
         /* --- REPEAT --- */
         if (t.type == TOK_REPEAT) {
             ts_advance();
-            if (ts_peek().type == TOK_AT) {
-                ts_advance();
-                if (ts_peek().type != TOK_IDENT) error(t.line, "Se esperaba nombre de portal después de '@'");
+            if (ts_peek().type == TOK_IDENT) {
                 char *portal_name = strdup(ts_advance().lexeme);
                 stmt = node_create(NODE_REPEAT, t.line);
                 stmt->data.repeat.portal_name = portal_name;
@@ -886,7 +885,7 @@ NodeList parse_block(const char *terminator) {
                 stmt->data.repeat.line_expr = line_expr;
                 stmt->data.repeat.portal_name = NULL;
             } else {
-                error(t.line, "Se esperaba 'line' o '@' después de 'repeat'");
+                error(t.line, "Se esperaba nombre de portal o 'line' después de 'repeat'");
             }
             nodelist_add(&block, stmt);
             DEBUG_INFO("parse_block: añadido NODE_REPEAT en línea %d", stmt->line);
@@ -1039,19 +1038,6 @@ NodeList parse_block(const char *terminator) {
             bool is_global = ts_match(TOK_GLOBAL);
 
             DEBUG_INFO("parse_block: declaración %s en línea %d", is_local ? "local" : "global", t.line);
-
-            if (ts_peek().type == TOK_AT) {
-                ts_advance();
-                if (ts_peek().type != TOK_IDENT) error(t.line, "Se esperaba nombre de portal después de '@'");
-                char *portal_name = strdup(ts_advance().lexeme);
-                stmt = node_create(NODE_PORTAL, t.line);
-                stmt->data.portal.name = portal_name;
-                stmt->data.portal.is_local = is_local;
-                nodelist_add(&block, stmt);
-                DEBUG_INFO("parse_block: añadido NODE_PORTAL en línea %d", stmt->line);
-                ts_skip_newlines();
-                continue;
-            }
 
             int vtype = 0;
             if (ts_peek().type == TOK_INT || ts_peek().type == TOK_FLOAT ||
