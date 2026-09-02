@@ -16,6 +16,7 @@
 #include "bytes.h" //funciones de bytes crudos
 #include "neutral.h" //funciones polimorficas
 #include "database.h" //funciones de persistencia
+#include "list.h" //funciones de listas
 
 // AQUI SE AÑADEN LOS STDLIB
 void register_all_builtins(void) {
@@ -27,4 +28,5 @@ void register_all_builtins(void) {
     register_bytes_builtins();
     register_neutral_builtins();
     register_database_builtins();
+    register_list_builtins();
 }
