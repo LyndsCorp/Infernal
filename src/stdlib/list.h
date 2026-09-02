@@ -5,8 +5,8 @@
  * Código fuente de Infernal: stdlib/list.h
 */
 
-#ifndef STDLIB_IO_H
-#define STDLIB_IO_H
+#ifndef STDLIB_LIST_H
+#define STDLIB_LIST_H
 
 void register_list_builtins(void);
 
