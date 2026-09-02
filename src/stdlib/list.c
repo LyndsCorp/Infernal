@@ -38,7 +38,7 @@ static Value builtin_listLatest(int argc, Value *args) {
  *  Registro de funciones
  * ================================================ */
 
-void register_io_builtins(void) {
+void register_list_builtins(void) {
     func_register_builtin("listLatest", builtin_listLatest);
 
     vm_register_builtin("listLatest", builtin_listLatest);
