@@ -39,4 +39,4 @@ Cuando la lista es:
 ["Hola", 6]
 Debería imprimir con las comillas
 
-[ ] Función listLatest(lista) que devuelva el string (o int) del último elemento de la lista, muy útil para for in
+[X] Función listLatest(lista) que devuelva el string (o int) del último elemento de la lista, muy útil para for in

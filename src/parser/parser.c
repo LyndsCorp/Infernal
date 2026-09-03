@@ -444,9 +444,13 @@ ASTNode *parse_assignment_expr(int line) {
 }
 
 NodeList parse_block(const char *terminator) {
-    NodeList block = {NULL, 0, 0};
+    NodeList *block = infernal_calloc(1, sizeof(*block));
     if (active_parse_block_count < MAX_ACTIVE_PARSE_BLOCKS)
-        active_parse_blocks[active_parse_block_count++] = &block;
+        active_parse_blocks[active_parse_block_count++] = block;
+    else {
+        free(block);
+        error(0, "Demasiados bloques de parseo anidados");
+    }
     DEBUG_INFO("=== parse_block: iniciando bloque, terminator='%s' ===", terminator ? terminator : "NULL");
 
     while (1) {
@@ -515,7 +519,7 @@ NodeList parse_block(const char *terminator) {
                 nodelist_add(&try_node->data.try_stmt.catch_block, next_stmt);
                 stmt = try_node;
             }
-            nodelist_add(&block, stmt);
+            nodelist_add(block, stmt);
             DEBUG_INFO("parse_block: añadido NODE_CMD_STMT en línea %d", stmt->line);
             ts_skip_newlines();
             continue;
@@ -570,7 +574,7 @@ NodeList parse_block(const char *terminator) {
                 nodelist_add(&try_node->data.try_stmt.catch_block, next_stmt);
                 stmt = try_node;
             }
-            nodelist_add(&block, stmt);
+            nodelist_add(block, stmt);
             DEBUG_INFO("parse_block: añadido NODE_SHELL_CMD en línea %d", stmt->line);
             ts_skip_newlines();
             continue;
@@ -585,7 +589,7 @@ NodeList parse_block(const char *terminator) {
             stmt = node_create(NODE_PORTAL, t.line);
             stmt->data.portal.name = portal_name;
             stmt->data.portal.is_local = false;
-            nodelist_add(&block, stmt);
+            nodelist_add(block, stmt);
             DEBUG_INFO("parse_block: añadido NODE_PORTAL en línea %d", stmt->line);
             ts_skip_newlines();
             continue;
@@ -595,7 +599,7 @@ NodeList parse_block(const char *terminator) {
         if (t.type == TOK_FLAG) {
             ts_advance();
             stmt = parse_flags();
-            nodelist_add(&block, stmt);
+            nodelist_add(block, stmt);
             DEBUG_INFO("parse_block: añadido NODE_FLAGS en línea %d", stmt->line);
             ts_skip_newlines();
             continue;
@@ -618,7 +622,7 @@ NodeList parse_block(const char *terminator) {
             stmt->data.execute.path_expr = path_expr;
             stmt->data.execute.args = args;
             stmt->data.execute.argc = argc;
-            nodelist_add(&block, stmt);
+            nodelist_add(block, stmt);
             DEBUG_INFO("parse_block: añadido NODE_EXECUTE en línea %d", stmt->line);
             ts_skip_newlines();
             continue;
@@ -627,7 +631,7 @@ NodeList parse_block(const char *terminator) {
         /* --- SWITCH --- */
         if (t.type == TOK_SWITCH) {
             stmt = parse_switch_statement();
-            nodelist_add(&block, stmt);
+            nodelist_add(block, stmt);
             DEBUG_INFO("parse_block: añadido NODE_SWITCH en línea %d", stmt->line);
             ts_skip_newlines();
             continue;
@@ -636,7 +640,7 @@ NodeList parse_block(const char *terminator) {
         /* --- IF --- */
         if (t.type == TOK_IF) {
             stmt = parse_if_statement();
-            nodelist_add(&block, stmt);
+            nodelist_add(block, stmt);
             DEBUG_INFO("parse_block: añadido NODE_IF en línea %d", stmt->line);
             ts_skip_newlines();
             continue;
@@ -652,7 +656,7 @@ NodeList parse_block(const char *terminator) {
             stmt = node_create(NODE_WHILE, t.line);
             stmt->data.while_stmt.cond = cond;
             stmt->data.while_stmt.body = body;
-            nodelist_add(&block, stmt);
+            nodelist_add(block, stmt);
             DEBUG_INFO("parse_block: añadido NODE_WHILE en línea %d", stmt->line);
             ts_skip_newlines();
             continue;
@@ -690,7 +694,7 @@ NodeList parse_block(const char *terminator) {
                 stmt->data.for_in.var = varname;
                 stmt->data.for_in.list_expr = list_expr;
                 stmt->data.for_in.body = body;
-                nodelist_add(&block, stmt);
+                nodelist_add(block, stmt);
                 DEBUG_INFO("parse_block: añadido NODE_FOR_IN en línea %d", stmt->line);
                 ts_skip_newlines();
                 continue;
@@ -761,7 +765,7 @@ NodeList parse_block(const char *terminator) {
             stmt->data.for_stmt.cond = cond;
             stmt->data.for_stmt.incr = incr;
             stmt->data.for_stmt.body = body;
-            nodelist_add(&block, stmt);
+            nodelist_add(block, stmt);
             DEBUG_INFO("parse_block: añadido NODE_FOR tradicional en línea %d", stmt->line);
             ts_skip_newlines();
             continue;
@@ -781,7 +785,7 @@ NodeList parse_block(const char *terminator) {
             stmt->data.func.ptypes = NULL;
             stmt->data.func.param_count = 0;
             stmt->data.func.body = (NodeList){NULL, 0, 0};
-            nodelist_add(&block, stmt);
+            nodelist_add(block, stmt);
 
             if (func_lookup(stmt->data.func.name) != NULL)
                 error(t.line, "'%s' es una función interna y no puede ser redefinida.", stmt->data.func.name);
@@ -845,7 +849,7 @@ NodeList parse_block(const char *terminator) {
             stmt = node_create(NODE_RETURN, t.line);
             stmt->data.ret.expr = expr;
             stmt->data.ret.rtype = rtype;
-            nodelist_add(&block, stmt);
+            nodelist_add(block, stmt);
             DEBUG_INFO("parse_block: añadido NODE_RETURN en línea %d (rtype=%d)", stmt->line, rtype);
             ts_skip_newlines();
             continue;
@@ -855,7 +859,7 @@ NodeList parse_block(const char *terminator) {
         if (t.type == TOK_BREAK) {
             ts_advance();
             stmt = node_create(NODE_BREAK, t.line);
-            nodelist_add(&block, stmt);
+            nodelist_add(block, stmt);
             DEBUG_INFO("parse_block: añadido NODE_BREAK en línea %d", stmt->line);
             ts_skip_newlines();
             continue;
@@ -865,7 +869,7 @@ NodeList parse_block(const char *terminator) {
         if (t.type == TOK_CONTINUE) {
             ts_advance();
             stmt = node_create(NODE_CONTINUE, t.line);
-            nodelist_add(&block, stmt);
+            nodelist_add(block, stmt);
             DEBUG_INFO("parse_block: añadido NODE_CONTINUE en línea %d", stmt->line);
             ts_skip_newlines();
             continue;
@@ -887,7 +891,7 @@ NodeList parse_block(const char *terminator) {
             } else {
                 error(t.line, "Se esperaba nombre de portal o 'line' después de 'repeat'");
             }
-            nodelist_add(&block, stmt);
+            nodelist_add(block, stmt);
             DEBUG_INFO("parse_block: añadido NODE_REPEAT en línea %d", stmt->line);
             ts_skip_newlines();
             continue;
@@ -1010,7 +1014,7 @@ NodeList parse_block(const char *terminator) {
             stmt->data.import.path = NULL;
             stmt->data.import.alias = module_alias;
             stmt->data.import.module_block = module_block;
-            nodelist_add(&block, stmt);
+            nodelist_add(block, stmt);
             DEBUG_INFO("parse_block: añadido NODE_IMPORT en línea %d", stmt->line);
             ts_skip_newlines();
             continue;
@@ -1026,7 +1030,7 @@ NodeList parse_block(const char *terminator) {
             stmt = node_create(NODE_TRY, t.line);
             stmt->data.try_stmt.try_block = try_block;
             stmt->data.try_stmt.catch_block = catch_block;
-            nodelist_add(&block, stmt);
+            nodelist_add(block, stmt);
             DEBUG_INFO("parse_block: añadido NODE_TRY en línea %d", stmt->line);
             ts_skip_newlines();
             continue;
@@ -1099,7 +1103,7 @@ NodeList parse_block(const char *terminator) {
                     stmt->data.assign.is_local = is_local;
                     stmt->data.assign.is_global = is_global;
                     stmt->data.assign.lhs_index = NULL;
-                    nodelist_add(&block, stmt);
+                    nodelist_add(block, stmt);
 
                     if (is_cmd) {
                         /* extract_literal_command consume el resto de la línea. */
@@ -1179,7 +1183,7 @@ NodeList parse_block(const char *terminator) {
             stmt->data.assign.is_local = false;
             stmt->data.assign.is_global = false;
             stmt->data.assign.lhs_index = NULL;
-            nodelist_add(&block, stmt);
+            nodelist_add(block, stmt);
             DEBUG_INFO("parse_block: añadida declaración tipada de '%s' en línea %d", vname, stmt->line);
 
             if (is_cmd)
@@ -1209,7 +1213,7 @@ NodeList parse_block(const char *terminator) {
                     DEBUG_INFO("parse_block: DETECTADA ASIGNACIÓN para '%s'", saved_t.lexeme);
                 ts.pos--;
                 stmt = parse_assignment_expr(saved_t.line);
-                nodelist_add(&block, stmt);
+                nodelist_add(block, stmt);
                 DEBUG_INFO("parse_block: asignación parseada para '%s' en línea %d", saved_t.lexeme, stmt->line);
                 ts_skip_newlines();
                 continue;
@@ -1221,7 +1225,7 @@ NodeList parse_block(const char *terminator) {
                         ASTNode *expr = parse_expression(0);
                         stmt = node_create(NODE_EXPR_STMT, saved_t.line);
                         stmt->data.expr_stmt.expr = expr;
-                        nodelist_add(&block, stmt);
+                        nodelist_add(block, stmt);
                         DEBUG_INFO("parse_block: llamada a función '%s' en línea %d", saved_t.lexeme, stmt->line);
                         ts_skip_newlines();
                         continue;
@@ -1249,14 +1253,14 @@ NodeList parse_block(const char *terminator) {
                             stmt->data.assign.is_cmd = false;
                             stmt->data.assign.cmd_str = NULL;
                             stmt->data.assign.lhs_index = idx_expr;
-                            nodelist_add(&block, stmt);
+                            nodelist_add(block, stmt);
                             DEBUG_INFO("parse_block: asignación con índice de '%s' en línea %d", vname, stmt->line);
                             ts_skip_newlines();
                             continue;
                         } else {
                             stmt = node_create(NODE_EXPR_STMT, saved_t.line);
                             stmt->data.expr_stmt.expr = idx_expr;
-                            nodelist_add(&block, stmt);
+                            nodelist_add(block, stmt);
                             DEBUG_INFO("parse_block: indexación en línea %d", stmt->line);
                             ts_skip_newlines();
                             continue;
@@ -1286,7 +1290,7 @@ NodeList parse_block(const char *terminator) {
                             ASTNode *expr = parse_expression(0);
                             stmt = node_create(NODE_EXPR_STMT, saved_t.line);
                             stmt->data.expr_stmt.expr = expr;
-                            nodelist_add(&block, stmt);
+                            nodelist_add(block, stmt);
                             DEBUG_INFO("parse_block: post-inc/dec para '%s' en línea %d", saved_t.lexeme, stmt->line);
                             ts_skip_newlines();
                             continue;
@@ -1310,7 +1314,7 @@ NodeList parse_block(const char *terminator) {
 
                         stmt = node_create(NODE_SHELL_CMD, saved_t.line);
                         stmt->data.shell_cmd.cmd = cmd;
-                        nodelist_add(&block, stmt);
+                        nodelist_add(block, stmt);
                         DEBUG_INFO("parse_block: comando shell '%s' en línea %d", cmd, stmt->line);
                         ts_skip_newlines();
                         continue;
@@ -1321,7 +1325,7 @@ NodeList parse_block(const char *terminator) {
             error(t.line, "Sentencia no reconocida '%s'", t.lexeme);
 
             if (stmt) {
-                nodelist_add(&block, stmt);
+                nodelist_add(block, stmt);
                 DEBUG_INFO("parse_block: añadida sentencia tipo %d en línea %d", stmt->kind, stmt->line);
             }
             ts_skip_newlines();
@@ -1329,20 +1333,22 @@ NodeList parse_block(const char *terminator) {
             if (terminator && strcmp(terminator, "}") == 0 && ts_peek().type == TOK_RBRACE) break;
     }
 
-    DEBUG_INFO("=== parse_block: bloque finalizado, %d sentencias ===", block.count);
-    if (active_parse_block_count > 0 && active_parse_blocks[active_parse_block_count - 1] == &block)
+    DEBUG_INFO("=== parse_block: bloque finalizado, %d sentencias ===", block->count);
+    if (active_parse_block_count > 0 && active_parse_blocks[active_parse_block_count - 1] == block)
         active_parse_block_count--;
 
     /* Garantizar que el NodeList siempre sea válido incluso si no hay sentencias */
-    if (block.count == 0 && block.stmts == NULL) {
+    if (block->count == 0 && block->stmts == NULL) {
         // Ya está vacío y válido
-    } else if (block.count > 0 && block.stmts == NULL) {
+    } else if (block->count > 0 && block->stmts == NULL) {
         // Inconsistencia: corregir
-        block.stmts = NULL;
-        block.count = 0;
-        block.cap = 0;
+        block->stmts = NULL;
+        block->count = 0;
+        block->cap = 0;
         DEBUG_WARN("parse_block: inconsistencia detectada (count>0 pero stmts=NULL), reiniciando");
     }
 
-    return block;
+    NodeList result = *block;
+    free(block);
+    return result;
 }
