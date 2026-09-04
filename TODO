@@ -29,6 +29,7 @@ map sistema_info = [
     arquitectura = "amd64",
     sistema = "LyndsOS"
 ]
+NO pueden ser punteros las variables en mapas.
 
 [ ] Que las claves de los mapas puedan tener tipado explicito, ademas del automatico, pero no scopes (solo existe el del mapa)
 
@@ -41,5 +42,11 @@ var2 = $mapa["algo"]
 Que los 2 funcionen pero hagan algo distinto: el var2 es un clon (el valor de la entrada "algo" en ese momento en concreto)
 Y el var es un puntero a la clave "algo" de mapa
 Un puntero se refiere a que si modifica la variable var, no modifica la variable var, modifica mapa["algo"]
+En printAllVars(), se muestra:
+nombre de variable
+valor
+tipo
+a qué apunta
+ejemplo: vacas: 4 (int, animales["vacas"])
 
 [ ] for in con strings que sea for caracter in texto then, y recorre cada caracter.
