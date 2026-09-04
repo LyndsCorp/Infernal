@@ -1,3 +1,45 @@
 [ ] Cuando ejecuto la 1.36 en Android sale:
 Pointer tag for 0x7ffdfc8550 was truncated, see 'https://source.android.com/devices/tech/debug/tagged-pointers'.
 Aborted                    infernal script.inf
+
+[ ]
+~ $ cat x
+map sistema_info = [
+    "usuario"=usuario,
+    "hostname"=hostname,
+    "kernel"=kernel,
+    "arquitectura"=arquitectura,
+    "sistema"=sistema
+]
+printAllVars()
+
+~ $ infernal x
+Variables accesibles:
+  Ámbito del script:
+    sistema_info: ["usuario" = ?, "hostname" = ?, "kernel" = ?, "arquitectura" = ?, "sistema" = ?] (map)
+
+No deberia permitir valores null. Este script deberia dar error de sintaxis porque no tiene espacios. Y si no tuviera espacios, deberia dar error de comando 'usuario' no encontrado. Para clonar variables de un scope accesible, que se use $. El $ puede clonar valores de variables de dentro del propio mapa, además de valores de fuera del mapa (scope accesible)
+
+
+[ ] Que las claves de los mapas no sean strings, que sean normales. O sea:
+map sistema_info = [
+    usuario = whoami,
+    hostname = hostname,
+    kernel = uname,
+    arquitectura = "amd64",
+    sistema = "LyndsOS"
+]
+
+[ ] Que las claves de los mapas puedan tener tipado explicito, ademas del automatico, pero no scopes (solo existe el del mapa)
+
+[ ]
+``` Infernal
+mapa = [algo = "hola"]
+var = mapa["algo"]
+var2 = $mapa["algo"]
+```
+Que los 2 funcionen pero hagan algo distinto: el var2 es un clon (el valor de la entrada "algo" en ese momento en concreto)
+Y el var es un puntero a la clave "algo" de mapa
+Un puntero se refiere a que si modifica la variable var, no modifica la variable var, modifica mapa["algo"]
+
+[ ] for in con strings que sea for caracter in texto then, y recorre cada caracter.
