@@ -164,30 +164,30 @@ static ASTNode *parse_map_literal(int line) {
         if (key.type == TOK_INT || key.type == TOK_FLOAT || key.type == TOK_BOOL ||
             key.type == TOK_STRING || key.type == TOK_LIST || key.type == TOK_MAP) {
             value_type = ts_advance().type;
-            key = ts_peek();
-        }
+        key = ts_peek();
+            }
 
-        /* Las claves son identificadores sintácticos, nunca expresiones. */
-        if (key.type != TOK_IDENT || key.lexeme[0] == '$' || key.lexeme[0] == '?') {
-            error(line, "Los mapas no permiten punteros ni comandos en las claves; usa un identificador normal (ej: usuario = ...)");
-        }
-        ts_advance();
-        char *key_name = strdup(key.lexeme);
-        if (!key_name) error(line, "Memoria insuficiente para clave de mapa");
+            /* Las claves son identificadores sintácticos, nunca expresiones. */
+            if (key.type != TOK_IDENT || key.lexeme[0] == '$' || key.lexeme[0] == '?') {
+                error(line, "Los mapas no permiten punteros ni comandos en las claves; usa un identificador normal (ej: usuario = ...)");
+            }
+            ts_advance();
+            char *key_name = strdup(key.lexeme);
+            if (!key_name) error(line, "Memoria insuficiente para clave de mapa");
 
-        if (!ts_match(TOK_EQ)) {
-            free(key_name);
-            error(line, "Se esperaba '=' después de la clave del mapa");
-        }
+            if (!ts_match(TOK_EQ)) {
+                free(key_name);
+                error(line, "Se esperaba '=' después de la clave del mapa");
+            }
 
-        ASTNode *value = parse_expression(0);
-        node->data.map.pairs = realloc(node->data.map.pairs,
-                                       (node->data.map.pair_count + 1) * sizeof(*node->data.map.pairs));
-        node->data.map.pairs[node->data.map.pair_count].key = key_name;
-        node->data.map.pairs[node->data.map.pair_count].value = value;
-        node->data.map.pairs[node->data.map.pair_count].value_type = value_type;
-        node->data.map.pair_count++;
-        ts_skip_newlines();
+            ASTNode *value = parse_expression(0);
+            node->data.map.pairs = realloc(node->data.map.pairs,
+                                           (node->data.map.pair_count + 1) * sizeof(*node->data.map.pairs));
+            node->data.map.pairs[node->data.map.pair_count].key = key_name;
+            node->data.map.pairs[node->data.map.pair_count].value = value;
+            node->data.map.pairs[node->data.map.pair_count].value_type = value_type;
+            node->data.map.pair_count++;
+            ts_skip_newlines();
     } while (ts_match(TOK_COMMA));
 
     if (!ts_match(TOK_RBRACKET)) {
@@ -275,13 +275,29 @@ ASTNode *parse_primary() {
             n->data.call.name = func_name;
             n->data.call.argc = 0;
             n->data.call.args = NULL;
-            ts_advance();
+            ts_advance(); // consume '('
+
+            // Si no hay paréntesis de cierre inmediato, parseamos argumentos
             if (!ts_match(TOK_RPAREN)) {
                 do {
+                    // Parseamos una expresión (argumento)
                     n->data.call.args = realloc(n->data.call.args,
                                                 (n->data.call.argc + 1) * sizeof(ASTNode*));
                     n->data.call.args[n->data.call.argc++] = parse_expression(0);
+
+                    // --- NUEVA VERIFICACIÓN: falta de coma entre argumentos ---
+                    Token next = ts_peek();
+                    if (next.type != TOK_COMMA && next.type != TOK_RPAREN) {
+                        // Si el siguiente token es algo que podría ser el inicio de otra expresión,
+                        // el usuario ha omitido una coma.
+                        if (next.type == TOK_STRING_LITERAL || next.type == TOK_NUMBER ||
+                            next.type == TOK_IDENT || next.type == TOK_TRUE || next.type == TOK_FALSE ||
+                            next.type == TOK_LBRACKET || next.type == TOK_LPAREN || next.type == TOK_LBRACE) {
+                            error(t.line, "Falta una coma entre argumentos en la llamada a función '%s'", func_name);
+                            }
+                    }
                 } while (ts_match(TOK_COMMA));
+
                 if (!ts_match(TOK_RPAREN))
                     error(t.line, "Se esperaba ')' en la llamada a función '%s'", func_name);
             }
@@ -333,38 +349,38 @@ ASTNode *parse_primary() {
                 is_map = 1;
             }
         } else if (first.type == TOK_INT || first.type == TOK_FLOAT || first.type == TOK_BOOL ||
-                   first.type == TOK_STRING || first.type == TOK_LIST || first.type == TOK_MAP) {
+            first.type == TOK_STRING || first.type == TOK_LIST || first.type == TOK_MAP) {
             /* Una entrada con tipo explícito empieza por el token de tipo:
              * [int numero = 7]. */
             ts_advance();
-            if (ts_peek().type == TOK_IDENT) {
-                ts_advance();
-                if (ts_peek().type == TOK_EQ) {
-                    is_map = 1;
-                }
+        if (ts_peek().type == TOK_IDENT) {
+            ts_advance();
+            if (ts_peek().type == TOK_EQ) {
+                is_map = 1;
             }
         }
-        ts.pos = saved_pos;
+            }
+            ts.pos = saved_pos;
 
-        if (is_map) {
-            return parse_map_literal(t.line);
-        } else {
-            ASTNode *n = node_create(NODE_LIST, t.line);
-            n->data.list_lit.items = NULL;
-            n->data.list_lit.count = 0;
-            if (!ts_match(TOK_RBRACKET)) {
-                do {
+            if (is_map) {
+                return parse_map_literal(t.line);
+            } else {
+                ASTNode *n = node_create(NODE_LIST, t.line);
+                n->data.list_lit.items = NULL;
+                n->data.list_lit.count = 0;
+                if (!ts_match(TOK_RBRACKET)) {
+                    do {
+                        ts_skip_newlines();
+                        n->data.list_lit.items = realloc(n->data.list_lit.items,
+                                                         (n->data.list_lit.count + 1) * sizeof(ASTNode*));
+                        n->data.list_lit.items[n->data.list_lit.count++] = parse_expression(0);
+                        ts_skip_newlines();
+                    } while (ts_match(TOK_COMMA));
                     ts_skip_newlines();
-                    n->data.list_lit.items = realloc(n->data.list_lit.items,
-                                                     (n->data.list_lit.count + 1) * sizeof(ASTNode*));
-                    n->data.list_lit.items[n->data.list_lit.count++] = parse_expression(0);
-                    ts_skip_newlines();
-                } while (ts_match(TOK_COMMA));
-                ts_skip_newlines();
-                if (!ts_match(TOK_RBRACKET)) error(t.line, "Se esperaba ']'");
+                    if (!ts_match(TOK_RBRACKET)) error(t.line, "Se esperaba ']'");
+                }
+                return n;
             }
-            return n;
-        }
     }
     if (t.type == TOK_LBRACE) {
         ts_advance();
