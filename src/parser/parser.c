@@ -1244,7 +1244,7 @@ NodeList parse_block(const char *terminator) {
                             stmt->data.assign.name = vname;
                             stmt->data.assign.value = value;
                             stmt->data.assign.vtype = 0;
-                            stmt->data.assign.is_local = false;
+                                                stmt->data.assign.is_local = false;
                             stmt->data.assign.is_global = false;
                             stmt->data.assign.is_cmd = false;
                             stmt->data.assign.cmd_str = NULL;

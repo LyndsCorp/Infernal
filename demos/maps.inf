@@ -13,9 +13,9 @@ print("")
 print("--- Creación ---")
 
 stats = [
-    "username" = "Monojo",
-    "vida" = 800,
-    "fuerza" = 600
+    username = "Monojo",
+    vida = 800,
+    fuerza = 600
 ]
 
 print("Mapa creado:")
@@ -181,11 +181,11 @@ print("")
 print("--- Diferentes tipos ---")
 
 mixed = [
-    "texto" = "Hola",
-    "entero" = 123,
-    "decimal" = 3.14,
-    "verdadero" = true,
-    "falso" = false
+    texto = "Hola",
+    entero = 123,
+    decimal = 3.14,
+    verdadero = true,
+    falso = false
 ]
 
 print("Mapa mixto:")
@@ -225,8 +225,8 @@ print("")
 print("--- Lista dentro de mapa ---")
 
 inventory = [
-    "items" = ["espada", "pocion", "escudo"],
-    "oro" = 1500
+    items = ["espada", "pocion", "escudo"],
+    oro = 1500
 ]
 
 print("Inventario:")
@@ -254,10 +254,10 @@ print("")
 print("--- Mapa anidado ---")
 
 player = [
-    "nombre" = "Monojo",
-    "stats" = [
-        "vida" = 100,
-        "fuerza" = 50
+    nombre = "Monojo",
+    stats = [
+        vida = 100,
+        fuerza = 50
     ]
 ]
 
@@ -336,7 +336,7 @@ print("")
 print("--- Mapa vacío ---")
 
 # Crear un mapa con un par temporal y luego eliminarlo
-empty = ["tmp" = ""]
+empty = [tmp = ""]
 empty = delete(empty, "tmp")   # REASIGNAR para que quede vacío
 
 print("Mapa vacío:")
@@ -415,6 +415,34 @@ if has(empty, "hello") == false then
 fi
 
 # ------------------------------------------------------------
+# 20. MAPAS CON TIPADO EXPLÍCITO
+# ------------------------------------------------------------
+
+print("")
+print("--- Tipado explícito ---")
+
+typed_strings = [
+    usuario = "Monojo",
+    sistema = "LyndsOS",
+    string version = "1.37"
+]
+
+print(typed_strings["usuario"])
+
+typed_ints = [
+    vida = 100,
+    mana = 50,
+    int nivel = 7
+]
+
+typed_ints["vida"] = 150
+print(typed_ints["vida"])
+
+# Cada clave conserva su propio tipo.
+# typed_ints["vida"] = "cien"  # debe producir error de tipado
+# typed_ints["nivel"] = 3.14   # debe producir error de tipado
+
+# ------------------------------------------------------------
 # FINAL
 # ------------------------------------------------------------
 
@@ -424,3 +452,20 @@ print("")
 print("================================")
 print("      TEST MAP FINALIZADO       ")
 print("================================")
+
+# ------------------------------------------------------------
+# 11. REFERENCIAS DENTRO DEL PROPIO MAPA
+# ------------------------------------------------------------
+
+print("")
+print("--- Referencias internas ---")
+
+referencias = [
+    var = "abc",
+    numeros = $var,
+    copia = $var
+]
+
+print(referencias["var"])
+print(referencias["numeros"])
+print(referencias["copia"])

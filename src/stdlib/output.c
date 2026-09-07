@@ -57,7 +57,7 @@ void print_value(Value v) {
             MapData *md = v.data.map;
             for (int i = 0; i < md->count; i++) {
                 if (i > 0) printf(", ");
-                printf("\"%s\" = ", md->pairs[i].key);
+                printf("%s = ", md->pairs[i].key);
                 print_value(md->pairs[i].value);
             }
             printf("]");
@@ -70,7 +70,7 @@ void print_value(Value v) {
                 printf("[");
                 for (int i = 0; i < md->count; i++) {
                     if (i > 0) printf(", ");
-                    printf("\"%s\" = ", md->pairs[i].key);
+                    printf("%s = ", md->pairs[i].key);
                     print_value(md->pairs[i].value);
                 }
                 printf("]");
@@ -115,7 +115,7 @@ static void print_value_literal(Value v) {
             if (md) {
                 for (int i = 0; i < md->count; i++) {
                     if (i > 0) printf(", ");
-                    printf("\"%s\" = ", md->pairs[i].key ? md->pairs[i].key : "");
+                    printf("%s = ", md->pairs[i].key ? md->pairs[i].key : "");
                     print_value_literal(md->pairs[i].value);
                 }
             }

@@ -86,9 +86,7 @@ int get_node_line(ASTNode *node) {
             break;
         case NODE_MAP:
             for (int i = 0; i < node->data.map.pair_count; i++) {
-                int l = get_node_line(node->data.map.pairs[i].key);
-                if (l) return l;
-                l = get_node_line(node->data.map.pairs[i].value);
+                int l = get_node_line(node->data.map.pairs[i].value);
                 if (l) return l;
             }
             break;

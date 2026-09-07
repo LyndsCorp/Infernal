@@ -14,10 +14,11 @@
 typedef struct MapPair {
     char *key;
     Value value;
+    int value_type; /* TOK_* del tipo que la clave acepta; 0 = inferido al crear */
 } MapPair;
 
 typedef struct MapData {
-    MapPair *pairs;   // ahora es un puntero a MapPair
+    MapPair *pairs;
     int count, cap;
 } MapData;
 
@@ -38,7 +39,9 @@ void  value_free(Value *value);
 
 /* --- Funciones para mapas ---------------------------------- */
 Value val_map_empty(void);
+Value val_map_typed(int value_type); /* compatibilidad: el argumento se ignora */
 void  val_map_set(Value *map, const char *key, Value value);
+void  val_map_set_typed(Value *map, const char *key, Value value, int value_type);
 Value val_map_get(Value map, const char *key);
 int   val_map_has(Value map, const char *key);
 void  val_map_delete(Value *map, const char *key);

@@ -156,19 +156,36 @@ static ASTNode *parse_map_literal(int line) {
 
     do {
         ts_skip_newlines();
-        ASTNode *key = parse_expression(0);
-        // --- NUEVA COMPROBACIÓN: si el siguiente token es ':' ---
-        if (ts_peek().type == TOK_COLON) {
-            error(line, "En los mapas, separa clave y valor con `=`, no con `:`.");
+        Token key = ts_peek();
+        int value_type = 0;
+
+        /* Tipado explícito por entrada: int numero = 7.
+         * Sin tipo, el tipo se infiere del primer valor y queda fijado para esa clave. */
+        if (key.type == TOK_INT || key.type == TOK_FLOAT || key.type == TOK_BOOL ||
+            key.type == TOK_STRING || key.type == TOK_LIST || key.type == TOK_MAP) {
+            value_type = ts_advance().type;
+            key = ts_peek();
         }
+
+        /* Las claves son identificadores sintácticos, nunca expresiones. */
+        if (key.type != TOK_IDENT || key.lexeme[0] == '$' || key.lexeme[0] == '?') {
+            error(line, "Los mapas no permiten punteros ni comandos en las claves; usa un identificador normal (ej: usuario = ...)");
+        }
+        ts_advance();
+        char *key_name = strdup(key.lexeme);
+        if (!key_name) error(line, "Memoria insuficiente para clave de mapa");
+
         if (!ts_match(TOK_EQ)) {
-            error(line, "Se esperaba '=' en par clave-valor de mapa");
+            free(key_name);
+            error(line, "Se esperaba '=' después de la clave del mapa");
         }
+
         ASTNode *value = parse_expression(0);
         node->data.map.pairs = realloc(node->data.map.pairs,
                                        (node->data.map.pair_count + 1) * sizeof(*node->data.map.pairs));
-        node->data.map.pairs[node->data.map.pair_count].key = key;
+        node->data.map.pairs[node->data.map.pair_count].key = key_name;
         node->data.map.pairs[node->data.map.pair_count].value = value;
+        node->data.map.pairs[node->data.map.pair_count].value_type = value_type;
         node->data.map.pair_count++;
         ts_skip_newlines();
     } while (ts_match(TOK_COMMA));
@@ -310,10 +327,21 @@ ASTNode *parse_primary() {
         int is_map = 0;
 
         Token first = ts_peek();
-        if (first.type == TOK_IDENT || first.type == TOK_STRING_LITERAL) {
+        if (first.type == TOK_IDENT || first.type == TOK_STRING_LITERAL || first.type == TOK_NUMBER) {
             ts_advance();
             if (ts_peek().type == TOK_EQ) {
                 is_map = 1;
+            }
+        } else if (first.type == TOK_INT || first.type == TOK_FLOAT || first.type == TOK_BOOL ||
+                   first.type == TOK_STRING || first.type == TOK_LIST || first.type == TOK_MAP) {
+            /* Una entrada con tipo explícito empieza por el token de tipo:
+             * [int numero = 7]. */
+            ts_advance();
+            if (ts_peek().type == TOK_IDENT) {
+                ts_advance();
+                if (ts_peek().type == TOK_EQ) {
+                    is_map = 1;
+                }
             }
         }
         ts.pos = saved_pos;

@@ -187,7 +187,10 @@ static void ast_free_internal(ASTNode *node) {
             free(node->data.execute.args);
             break;
         case NODE_MAP:
-            for (int i = 0; i < node->data.map.pair_count; i++) { ast_free_internal(node->data.map.pairs[i].key); ast_free_internal(node->data.map.pairs[i].value); }
+            for (int i = 0; i < node->data.map.pair_count; i++) {
+                free(node->data.map.pairs[i].key);
+                ast_free_internal(node->data.map.pairs[i].value);
+            }
             free(node->data.map.pairs);
             break;
         case NODE_UNARY: ast_free_internal(node->data.unary.operand); break;

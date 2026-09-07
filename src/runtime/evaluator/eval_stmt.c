@@ -288,7 +288,7 @@ void exec_stmt(ASTNode *stmt) {
                         var->value.data.list.items[idx - 1] = copy_value_secure(new_val);
                         value_free(&new_val);
                     } else if (var->value.type == VAL_MAP) {
-                        if (idx_val.type != VAL_STRING) error(stmt->line, "Clave de mapa debe ser string");
+                        if (idx_val.type != VAL_STRING) error(stmt->line, "La clave de mapa debe ser string");
                         Value new_val = eval_expr(stmt->data.assign.value);
                         val_map_set(&var->value, idx_val.data.sval, new_val);
                         value_free(&new_val);
@@ -318,6 +318,7 @@ void exec_stmt(ASTNode *stmt) {
 
             // --- Conversión de tipos (si hay tipo fijo) ---
             int vtype = stmt->data.assign.vtype;
+
 
             if (vtype == TOK_STRING && val.type == VAL_LIST) {
                 if (!try_convert_value(&val, TOK_STRING)) {

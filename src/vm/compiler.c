@@ -193,7 +193,6 @@ static void collect_portals_rec(ASTNode *node, Compiler *c) {
         break;
         case NODE_MAP:
             for (int i = 0; i < node->data.map.pair_count; i++) {
-                collect_portals_rec(node->data.map.pairs[i].key, c);
                 collect_portals_rec(node->data.map.pairs[i].value, c);
             }
             break;
@@ -443,6 +442,7 @@ static void compile_stmt(Compiler *c, ASTNode *stmt) {
             const char *name = stmt->data.assign.name;
             int vtype = stmt->data.assign.vtype;
 
+
             /* Declaración tipada sin '=': crear directamente el valor base en la VM. */
             if (!stmt->data.assign.is_cmd && stmt->data.assign.value == NULL &&
                 !stmt->data.assign.lhs_index) {
@@ -481,7 +481,7 @@ static void compile_stmt(Compiler *c, ASTNode *stmt) {
                     emit(c->chunk, OP_NEW_LIST, 0, stmt->line);
                     break;
                 case TOK_MAP:
-                    emit(c->chunk, OP_NEW_MAP, 0, stmt->line);
+                    emit(c->chunk, OP_PUSH_CONST, add_constant(c, val_map_empty()), stmt->line);
                     break;
                 default:
                     emit(c->chunk, OP_PUSH_NULL, 0, stmt->line);

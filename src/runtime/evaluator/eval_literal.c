@@ -62,18 +62,49 @@ Value eval_list(ASTNode *expr) {
 
 Value eval_map(ASTNode *expr) {
     Value map = val_map_empty();
+
+    /*
+     * Un mapa tiene su propio ámbito léxico durante la construcción.
+     * Esto permite que los valores de las entradas anteriores sean
+     * referenciados mediante $nombre, igual que cualquier otra variable
+     * accesible, pero sin convertir la clave en una expresión evaluable.
+     *
+     * Ejemplo:
+     *   var = "abc",
+     *   numeros = $var
+     *
+     * $var se resuelve primero en este ámbito del mapa y, si no existe,
+     * continúa por los scopes padres mediante scope_find().
+     */
+    Scope *map_scope = scope_new(current_scope, NULL);
+    Scope *old_scope = current_scope;
+    current_scope = map_scope;
+
     for (int i = 0; i < expr->data.map.pair_count; i++) {
-        Value key = eval_expr(expr->data.map.pairs[i].key);
+        const char *key = expr->data.map.pairs[i].key;
+        int declared_type = expr->data.map.pairs[i].value_type;
         Value val = eval_expr(expr->data.map.pairs[i].value);
-        if (key.type != VAL_STRING) {
-            value_free(&key);
-            value_free(&val);
-            value_free(&map);
-            error(expr->line, "La clave de un mapa debe ser string (obtenido tipo %d)", key.type);
+        if (declared_type != 0 && valtype_to_tokentype(val.type) != declared_type) {
+            int actual_type = valtype_to_tokentype(val.type);
+            current_scope = old_scope;
+            scope_free(map_scope);
+            error(expr->line, "Error de tipado del mapa: la clave '%s' requiere un valor %s pero se obtuvo %s",
+                  key, type_name(declared_type), type_name(actual_type));
         }
-        val_map_set(&map, key.data.sval, val);
-        value_free(&key);
+
+        /* El valor almacenado en el mapa es una copia independiente. */
+        val_map_set_typed(&map, key, val, declared_type);
+
+        /*
+         * Publicamos la entrada en el scope del mapa para que las siguientes
+         * entradas puedan usar $key. También respetamos su tipo explícito o
+         * el tipo inferido por el valor.
+         */
+        scope_define(map_scope, key, declared_type, copy_value_secure(val));
         value_free(&val);
     }
+
+    current_scope = old_scope;
+    scope_free(map_scope);
     return map;
 }

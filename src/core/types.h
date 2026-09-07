@@ -177,7 +177,7 @@ struct ASTNode {
             struct { ASTNode *list; int mode; int start; int end; } slice;
             struct { ASTNode *path_expr; char **args; int argc; } execute;
             struct {
-                struct { ASTNode *key; ASTNode *value; } *pairs;
+                struct { char *key; ASTNode *value; int value_type; } *pairs;
                 int pair_count;
             } map;
             struct {

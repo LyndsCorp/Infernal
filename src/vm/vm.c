@@ -9,6 +9,7 @@
 #include "core/value.h"
 #include "runtime/command.h"
 #include "runtime/error.h"
+#include "runtime/evaluator/helpers.h"
 #include "runtime/scope.h"
 #include "runtime/globals.h"
 #include "runtime/evaluator/evaluator.h"
@@ -274,6 +275,10 @@ Value vm_run(Chunk *chunk) {
                 break;
             case OP_PUSH_NULL:
                 push(val_make_null());
+                ip++;
+                break;
+            case OP_PUSH_CONST:
+                push(copy_value_secure(chunk->constants[ip->operand]));
                 ip++;
                 break;
 
