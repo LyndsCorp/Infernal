@@ -58,7 +58,7 @@ void print_value(Value v) {
             for (int i = 0; i < md->count; i++) {
                 if (i > 0) printf(", ");
                 printf("%s = ", md->pairs[i].key);
-                print_value(md->pairs[i].value);
+                print_value_literal(md->pairs[i].value);
             }
             printf("]");
             break;
