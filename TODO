@@ -44,9 +44,9 @@ Y el var es un puntero a la clave "algo" de mapa
 Un puntero se refiere a que si modifica la variable var, no modifica la variable var, modifica mapa["algo"]
 En printAllVars(), se muestra:
 nombre de variable
+a qué apunta
 valor
 tipo
-a qué apunta
-ejemplo: vacas: 4 (int, animales["vacas"])
+ejemplo: vacas -> animales["vacas"]: 4 (int)
 
 [ ] for in con strings que sea for caracter in texto then, y recorre cada caracter.
