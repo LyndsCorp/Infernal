@@ -389,9 +389,58 @@ assign_value:
         }
 
         case NODE_IF: {
-            Value cond = eval_expr(stmt->data.if_stmt.cond);
-            bool truthy = val_is_truthy(cond);
-            value_free(&cond);
+            ASTNode *cond_node = stmt->data.if_stmt.cond;
+            bool truthy = false;
+
+            /*
+             * En una condición, un identificador desnudo representa también
+             * una comprobación de existencia:
+             *
+             *   if a then
+             *
+             * - si a no existe -> false
+             * - si a existe y es bool -> su valor
+             * - si a existe y no es bool -> true
+             *
+             * Esto es intencionadamente distinto de evaluar una variable en
+             * una expresión normal, donde una variable inexistente sigue
+             * siendo un error.
+             *
+             * También se aplica a `if not a then`: una variable inexistente
+             * se considera false antes de aplicar NOT, por lo que la
+             * condición resulta true.
+             */
+            ASTNode *value_node = cond_node;
+            bool negate = false;
+            if (value_node && value_node->kind == NODE_UNARY &&
+                value_node->data.unary.op == TOK_NOT) {
+                negate = true;
+                value_node = value_node->data.unary.operand;
+            }
+
+            if (value_node && value_node->kind == NODE_VAR) {
+                const char *name = value_node->data.var.name;
+                if (name[0] == '$' || name[0] == '?') name++;
+
+                VarEntry *entry = scope_find(current_scope, name);
+                if (!entry) {
+                    /* Una variable inexistente es false en una condición. */
+                    truthy = false;
+                } else if (entry->value.type == VAL_BOOL) {
+                    /* Los bool conservan su valor real. */
+                    truthy = entry->value.data.bval;
+                } else {
+                    /* Para cualquier otro tipo, existir ya implica true. */
+                    truthy = true;
+                }
+
+                if (negate) truthy = !truthy;
+            } else {
+                Value cond = eval_expr(cond_node);
+                truthy = val_is_truthy(cond);
+                value_free(&cond);
+            }
+
             if (truthy) {
                 exec_block_impl(&stmt->data.if_stmt.then_block);
             } else {
