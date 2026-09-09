@@ -57,7 +57,7 @@ Eso no es una variable, ¡deberia ser un comando!
 
 [ ] Que for in pueda recorrer map, devolviendo sus claves.
 
-[ ] Añadir la stdcut:
+[X] Añadir la stdcut:
 Idea: funciones para cortar strings.
 cutAfter(string QueCortar, string DespuesDeQue) → por ejemplo, cutAfter("6.6.30-android15-8", "-") devuelve "6.6.30-"
 cutBefore() → lo mismo que After, pero con lo anterior
@@ -70,4 +70,4 @@ cutHead("hola", 10) → ""
 cutHead("hola", -1) → error
 cutTail() → lo mismo que Head pero desde atrás
 
-Todos tienen su versión cutbytesAlgo, y este es sin UTF-8.
+[ ] Todos tienen su versión cutbytesAlgo, y este es sin UTF-8.
