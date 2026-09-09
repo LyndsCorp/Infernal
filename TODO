@@ -56,3 +56,5 @@ ejemplo: vacas -> animales["vacas"]: 4 (int)
 [ ] Si ejecutas un comando con un $ que no existe, no da error, sigue la ejecución infinitamente.
 
 [ ] Si en una concatenación de strings utilizo una variable que no existe (pues el nombre), da doble free
+
+[ ] Sia ejecución de un comando da error, se hace dobles free en lugar de error
