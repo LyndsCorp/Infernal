@@ -97,8 +97,10 @@ struct Value {
             int count, cap;
         } list;
         struct {
-            char *list_name;
+            char *container_name;
+            char *map_key;
             int index;
+            bool is_map;
         } ref;
         void *ptr;
         MapData *map;

@@ -131,8 +131,10 @@ void exec_stmt(ASTNode *stmt) {
         case NODE_SHELL_CMD: {
             char *expanded = expand_command(stmt->data.shell_cmd.cmd);
             int ret = run_shell_command(expanded);
-            if (ret != 0)
+            if (ret != 0) {
+                free(expanded);
                 error(stmt->line, "falló: %s", stmt->data.shell_cmd.cmd);
+            }
             free(expanded);
             break;
         }
@@ -150,6 +152,16 @@ void exec_stmt(ASTNode *stmt) {
                 char *expanded_cmd = expand_command(cmd);
                 if (!expanded_cmd) {
                     error(stmt->line, "Error al expandir comando: %s", cmd);
+                }
+
+                /* Un builtin sin argumentos también puede usarse directamente como comando
+                 * en una asignación, por ejemplo: user_input = input. */
+                FuncObject *bare_func = func_lookup(expanded_cmd);
+                if (bare_func && bare_func->kind == FUNC_BUILTIN &&
+                    strpbrk(expanded_cmd, " \t\r\n") == NULL) {
+                    val = bare_func->builtin(0, NULL);
+                    free(expanded_cmd);
+                    goto assign_value;
                 }
 
                 // Determinar si es un comando embebido (entre !!)
@@ -316,6 +328,7 @@ void exec_stmt(ASTNode *stmt) {
                     val = val_map_empty();
             }
 
+assign_value:
             // --- Conversión de tipos (si hay tipo fijo) ---
             int vtype = stmt->data.assign.vtype;
 
@@ -363,13 +376,9 @@ void exec_stmt(ASTNode *stmt) {
                 VarEntry *var = scope_find(current_scope, stmt->data.assign.name);
                 if (var) {
                     DEBUG_INFO("Variable '%s' encontrada en ámbito %p, actualizando", stmt->data.assign.name, (void*)var);
-                    Value copied = copy_value_secure(val);
-                    value_free(&var->value);
-                    var->value = copied;
-                    value_free(&val); // la copia ya es propiedad de la variable
-                    if (vtype != 0) {
-                        var->vtype = vtype;
-                    }
+                    scope_assign(current_scope, stmt->data.assign.name, val, stmt->line);
+                    value_free(&val);
+                    if (vtype != 0) var->vtype = vtype;
                 } else {
                     // Si no existe, definir en global_scope (ámbito del script)
                     DEBUG_INFO("Variable '%s' no encontrada, definiendo en global_scope", stmt->data.assign.name);
@@ -382,6 +391,7 @@ void exec_stmt(ASTNode *stmt) {
         case NODE_IF: {
             Value cond = eval_expr(stmt->data.if_stmt.cond);
             bool truthy = val_is_truthy(cond);
+            value_free(&cond);
             if (truthy) {
                 exec_block_impl(&stmt->data.if_stmt.then_block);
             } else {
@@ -436,7 +446,9 @@ void exec_stmt(ASTNode *stmt) {
                     error(stmt->line, "Límite de iteraciones (%d) alcanzado en bucle while", max_loop_iterations);
                 iter_count++;
                 Value cond = eval_expr(stmt->data.while_stmt.cond);
-                if (!val_is_truthy(cond)) break;
+                bool truthy = val_is_truthy(cond);
+                value_free(&cond);
+                if (!truthy) break;
                 Scope *block_scope = scope_new(current_scope, NULL);
                 Scope *old_scope = current_scope;
                 current_scope = block_scope;
@@ -532,6 +544,7 @@ void exec_stmt(ASTNode *stmt) {
                     Value copied = copy_value_secure(init_val);
                     value_free(&existing->value);
                     existing->value = copied;
+                    value_free(&init_val);
 
                     if (vtype != 0) {
                         existing->vtype = vtype;
@@ -583,10 +596,10 @@ void exec_stmt(ASTNode *stmt) {
                      */
                     current_scope = for_scope;
 
-                    Value cond =
-                    eval_expr(stmt->data.for_stmt.cond);
+                    Value cond = eval_expr(stmt->data.for_stmt.cond);
 
                     if (!val_is_truthy(cond)) {
+                        value_free(&cond);
                         break;
                     }
 
@@ -610,6 +623,7 @@ void exec_stmt(ASTNode *stmt) {
                     old_body;
 
                     scope_free(body_scope);
+                    value_free(&cond);
 
                     /*
                      * 7) Control de flujo.
@@ -667,22 +681,97 @@ void exec_stmt(ASTNode *stmt) {
         }
 
         case NODE_FOR_IN: {
-            Value list_val = eval_expr(stmt->data.for_in.list_expr);
-            if (list_val.type != VAL_LIST) error(stmt->line, "Se esperaba una lista en for-in");
-            for (int i = 0; i < list_val.data.list.count; i++) {
+            Value iterable = eval_expr(stmt->data.for_in.list_expr);
+            if (iterable.type != VAL_LIST && iterable.type != VAL_STRING && iterable.type != VAL_MAP) {
+                value_free(&iterable);
+                error(stmt->line, "Se esperaba una lista, string o mapa en for-in");
+            }
+
+            int count = 0;
+            if (iterable.type == VAL_LIST) {
+                count = iterable.data.list.count;
+            } else if (iterable.type == VAL_MAP) {
+                count = iterable.data.map ? iterable.data.map->count : 0;
+            } else {
+                const unsigned char *p = (const unsigned char *)iterable.data.sval;
+                while (*p) {
+                    unsigned char c = *p;
+                    size_t width = 1;
+                    if (c < 0x80) width = 1;
+                    else if ((c & 0xE0) == 0xC0 && p[1]) width = 2;
+                    else if ((c & 0xF0) == 0xE0 && p[1] && p[2]) width = 3;
+                    else if ((c & 0xF8) == 0xF0 && p[1] && p[2] && p[3]) width = 4;
+                    p += width;
+                    count++;
+                }
+            }
+
+            for (int i = 0; i < count; i++) {
                 Scope *iter_scope = scope_new(current_scope, NULL);
                 Scope *old_scope = current_scope;
                 current_scope = iter_scope;
-                scope_define(iter_scope, stmt->data.for_in.var, 0, copy_value_secure(list_val.data.list.items[i]));
+
+                Value item = val_make_null();
+                if (iterable.type == VAL_LIST) {
+                    item = copy_value_secure(iterable.data.list.items[i]);
+                } else if (iterable.type == VAL_MAP) {
+                    item = val_string(iterable.data.map->pairs[i].key);
+                } else {
+                    const unsigned char *p = (const unsigned char *)iterable.data.sval;
+                    for (int n = 0; n < i; n++) {
+                        unsigned char c = *p;
+                        if (c < 0x80) p += 1;
+                        else if ((c & 0xE0) == 0xC0 && p[1]) p += 2;
+                        else if ((c & 0xF0) == 0xE0 && p[1] && p[2]) p += 3;
+                        else if ((c & 0xF8) == 0xF0 && p[1] && p[2] && p[3]) p += 4;
+                        else p += 1;
+                    }
+                    size_t width = 1;
+                    unsigned char c = *p;
+                    if (c >= 0xC0 && (c & 0xE0) == 0xC0 && p[1]) width = 2;
+                    else if (c >= 0xE0 && (c & 0xF0) == 0xE0 && p[1] && p[2]) width = 3;
+                    else if (c >= 0xF0 && (c & 0xF8) == 0xF0 && p[1] && p[2] && p[3]) width = 4;
+                    char *ch = malloc(width + 1);
+                    if (!ch) {
+                        current_scope = old_scope;
+                        scope_free(iter_scope);
+                        value_free(&iterable);
+                        error(stmt->line, "Memoria insuficiente en for-in");
+                    }
+                    memcpy(ch, p, width);
+                    ch[width] = '\0';
+                    item = val_string(ch);
+                    free(ch);
+                }
+
+                scope_define(iter_scope, stmt->data.for_in.var, 0, item);
+
+                jmp_buf saved_env;
+                memcpy(&saved_env, &exception_env, sizeof(jmp_buf));
+                int saved_raised = exception_raised;
+                if (setjmp(exception_env) != 0) {
+                    current_scope = old_scope;
+                    scope_free(iter_scope);
+                    value_free(&iterable);
+                    memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
+                    exception_raised = saved_raised;
+                    longjmp(exception_env, 1);
+                }
+
                 exec_block_impl(&stmt->data.for_in.body);
+                memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
+                exception_raised = saved_raised;
                 current_scope = old_scope;
                 scope_free(iter_scope);
+
                 if (control_flow == CF_BREAK) { control_flow = CF_NONE; break; }
                 if (control_flow == CF_CONTINUE) { control_flow = CF_NONE; continue; }
-                if (control_flow == CF_REPEAT_LINE) { value_free(&list_val); return; }
-                if (control_flow == CF_RETURN) { value_free(&list_val); return; }
+                if (control_flow == CF_REPEAT_LINE || control_flow == CF_RETURN) {
+                    value_free(&iterable);
+                    return;
+                }
             }
-            value_free(&list_val);
+            value_free(&iterable);
             break;
         }
 

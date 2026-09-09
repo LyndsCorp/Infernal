@@ -16,8 +16,56 @@ typedef struct ASTRegistryEntry {
 
 static ASTRegistryEntry *ast_registry = NULL;
 
+typedef struct NodeListAllocEntry {
+    ASTNode **ptr;
+    struct NodeListAllocEntry *next;
+} NodeListAllocEntry;
+
+static NodeListAllocEntry *nodelist_alloc_registry = NULL;
+
+static void nodelist_alloc_add(ASTNode **ptr) {
+    if (!ptr) return;
+    NodeListAllocEntry *entry = infernal_malloc(sizeof(*entry));
+    if (!entry) return;
+    entry->ptr = ptr;
+    entry->next = nodelist_alloc_registry;
+    nodelist_alloc_registry = entry;
+}
+
+static void nodelist_alloc_update(ASTNode **old_ptr, ASTNode **new_ptr) {
+    for (NodeListAllocEntry *entry = nodelist_alloc_registry; entry; entry = entry->next) {
+        if (entry->ptr == old_ptr) {
+            entry->ptr = new_ptr;
+            return;
+        }
+    }
+    nodelist_alloc_add(new_ptr);
+}
+
+static void nodelist_alloc_remove(ASTNode **ptr) {
+    NodeListAllocEntry **link = &nodelist_alloc_registry;
+    while (*link) {
+        if ((*link)->ptr == ptr) {
+            NodeListAllocEntry *entry = *link;
+            *link = entry->next;
+            free(entry);
+            return;
+        }
+        link = &(*link)->next;
+    }
+}
+
+static void nodelist_alloc_free_orphans(void) {
+    while (nodelist_alloc_registry) {
+        NodeListAllocEntry *entry = nodelist_alloc_registry;
+        nodelist_alloc_registry = entry->next;
+        free(entry->ptr);
+        free(entry);
+    }
+}
+
 static void ast_registry_add(ASTNode *node) {
-    ASTRegistryEntry *entry = malloc(sizeof(*entry));
+    ASTRegistryEntry *entry = infernal_malloc(sizeof(*entry));
     if (!entry) return;
     entry->node = node;
     entry->next = ast_registry;
@@ -48,7 +96,9 @@ ASTNode *node_create(int kind, int line) {
 void nodelist_add(NodeList *list, ASTNode *node) {
     if (list->count >= list->cap) {
         list->cap = list->cap == 0 ? 8 : list->cap * 2;
+        ASTNode **old_stmts = list->stmts;
         list->stmts = infernal_realloc(list->stmts, list->cap * sizeof(ASTNode*));
+        nodelist_alloc_update(old_stmts, list->stmts);
     }
     list->stmts[list->count++] = node;
 }
@@ -72,46 +122,17 @@ static void free_flag_spec(FlagSpec *spec) {
     spec->body_count = 0;
 }
 
-typedef struct ASTFreedEntry {
-    const ASTNode *node;
-    struct ASTFreedEntry *next;
-} ASTFreedEntry;
-
-static ASTFreedEntry *ast_freed_nodes = NULL;
-
-static bool ast_was_freed(const ASTNode *node) {
-    for (ASTFreedEntry *e = ast_freed_nodes; e; e = e->next)
-        if (e->node == node) return true;
-    return false;
-}
-
-static void ast_mark_freed(const ASTNode *node) {
-    ASTFreedEntry *e = malloc(sizeof(*e));
-    if (!e) return;
-    e->node = node;
-    e->next = ast_freed_nodes;
-    ast_freed_nodes = e;
-}
-
-static void ast_clear_freed(void) {
-    while (ast_freed_nodes) {
-        ASTFreedEntry *next = ast_freed_nodes->next;
-        free(ast_freed_nodes);
-        ast_freed_nodes = next;
-    }
-}
-
 static void ast_free_internal(ASTNode *node);
 static void nodelist_free_internal(NodeList *list) {
     if (!list) return;
 
-    // Si stmts es NULL o count es 0, simplemente reiniciar y salir
-    if (!list->stmts || list->count == 0) {
-        list->stmts = NULL;
+    if (!list->stmts) {
         list->count = 0;
         list->cap = 0;
         return;
     }
+
+    ASTNode **stmts = list->stmts;
 
     // Liberar cada nodo del array
     for (int i = 0; i < list->count; i++) {
@@ -120,15 +141,22 @@ static void nodelist_free_internal(NodeList *list) {
             list->stmts[i] = NULL;  // evitar doble liberación
         }
     }
-    free(list->stmts);
+    nodelist_alloc_remove(stmts);
+    free(stmts);
     list->stmts = NULL;
     list->count = 0;
     list->cap = 0;
 }
 
+static bool ast_is_registered(const ASTNode *node) {
+    for (ASTRegistryEntry *entry = ast_registry; entry; entry = entry->next) {
+        if (entry->node == node) return true;
+    }
+    return false;
+}
+
 static void ast_free_internal(ASTNode *node) {
-    if (!node || ast_was_freed(node)) return;
-    ast_mark_freed(node);
+    if (!node || !ast_is_registered(node)) return;
     ast_registry_remove(node);
     switch (node->kind) {
         case NODE_PROGRAM: nodelist_free_internal(&node->data.prog.stmts); break;
@@ -202,27 +230,18 @@ static void ast_free_internal(ASTNode *node) {
 
 void nodelist_free(NodeList *list) {
     if (!list) return;
-    if (!list->stmts || list->count == 0) {
-        // Ya está vacío o liberado
-        list->stmts = NULL;
-        list->count = 0;
-        list->cap = 0;
-        return;
-    }
     nodelist_free_internal(list);
 }
 
 void ast_free(ASTNode *node) {
-    ast_clear_freed();
     ast_free_internal(node);
-    ast_clear_freed();
 }
 
 void ast_free_all(void) {
-    ast_clear_freed();
     while (ast_registry) {
         ASTNode *node = ast_registry->node;
         ast_free_internal(node);
     }
-    ast_clear_freed();
+    /* Libera NodeList temporales que nunca llegaron a ser propiedad de un AST. */
+    nodelist_alloc_free_orphans();
 }

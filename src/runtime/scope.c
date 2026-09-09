@@ -15,9 +15,38 @@
 #include "runtime/evaluator/helpers.h"
 #include "developer/debug.h"
 
+
 /* --- Declaraciones de ámbitos globales (definidos en globals.c) --- */
 extern Scope *global_scope;
 extern Scope *super_global_scope;
+
+
+typedef struct ScopeRegistryEntry {
+    Scope *scope;
+    struct ScopeRegistryEntry *next;
+} ScopeRegistryEntry;
+
+static ScopeRegistryEntry *scope_registry = NULL;
+
+static void scope_registry_add(Scope *scope) {
+    ScopeRegistryEntry *entry = infernal_malloc(sizeof(*entry));
+    entry->scope = scope;
+    entry->next = scope_registry;
+    scope_registry = entry;
+}
+
+static void scope_registry_remove(Scope *scope) {
+    ScopeRegistryEntry **link = &scope_registry;
+    while (*link) {
+        if ((*link)->scope == scope) {
+            ScopeRegistryEntry *entry = *link;
+            *link = entry->next;
+            free(entry);
+            return;
+        }
+        link = &(*link)->next;
+    }
+}
 
 /* --- Creación de un nuevo ámbito --- */
 Scope *scope_new(Scope *parent, const char *function_name) {
@@ -26,6 +55,7 @@ Scope *scope_new(Scope *parent, const char *function_name) {
     s->portals = NULL;
     s->parent = parent;
     s->function_name = function_name ? infernal_strdup(function_name) : NULL;
+    scope_registry_add(s);
     return s;
 }
 
@@ -112,6 +142,10 @@ void scope_define(Scope *scope, const char *name, int vtype, Value val) {
 void scope_assign(Scope *scope, const char *name, Value val, int line) {
     VarEntry *e = scope_find(scope, name);
     if (e) {
+        if (e->value.type == VAL_REFERENCE) {
+            assign_reference(&e->value, val, line);
+            return;
+        }
         // Si el tipo fijo es 0 o inválido (>= TOK_EOF), permitir cualquier valor
         if (e->vtype == 0 || e->vtype >= TOK_EOF) {
             Value copied = copy_value_secure(val);
@@ -176,6 +210,7 @@ void portal_define(Scope *scope, const char *name, int line) {
 /* --- Liberar un ámbito (se desactiva la liberación de variables para evitar double-free) --- */
 void scope_free(Scope *s) {
     if (!s) return;
+    scope_registry_remove(s);
     VarEntry *e = s->vars;
     while (e) {
         VarEntry *next = e->next;
@@ -193,4 +228,11 @@ void scope_free(Scope *s) {
     }
     free(s->function_name);
     free(s);
+}
+
+void scope_free_all(void) {
+    while (scope_registry) {
+        Scope *scope = scope_registry->scope;
+        scope_free(scope);
+    }
 }

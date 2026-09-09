@@ -17,6 +17,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include <setjmp.h>
 
 Value eval_binop(ASTNode *expr) {
     const char *op_name = "?";
@@ -138,7 +139,21 @@ Value eval_binop(ASTNode *expr) {
             error(expr->line, "Operación no soportada con lista y operador '%s'", op_name);
         }
 
+        jmp_buf saved_env;
+        memcpy(&saved_env, &exception_env, sizeof(jmp_buf));
+        int saved_raised = exception_raised;
+        if (setjmp(exception_env) != 0) {
+            value_free(&left);
+            memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
+            exception_raised = saved_raised;
+            longjmp(exception_env, 1);
+        }
+
         Value right = eval_expr(expr->data.binop.right);
+        if (right.type == VAL_REFERENCE)
+            right = resolve_reference(right, expr->line);
+        memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
+        exception_raised = saved_raised;
         DEBUG_INFO("Tipo de right: %d", right.type);
 
         if (expr->data.binop.op == TOK_AND || expr->data.binop.op == TOK_OR) {
@@ -219,16 +234,24 @@ Value eval_binop(ASTNode *expr) {
                         snprintf(lbuf, sizeof(lbuf), "%d", left.data.ival);
                     else if (left.type == VAL_FLOAT)
                         snprintf(lbuf, sizeof(lbuf), "%.15g", left.data.fval);
-                    else
+                    else if (left.type == VAL_BOOL)
                         snprintf(lbuf, sizeof(lbuf), "%s", left.data.bval ? "true" : "false");
+                    else if (left.type == VAL_NULL)
+                        snprintf(lbuf, sizeof(lbuf), "null");
+                    else
+                        error(expr->line, "No se puede concatenar el tipo %d con string", left.type);
                 }
                 if (right.type != VAL_STRING) {
                     if (right.type == VAL_INT)
                         snprintf(rbuf, sizeof(rbuf), "%d", right.data.ival);
                     else if (right.type == VAL_FLOAT)
                         snprintf(rbuf, sizeof(rbuf), "%.15g", right.data.fval);
-                    else
+                    else if (right.type == VAL_BOOL)
                         snprintf(rbuf, sizeof(rbuf), "%s", right.data.bval ? "true" : "false");
+                    else if (right.type == VAL_NULL)
+                        snprintf(rbuf, sizeof(rbuf), "null");
+                    else
+                        error(expr->line, "No se puede concatenar el tipo %d con string", right.type);
                 }
                 size_t total = strlen(ls) + strlen(rs) + 1;
                 char *buf = malloc(total);

@@ -42,5 +42,6 @@ PortalEntry *portal_find_in_scope(Scope *scope, const char *name);
 void portal_define(Scope *scope, const char *name, int line);
 
 void scope_free(Scope *s);
+void scope_free_all(void);
 
 #endif

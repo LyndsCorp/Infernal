@@ -27,15 +27,7 @@
 #include "runtime/evaluator/helpers.h"
 
 /* --- Estado de limpieza de parser ante longjmp --- */
-#define MAX_ACTIVE_PARSE_BLOCKS 256
-static NodeList *active_parse_blocks[MAX_ACTIVE_PARSE_BLOCKS];
-static size_t active_parse_block_count = 0;
-
 void parser_cleanup_on_error(void) {
-    while (active_parse_block_count > 0) {
-        NodeList *block = active_parse_blocks[--active_parse_block_count];
-        nodelist_free(block);
-    }
     ast_free_all();
 }
 
@@ -372,7 +364,7 @@ ASTNode *parse_assignment_expr(int line) {
             Token next_next = ts_peek();
             ts.pos = save_pos;
 
-            bool rhs_is_command = command_exists(rhs_ident.lexeme);
+            bool rhs_is_command = command_exists(rhs_ident.lexeme) || func_lookup(rhs_ident.lexeme) != NULL;
 
             if (rhs_is_command &&
                 next_next.type != TOK_LPAREN && next_next.type != TOK_LBRACKET) {
@@ -445,8 +437,6 @@ ASTNode *parse_assignment_expr(int line) {
 
 NodeList parse_block(const char *terminator) {
     NodeList block = {NULL, 0, 0};
-    if (active_parse_block_count < MAX_ACTIVE_PARSE_BLOCKS)
-        active_parse_blocks[active_parse_block_count++] = &block;
     DEBUG_INFO("=== parse_block: iniciando bloque, terminator='%s' ===", terminator ? terminator : "NULL");
 
     while (1) {
@@ -459,6 +449,10 @@ NodeList parse_block(const char *terminator) {
         if (terminator && strcmp(terminator, "}") == 0 && t.type == TOK_RBRACE) break;
 
         DEBUG_INFO("parse_block: token actual '%s' (tipo %d) en línea %d", t.lexeme, t.type, t.line);
+
+        if (t.type == TOK_IDENT && strcmp(t.lexeme, "funuction") == 0) {
+            error(t.line, "Error de sintaxis: quizás querías decir \"function\"?");
+        }
 
         ASTNode *stmt = NULL;
 
@@ -1075,7 +1069,7 @@ NodeList parse_block(const char *terminator) {
                             Token rhs_follow = ts_peek();
                             ts.pos = save_pos;
 
-                            bool rhs_is_command = command_exists(rhs_ident.lexeme);
+                            bool rhs_is_command = command_exists(rhs_ident.lexeme) || func_lookup(rhs_ident.lexeme) != NULL;
 
                             if (rhs_is_command &&
                                 rhs_follow.type != TOK_LPAREN && rhs_follow.type != TOK_LBRACKET) {
@@ -1155,7 +1149,7 @@ NodeList parse_block(const char *terminator) {
                     Token rhs_follow = ts_peek();
                     ts.pos = save_pos;
 
-                    bool rhs_is_command = command_exists(rhs_ident.lexeme);
+                    bool rhs_is_command = command_exists(rhs_ident.lexeme) || func_lookup(rhs_ident.lexeme) != NULL;
 
                     if (rhs_is_command &&
                         rhs_follow.type != TOK_LPAREN && rhs_follow.type != TOK_LBRACKET) {
@@ -1330,8 +1324,6 @@ NodeList parse_block(const char *terminator) {
     }
 
     DEBUG_INFO("=== parse_block: bloque finalizado, %d sentencias ===", block.count);
-    if (active_parse_block_count > 0 && active_parse_blocks[active_parse_block_count - 1] == &block)
-        active_parse_block_count--;
 
     /* Garantizar que el NodeList siempre sea válido incluso si no hay sentencias */
     if (block.count == 0 && block.stmts == NULL) {

@@ -33,6 +33,7 @@ void  val_list_append(Value *list, Value item);
 Value val_list_copy(Value *src);
 int   valtype_to_tokentype(int vtype);
 Value val_reference(const char *list_name, int index);
+Value val_map_reference(const char *map_name, const char *key);
 Value val_ptr(void *ptr);
 Value copy_value_secure(Value src);
 void  value_free(Value *value);

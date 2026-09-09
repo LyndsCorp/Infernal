@@ -14,29 +14,48 @@
 #include "runtime/error.h"
 #include <stdlib.h>
 #include <string.h>
+#include <setjmp.h>
 
 Value eval_call(ASTNode *expr) {
     FuncObject *fobj = func_lookup(expr->data.call.name);
     if (!fobj) error(expr->line, "Función no definida: %s", expr->data.call.name);
 
     if (fobj->kind == FUNC_BUILTIN) {
-        Value *args = malloc(sizeof(Value) * expr->data.call.argc);
-        for (int i = 0; i < expr->data.call.argc; i++) {
+        int argc = expr->data.call.argc;
+        int saved_line = current_eval_line;
+        Value *args = argc > 0 ? malloc(sizeof(Value) * (size_t)argc) : NULL;
+        if (argc > 0 && !args) error(expr->line, "Memoria insuficiente para argumentos");
+        for (int i = 0; i < argc; i++) args[i] = val_make_null();
+
+        jmp_buf saved_env;
+        memcpy(&saved_env, &exception_env, sizeof(jmp_buf));
+        int saved_raised = exception_raised;
+        if (setjmp(exception_env) != 0) {
+            for (int i = 0; i < argc; i++) value_free(&args[i]);
+            free(args);
+            current_eval_line = saved_line;
+            memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
+            exception_raised = saved_raised;
+            longjmp(exception_env, 1);
+        }
+
+        for (int i = 0; i < argc; i++) {
             args[i] = eval_expr(expr->data.call.args[i]);
+            if (args[i].type == VAL_REFERENCE)
+                args[i] = resolve_reference(args[i], expr->line);
         }
 
         /* Establecer la línea actual para que los errores muestren la línea real */
-        int saved_line = current_eval_line;
         current_eval_line = expr->line;
 
         Value ret = fobj->builtin(expr->data.call.argc, args);
 
         current_eval_line = saved_line;   /* restaurar */
 
-        for (int i = 0; i < expr->data.call.argc; i++) {
-            value_free(&args[i]);
-        }
+        for (int i = 0; i < argc; i++) value_free(&args[i]);
         free(args);
+        memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
+        exception_raised = saved_raised;
         return ret;
     } else {
         /* Función de usuario */

@@ -361,6 +361,87 @@ static Value builtin_unicodeCodepoints(int argc, Value *args) {
 }
 
 
+
+static Value builtin_cutAfterbytes(int argc, Value *args) {
+    if (argc != 2) error(current_eval_line, "cutAfterbytes() espera exactamente 2 argumentos");
+    if (args[0].type != VAL_STRING || args[1].type != VAL_STRING)
+        error(current_eval_line, "cutAfterbytes() espera dos strings");
+    const char *s = args[0].data.sval, *sep = args[1].data.sval;
+    if (*sep == '\0') return val_string(s);
+    const char *p = strstr(s, sep);
+    if (!p) return val_string(s);
+    size_t n = (size_t)(p - s) + strlen(sep);
+    char *buf = malloc(n + 1);
+    if (!buf) error(current_eval_line, "memoria insuficiente en cutAfterbytes");
+    memcpy(buf, s, n); buf[n] = '\0';
+    Value out = val_string(buf); free(buf); return out;
+}
+
+static Value builtin_cutAfterLastbytes(int argc, Value *args) {
+    if (argc != 2) error(current_eval_line, "cutAfterLastbytes() espera exactamente 2 argumentos");
+    if (args[0].type != VAL_STRING || args[1].type != VAL_STRING)
+        error(current_eval_line, "cutAfterLastbytes() espera dos strings");
+    const char *s = args[0].data.sval, *sep = args[1].data.sval;
+    if (*sep == '\0') return val_string(s);
+    const char *last = NULL, *p = s;
+    while ((p = strstr(p, sep)) != NULL) { last = p; p++; }
+    if (!last) return val_string(s);
+    size_t n = (size_t)(last - s) + strlen(sep);
+    char *buf = malloc(n + 1);
+    if (!buf) error(current_eval_line, "memoria insuficiente en cutAfterLastbytes");
+    memcpy(buf, s, n); buf[n] = '\0';
+    Value out = val_string(buf); free(buf); return out;
+}
+
+static Value builtin_cutBeforebytes(int argc, Value *args) {
+    if (argc != 2) error(current_eval_line, "cutBeforebytes() espera exactamente 2 argumentos");
+    if (args[0].type != VAL_STRING || args[1].type != VAL_STRING)
+        error(current_eval_line, "cutBeforebytes() espera dos strings");
+    const char *s = args[0].data.sval, *sep = args[1].data.sval;
+    if (*sep == '\0') return val_string(s);
+    const char *p = strstr(s, sep);
+    if (!p) return val_string("");
+    return val_string(p);
+}
+
+static Value builtin_cutBeforeLastbytes(int argc, Value *args) {
+    if (argc != 2) error(current_eval_line, "cutBeforeLastbytes() espera exactamente 2 argumentos");
+    if (args[0].type != VAL_STRING || args[1].type != VAL_STRING)
+        error(current_eval_line, "cutBeforeLastbytes() espera dos strings");
+    const char *s = args[0].data.sval, *sep = args[1].data.sval;
+    if (*sep == '\0') return val_string(s);
+    const char *last = NULL, *p = s;
+    while ((p = strstr(p, sep)) != NULL) { last = p; p++; }
+    if (!last) return val_string("");
+    return val_string(last);
+}
+
+static Value builtin_cutHeadbytes(int argc, Value *args) {
+    if (argc != 2) error(current_eval_line, "cutHeadbytes() espera exactamente 2 argumentos");
+    if (args[0].type != VAL_STRING || args[1].type != VAL_INT)
+        error(current_eval_line, "cutHeadbytes() espera un string y un entero");
+    int n = args[1].data.ival;
+    if (n < 0) error(current_eval_line, "cutHeadbytes() no acepta índices negativos");
+    size_t len = strlen(args[0].data.sval);
+    if ((size_t)n >= len) return val_string("");
+    return val_string(args[0].data.sval + n);
+}
+
+static Value builtin_cutTailbytes(int argc, Value *args) {
+    if (argc != 2) error(current_eval_line, "cutTailbytes() espera exactamente 2 argumentos");
+    if (args[0].type != VAL_STRING || args[1].type != VAL_INT)
+        error(current_eval_line, "cutTailbytes() espera un string y un entero");
+    int n = args[1].data.ival;
+    if (n < 0) error(current_eval_line, "cutTailbytes() no acepta índices negativos");
+    size_t len = strlen(args[0].data.sval);
+    if ((size_t)n >= len) return val_string("");
+    size_t keep = len - (size_t)n;
+    char *buf = malloc(keep + 1);
+    if (!buf) error(current_eval_line, "memoria insuficiente en cutTailbytes");
+    memcpy(buf, args[0].data.sval, keep); buf[keep] = '\0';
+    Value out = val_string(buf); free(buf); return out;
+}
+
 /* ================================================
  *  Registro de funciones
  * ================================================ */
@@ -377,6 +458,12 @@ void register_bytes_builtins(void) {
     func_register_builtin("hexbytes", builtin_hexbytes);
     func_register_builtin("utf8bytes", builtin_utf8bytes);
     func_register_builtin("unicodeCodepoints", builtin_unicodeCodepoints);
+    func_register_builtin("cutAfterbytes", builtin_cutAfterbytes);
+    func_register_builtin("cutAfterLastbytes", builtin_cutAfterLastbytes);
+    func_register_builtin("cutBeforebytes", builtin_cutBeforebytes);
+    func_register_builtin("cutBeforeLastbytes", builtin_cutBeforeLastbytes);
+    func_register_builtin("cutHeadbytes", builtin_cutHeadbytes);
+    func_register_builtin("cutTailbytes", builtin_cutTailbytes);
 
     vm_register_builtin("countbytes", builtin_countbytes);
     vm_register_builtin("indexofbytes", builtin_indexofbytes);
@@ -389,4 +476,10 @@ void register_bytes_builtins(void) {
     vm_register_builtin("hexbytes", builtin_hexbytes);
     vm_register_builtin("utf8bytes", builtin_utf8bytes);
     vm_register_builtin("unicodeCodepoints", builtin_unicodeCodepoints);
+    vm_register_builtin("cutAfterbytes", builtin_cutAfterbytes);
+    vm_register_builtin("cutAfterLastbytes", builtin_cutAfterLastbytes);
+    vm_register_builtin("cutBeforebytes", builtin_cutBeforebytes);
+    vm_register_builtin("cutBeforeLastbytes", builtin_cutBeforeLastbytes);
+    vm_register_builtin("cutHeadbytes", builtin_cutHeadbytes);
+    vm_register_builtin("cutTailbytes", builtin_cutTailbytes);
 }

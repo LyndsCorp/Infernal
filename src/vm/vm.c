@@ -799,7 +799,10 @@ Value vm_run(Chunk *chunk) {
                                         const char *cmd = cmd_val.data.sval;
                                         char *expanded = expand_command_vm(chunk, locals, cmd);
                                         int ret = execute_embedded(expanded);
-                                        if (ret == -1) error(current_eval_line, "Comando embebido falló");
+                                        if (ret == -1) {
+                                            free(expanded);
+                                            error(current_eval_line, "Comando embebido falló");
+                                        }
                                         free(expanded);
                                         ip++;
                                         break;

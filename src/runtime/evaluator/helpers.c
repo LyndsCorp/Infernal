@@ -105,27 +105,61 @@ int get_node_line(ASTNode *node) {
 Value resolve_reference(Value v, int line) {
     if (v.type != VAL_REFERENCE) return v;
 
-    /*
-     * VAL_REFERENCE solo describe una posición de una lista; no es dueño del
-     * Value apuntado. Devuelve SIEMPRE una copia profunda para que el llamador
-     * pueda tratar el resultado como un Value normal y liberar su memoria sin
-     * tocar la lista original.
-     */
-    const char *list_name = v.data.ref.list_name ? v.data.ref.list_name : "";
-    VarEntry *list_var = scope_find(current_scope, list_name);
-    if (!list_var || list_var->value.type != VAL_LIST) {
-        error(line, "La referencia apunta a una lista inexistente '%s'", list_name);
+    const char *container = v.data.ref.container_name ? v.data.ref.container_name : "";
+    VarEntry *entry = scope_find(current_scope, container);
+    if (!entry) {
+        error(line, "La referencia apunta a una variable inexistente '%s'", container);
     }
 
-    int idx = v.data.ref.index;
-    if (idx < 1 || idx > list_var->value.data.list.count) {
-        error(line, "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
+    Value result = val_make_null();
+    if (v.data.ref.is_map) {
+        if (entry->value.type != VAL_MAP || !entry->value.data.map) {
+            error(line, "La referencia '%s[%s]' ya no apunta a un mapa", container, v.data.ref.map_key);
+        }
+        if (!val_map_has(entry->value, v.data.ref.map_key)) {
+            error(line, "La clave '%s' ya no existe en el mapa '%s'", v.data.ref.map_key, container);
+        }
+        result = val_map_get(entry->value, v.data.ref.map_key);
+    } else {
+        if (entry->value.type != VAL_LIST) {
+            error(line, "La referencia apunta a una lista inexistente '%s'", container);
+        }
+        int idx = v.data.ref.index;
+        if (idx < 1 || idx > entry->value.data.list.count) {
+            error(line, "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
+        }
+        result = copy_value_secure(entry->value.data.list.items[idx - 1]);
     }
 
-    Value result = copy_value_secure(list_var->value.data.list.items[idx - 1]);
-    free(v.data.ref.list_name);
-    v.data.ref.list_name = NULL;
+    free(v.data.ref.container_name);
+    free(v.data.ref.map_key);
+    v.data.ref.container_name = NULL;
+    v.data.ref.map_key = NULL;
     return result;
+}
+
+void assign_reference(Value *reference, Value value, int line) {
+    if (!reference || reference->type != VAL_REFERENCE) {
+        error(line, "Referencia inválida");
+    }
+    const char *container = reference->data.ref.container_name ? reference->data.ref.container_name : "";
+    VarEntry *entry = scope_find(current_scope, container);
+    if (!entry) error(line, "La referencia apunta a una variable inexistente '%s'", container);
+
+    if (reference->data.ref.is_map) {
+        if (entry->value.type != VAL_MAP || !entry->value.data.map)
+            error(line, "La referencia '%s[%s]' ya no apunta a un mapa", container, reference->data.ref.map_key);
+        val_map_set(&entry->value, reference->data.ref.map_key, value);
+    } else {
+        if (entry->value.type != VAL_LIST)
+            error(line, "La referencia apunta a una lista inexistente '%s'", container);
+        int idx = reference->data.ref.index;
+        if (idx < 1 || idx > entry->value.data.list.count)
+            error(line, "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
+        Value copied = copy_value_secure(value);
+        value_free(&entry->value.data.list.items[idx - 1]);
+        entry->value.data.list.items[idx - 1] = copied;
+    }
 }
 
 int extract_integer_index(ASTNode *node, int line) {

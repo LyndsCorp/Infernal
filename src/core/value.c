@@ -64,8 +64,10 @@ Value copy_value_secure(Value src) {
     } else if (src.type == VAL_REFERENCE) {
         Value v;
         v.type = VAL_REFERENCE;
-        v.data.ref.list_name = infernal_strdup(src.data.ref.list_name);
+        v.data.ref.container_name = infernal_strdup(src.data.ref.container_name);
+        v.data.ref.map_key = src.data.ref.map_key ? infernal_strdup(src.data.ref.map_key) : NULL;
         v.data.ref.index = src.data.ref.index;
+        v.data.ref.is_map = src.data.ref.is_map;
         return v;
     } else {
         return src;
@@ -92,8 +94,20 @@ int valtype_to_tokentype(int vtype) {
 Value val_reference(const char *list_name, int index) {
     Value v;
     v.type = VAL_REFERENCE;
-    v.data.ref.list_name = infernal_strdup(list_name);
+    v.data.ref.container_name = infernal_strdup(list_name);
+    v.data.ref.map_key = NULL;
     v.data.ref.index = index;
+    v.data.ref.is_map = false;
+    return v;
+}
+
+Value val_map_reference(const char *map_name, const char *key) {
+    Value v;
+    v.type = VAL_REFERENCE;
+    v.data.ref.container_name = infernal_strdup(map_name);
+    v.data.ref.map_key = infernal_strdup(key);
+    v.data.ref.index = 0;
+    v.data.ref.is_map = true;
     return v;
 }
 
@@ -254,7 +268,8 @@ void value_free(Value *value) {
             }
             break;
         case VAL_REFERENCE:
-            free(value->data.ref.list_name);
+            free(value->data.ref.container_name);
+            free(value->data.ref.map_key);
             break;
         default:
             break;

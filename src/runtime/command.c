@@ -23,6 +23,7 @@
 #include "command.h"
 #include "runtime/scope.h"
 #include "runtime/globals.h"
+#include "runtime/error.h"
 #include "embedded/embedded.h"
 #include "vm/vm.h"
 #include "developer/debug.h"
@@ -100,15 +101,8 @@ char *expand_command(const char *cmd) {
                     p = start;
                     continue;
                 }
-                if (len + 1 + nlen >= cap) {
-                    cap = (len + 1 + nlen) * 2;
-                    result = realloc(result, cap);
-                }
-                result[len++] = '$';
-                memcpy(result + len, name, nlen);
-                len += nlen;
-                p = start;
-                continue;
+                free(result);
+                error(current_eval_line, "Variable '%s' no definida", name);
             }
         }
         if (len + 1 >= cap) {
@@ -202,15 +196,8 @@ char *expand_command_with_locals(const char *cmd, char **names, Value *values, i
                     p = start;
                     continue;
                 }
-                if (len + 1 + nlen >= cap) {
-                    cap = (len + 1 + nlen) * 2;
-                    result = realloc(result, cap);
-                }
-                result[len++] = '$';
-                memcpy(result + len, name, nlen);
-                len += nlen;
-                p = start;
-                continue;
+                free(result);
+                error(current_eval_line, "Variable '%s' no definida", name);
             }
         }
         if (len + 1 >= cap) {
@@ -450,7 +437,20 @@ int execute_embedded(const char *full_cmd) {
         return -1;
     }
 
-    int ret = system(exec_cmd);
+    /* Evitamos system(): en Android/Termux puede intervenir el preload de ejecución
+     * y corromper los punteros etiquetados antes de devolver el control al intérprete. */
+    pid_t pid = fork();
+    if (pid == 0) {
+        execl("/bin/sh", "sh", "-c", exec_cmd, (char *)NULL);
+        execlp("sh", "sh", "-c", exec_cmd, (char *)NULL);
+        _exit(127);
+    }
+
+    int ret = -1;
+    if (pid > 0) {
+        if (waitpid(pid, &ret, 0) < 0) ret = -1;
+    }
+
     unlink(binary_path);
     free(binary_path);
     free(exec_cmd);
@@ -512,15 +512,15 @@ void cleanup_embedded_temp_dir(void) {
 /* --- Ejecutar comando shell con el shell configurado --- */
 int run_shell_command(const char *cmd) {
     if (!infernal_shell) {
-        DEBUG_WARN("infernal_shell no configurado, usando system() fallback");
-        return system(cmd);
+        DEBUG_WARN("infernal_shell no configurado, usando /bin/sh fallback");
     }
 
-    DEBUG_OP("Ejecutando shell: %s -c \"%s\"", infernal_shell, cmd);
+    const char *shell = infernal_shell ? infernal_shell : "/bin/sh";
+    DEBUG_OP("Ejecutando shell: %s -c \"%s\"", shell, cmd);
 
     pid_t pid = fork();
     if (pid == 0) {
-        execlp(infernal_shell, infernal_shell, "-c", cmd, (char *)NULL);
+        execlp(shell, shell, "-c", cmd, (char *)NULL);
         execlp("/bin/sh", "/bin/sh", "-c", cmd, (char *)NULL);
         exit(127);
     } else if (pid > 0) {

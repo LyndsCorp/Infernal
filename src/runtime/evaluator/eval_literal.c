@@ -15,6 +15,7 @@
 #include "developer/debug.h"
 #include <string.h>
 #include <stdlib.h>
+#include <setjmp.h>
 
 Value eval_literal(ASTNode *expr) {
     if (expr->data.lit.type == TOK_INT)    return val_int(expr->data.lit.ival);
@@ -49,7 +50,10 @@ Value eval_var(ASTNode *expr) {
         error(expr->line, "Variable '%s' no definida", name);
     }
     DEBUG_INFO("eval_var: variable '%s' encontrada, valor tipo %d", name, e->value.type);
-    return copy_value_secure(e->value);
+    Value result = copy_value_secure(e->value);
+    if (result.type == VAL_REFERENCE)
+        return resolve_reference(result, expr->line);
+    return result;
 }
 
 Value eval_list(ASTNode *expr) {
@@ -61,50 +65,57 @@ Value eval_list(ASTNode *expr) {
 }
 
 Value eval_map(ASTNode *expr) {
-    Value map = val_map_empty();
+    Value *map = malloc(sizeof(*map));
+    if (!map) error(expr->line, "Memoria insuficiente para crear mapa");
+    *map = val_map_empty();
 
-    /*
-     * Un mapa tiene su propio ámbito léxico durante la construcción.
-     * Esto permite que los valores de las entradas anteriores sean
-     * referenciados mediante $nombre, igual que cualquier otra variable
-     * accesible, pero sin convertir la clave en una expresión evaluable.
-     *
-     * Ejemplo:
-     *   var = "abc",
-     *   numeros = $var
-     *
-     * $var se resuelve primero en este ámbito del mapa y, si no existe,
-     * continúa por los scopes padres mediante scope_find().
-     */
-    Scope *map_scope = scope_new(current_scope, NULL);
     Scope *old_scope = current_scope;
-    current_scope = map_scope;
+    Scope *map_scope = scope_new(old_scope, NULL);
 
+    jmp_buf saved_env;
+    memcpy(&saved_env, &exception_env, sizeof(jmp_buf));
+    int saved_raised = exception_raised;
+    if (setjmp(exception_env) != 0) {
+        current_scope = old_scope;
+        scope_free(map_scope);
+        value_free(map);
+        free(map);
+        memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
+        exception_raised = saved_raised;
+        longjmp(exception_env, 1);
+    }
+
+    current_scope = map_scope;
     for (int i = 0; i < expr->data.map.pair_count; i++) {
         const char *key = expr->data.map.pairs[i].key;
         int declared_type = expr->data.map.pairs[i].value_type;
-        Value val = eval_expr(expr->data.map.pairs[i].value);
+        ASTNode *value_node = expr->data.map.pairs[i].value;
+
+        /* Dentro de un mapa, una variable externa o una entrada previa se clona
+         * de forma explícita con $. Un identificador desnudo es un comando. */
+        if (value_node && value_node->kind == NODE_VAR && !value_node->data.var.clone) {
+            error(expr->line, "Comando '%s' no encontrado. Para usar una variable accesible dentro de un mapa, usa $%s",
+                  value_node->data.var.name, value_node->data.var.name);
+        }
+
+        Value val = eval_expr(value_node);
         if (declared_type != 0 && valtype_to_tokentype(val.type) != declared_type) {
             int actual_type = valtype_to_tokentype(val.type);
-            current_scope = old_scope;
-            scope_free(map_scope);
+            value_free(&val);
             error(expr->line, "Error de tipado del mapa: la clave '%s' requiere un valor %s pero se obtuvo %s",
                   key, type_name(declared_type), type_name(actual_type));
         }
 
-        /* El valor almacenado en el mapa es una copia independiente. */
-        val_map_set_typed(&map, key, val, declared_type);
-
-        /*
-         * Publicamos la entrada en el scope del mapa para que las siguientes
-         * entradas puedan usar $key. También respetamos su tipo explícito o
-         * el tipo inferido por el valor.
-         */
+        val_map_set_typed(map, key, val, declared_type);
         scope_define(map_scope, key, declared_type, copy_value_secure(val));
         value_free(&val);
     }
 
+    Value result = *map;
+    free(map);
     current_scope = old_scope;
     scope_free(map_scope);
-    return map;
+    memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
+    exception_raised = saved_raised;
+    return result;
 }

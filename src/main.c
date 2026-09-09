@@ -38,13 +38,10 @@ void chunk_free(Chunk *ch) {
 }
 
 static void cleanup_runtime_state(void) {
-    while (current_scope && current_scope != global_scope) {
-        Scope *parent = current_scope->parent;
-        scope_free(current_scope);
-        current_scope = parent;
-    }
-    if (global_scope) { scope_free(global_scope); global_scope = NULL; current_scope = NULL; }
-    if (super_global_scope) { scope_free(super_global_scope); super_global_scope = NULL; }
+    scope_free_all();
+    current_scope = NULL;
+    global_scope = NULL;
+    super_global_scope = NULL;
 
     while (func_table) {
         FuncEntry *entry = func_table;

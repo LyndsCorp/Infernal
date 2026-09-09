@@ -14,6 +14,7 @@ bool val_is_truthy(Value v);
 const char *type_name(int tok_type);
 int get_node_line(ASTNode *node);
 Value resolve_reference(Value v, int line);
+void assign_reference(Value *reference, Value value, int line);
 int extract_integer_index(ASTNode *node, int line);
 bool try_convert_value(Value *val, int target_tok_type);
 
