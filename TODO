@@ -52,3 +52,5 @@ ejemplo: vacas -> animales["vacas"]: 4 (int)
 [ ] for in con strings que sea for caracter in texto then, y recorre cada caracter.
 
 [ ] Cuando en un if no existe la variable que se utiliza, da doble free en lugar de comprobar si la variable existe
+
+[ ] Si ejecutas un comando con un $ que no existe, no da error, sigue la ejecución infinitamente.
