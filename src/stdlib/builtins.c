@@ -12,6 +12,7 @@
 #include "io.h" //funciones de entrada con salida
 #include "system.h" //funciones del sistema
 #include "string.h" //funciones de strings
+#include "cut.h" //funciones de cortar strings
 #include "map.h" //funciones de maps
 #include "bytes.h" //funciones de bytes crudos
 #include "neutral.h" //funciones polimorficas
@@ -29,4 +30,5 @@ void register_all_builtins(void) {
     register_neutral_builtins();
     register_database_builtins();
     register_list_builtins();
+    register_cut_builtins();
 }
