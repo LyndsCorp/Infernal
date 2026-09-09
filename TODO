@@ -54,3 +54,5 @@ ejemplo: vacas -> animales["vacas"]: 4 (int)
 [ ] Cuando en un if no existe la variable que se utiliza, da doble free en lugar de comprobar si la variable existe
 
 [ ] Si ejecutas un comando con un $ que no existe, no da error, sigue la ejecución infinitamente.
+
+[ ] Si en una concatenación de strings utilizo una variable que no existe (pues el nombre), da doble free
