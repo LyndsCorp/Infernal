@@ -430,6 +430,14 @@ ASTNode *parse_primary() {
                     do {
                         ts_skip_newlines();
                         Token item_start = ts_peek();
+                        if (item_start.type == TOK_EOF) {
+                            error_at(t.line, t.start_col,
+                                     "El list o map empieza aquí, pero nunca se cerró; falta ']' antes del final del archivo");
+                        }
+                        if (item_start.type == TOK_NEWLINE) {
+                            error_at(item_start.line, item_start.start_col > 0 ? item_start.start_col : 1,
+                                     "Falta un elemento de la lista antes del final de la línea");
+                        }
                         if (!token_starts_expression(item_start.type))
                             expression_expected_value(item_start, "un elemento de la lista");
                         n->data.list_lit.items = realloc(n->data.list_lit.items,

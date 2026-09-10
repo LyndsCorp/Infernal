@@ -26,14 +26,24 @@ void ts_add(Token t) {
     ts.tokens[ts.count++] = t;
 }
 
+static Token eof_token(void) {
+    Token t = {TOK_EOF, "", source_line_count > 0 ? source_line_count : 1, 1, 1};
+    if (source_line_count > 0 && source_lines) {
+        size_t len = strlen(source_lines[source_line_count - 1]);
+        t.start_col = (int)len + 1;
+        t.end_col = t.start_col;
+    }
+    return t;
+}
+
 Token ts_peek() {
     if (ts.pos < ts.count) return ts.tokens[ts.pos];
-    return (Token){TOK_EOF, "", 0, 0, 0};
+    return eof_token();
 }
 
 Token ts_advance() {
     if (ts.pos < ts.count) return ts.tokens[ts.pos++];
-    return (Token){TOK_EOF, "", 0, 0, 0};
+    return eof_token();
 }
 
 bool ts_match(TokenType t) {
