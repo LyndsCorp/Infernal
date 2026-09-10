@@ -84,6 +84,40 @@ static bool is_expression_start(TokenType type) {
            type == TOK_NOT;
 }
 
+/* [] necesita contexto de tipo. En una declaración explícita, el tipo de la
+ * variable resuelve la ambigüedad sin obligar al parser de expresiones a
+ * adivinar si se trata de un list o un map. */
+static ASTNode *parse_typed_value(int vtype) {
+    Token t = ts_peek();
+    if (t.type != TOK_LBRACKET || (vtype != TOK_LIST && vtype != TOK_MAP))
+        return parse_expression(0);
+
+    int save_pos = ts.pos;
+    ts_advance();
+    ts_skip_newlines();
+
+    if (ts_peek().type != TOK_RBRACKET) {
+        ts.pos = save_pos;
+        return parse_expression(0);
+    }
+
+    ts_advance();
+    ASTNode *node = node_create(vtype == TOK_MAP ? NODE_MAP : NODE_LIST, t.line);
+    if (!node)
+        error_at(t.line, t.start_col > 0 ? t.start_col : 1,
+                 "No se pudo crear el valor vacío de la variable");
+
+    if (vtype == TOK_MAP) {
+        node->data.map.pairs = NULL;
+        node->data.map.pair_count = 0;
+    } else {
+        node->data.list_lit.items = NULL;
+        node->data.list_lit.count = 0;
+    }
+
+    return node;
+}
+
 static void require_statement_end(const char *what) {
     Token next = ts_peek();
     if (next.type == TOK_NEWLINE || next.type == TOK_EOF || next.type == TOK_THEN || is_block_closer(next.type))
@@ -1172,10 +1206,10 @@ NodeList parse_block(const char *terminator) {
                                 cmd_str = extract_literal_command(t.line);
                                 while (ts_peek().type != TOK_NEWLINE && ts_peek().type != TOK_EOF) ts_advance();
                             } else {
-                                value = parse_expression(0);
+                                value = parse_typed_value(vtype);
                             }
                         } else {
-                            value = parse_expression(0);
+                            value = parse_typed_value(vtype);
                         }
                     }
 
@@ -1257,7 +1291,7 @@ NodeList parse_block(const char *terminator) {
                         value = parse_expression(0);
                     }
                 } else {
-                    value = parse_expression(0);
+                    value = parse_typed_value(vtype);
                 }
             }
 

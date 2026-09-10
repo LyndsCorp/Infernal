@@ -423,7 +423,14 @@ ASTNode *parse_primary() {
             if (is_map) {
                 return parse_map_literal(t.line);
             } else {
-                ASTNode *n = node_create(NODE_LIST, t.line);
+                /* [] no tiene tipo suficiente para decidir entre list y map.
+         * Solo una declaración tipada puede darle el significado correcto. */
+        if (ts_peek().type == TOK_RBRACKET) {
+            error_at(t.line, t.start_col > 0 ? t.start_col : 1,
+                     "'[]' es ambiguo: Infernal no sabe si quieres un list o un map. Usa tipado explícito.");
+        }
+
+        ASTNode *n = node_create(NODE_LIST, t.line);
                 n->data.list_lit.items = NULL;
                 n->data.list_lit.count = 0;
                 if (!ts_match(TOK_RBRACKET)) {
