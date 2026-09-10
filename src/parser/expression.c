@@ -36,6 +36,47 @@ static ASTNode *parse_comparison(void);
 static ASTNode *parse_logic_and(void);
 static ASTNode *parse_logic_or(void);
 
+static bool token_starts_expression(TokenType type) {
+    switch (type) {
+        case TOK_NUMBER:
+        case TOK_STRING_LITERAL:
+        case TOK_TRUE:
+        case TOK_FALSE:
+        case TOK_IDENT:
+        case TOK_LBRACKET:
+        case TOK_LBRACE:
+        case TOK_LPAREN:
+        case TOK_MINUS:
+        case TOK_NOT:
+            return true;
+        default:
+            return false;
+    }
+}
+
+static void expression_expected_value(Token t, const char *context) {
+    if (t.type == TOK_NEWLINE || t.type == TOK_EOF) {
+        error_at(t.line, t.start_col > 0 ? t.start_col : 1,
+                 "Se esperaba %s, pero la línea terminó aquí", context);
+    }
+    if (t.type == TOK_COMMA) {
+        error_at(t.line, t.start_col, "Se esperaba %s antes de ','", context);
+    }
+    if (t.type == TOK_RPAREN) {
+        error_at(t.line, t.start_col, "Se esperaba %s antes de ')'", context);
+    }
+    if (t.type == TOK_RBRACKET) {
+        error_at(t.line, t.start_col, "Se esperaba %s antes de ']'", context);
+    }
+    if (t.type == TOK_EQ) {
+        error_at(t.line, t.start_col,
+                 "Se esperaba %s, pero apareció '='. Usa '=' para asignar y '==' para comparar",
+                 context);
+    }
+    error_at(t.line, t.start_col > 0 ? t.start_col : 1,
+             "Se esperaba %s, pero apareció '%s'", context, t.lexeme);
+}
+
 /* --- parse_slice_content (no static, declarada en .h) --- */
 ASTNode *parse_slice_content(int line) {
     Token t = ts_peek();
@@ -289,12 +330,14 @@ ASTNode *parse_primary() {
             // Si no hay paréntesis de cierre inmediato, parseamos argumentos
             if (!ts_match(TOK_RPAREN)) {
                 do {
-                    // Parseamos una expresión (argumento)
+                    Token arg_start = ts_peek();
+                    if (!token_starts_expression(arg_start.type))
+                        expression_expected_value(arg_start, "un argumento");
+
                     n->data.call.args = realloc(n->data.call.args,
                                                 (n->data.call.argc + 1) * sizeof(ASTNode*));
                     n->data.call.args[n->data.call.argc++] = parse_expression(0);
 
-                    // --- NUEVA VERIFICACIÓN: falta de coma entre argumentos ---
                     Token next = ts_peek();
                     if (next.type != TOK_COMMA && next.type != TOK_RPAREN) {
                         // Si el siguiente token es algo que podría ser el inicio de otra expresión,
@@ -305,10 +348,16 @@ ASTNode *parse_primary() {
                             error(t.line, "Falta una coma entre argumentos en la llamada a función '%s'", func_name);
                             }
                     }
-                } while (ts_match(TOK_COMMA));
+                } while (ts_match(TOK_COMMA) && ts_peek().type != TOK_RPAREN);
 
+                if (ts_peek().type == TOK_RPAREN && n->data.call.argc > 0 &&
+                    ts.pos > 0 && ts.tokens[ts.pos - 1].type == TOK_COMMA) {
+                    error_at(ts_peek().line, ts_peek().start_col,
+                             "No puede haber una coma al final de los argumentos de '%s'", func_name);
+                }
                 if (!ts_match(TOK_RPAREN))
-                    error(t.line, "Se esperaba ')' en la llamada a función '%s'", func_name);
+                    error_at(ts_peek().line, ts_peek().start_col,
+                             "Se esperaba ')' para cerrar la llamada a '%s'", func_name);
             }
             return n;
         } else {
@@ -380,11 +429,25 @@ ASTNode *parse_primary() {
                 if (!ts_match(TOK_RBRACKET)) {
                     do {
                         ts_skip_newlines();
+                        Token item_start = ts_peek();
+                        if (!token_starts_expression(item_start.type))
+                            expression_expected_value(item_start, "un elemento de la lista");
                         n->data.list_lit.items = realloc(n->data.list_lit.items,
                                                          (n->data.list_lit.count + 1) * sizeof(ASTNode*));
                         n->data.list_lit.items[n->data.list_lit.count++] = parse_expression(0);
                         ts_skip_newlines();
-                    } while (ts_match(TOK_COMMA));
+                        if (ts_peek().type != TOK_COMMA && ts_peek().type != TOK_RBRACKET) {
+                            Token bad = ts_peek();
+                            if (token_starts_expression(bad.type))
+                                error_at(bad.line, bad.start_col,
+                                         "Falta ',' entre elementos de la lista");
+                        }
+                    } while (ts_match(TOK_COMMA) && ts_peek().type != TOK_RBRACKET);
+                    if (ts_peek().type == TOK_RBRACKET && ts.pos > 0 &&
+                        ts.tokens[ts.pos - 1].type == TOK_COMMA) {
+                        error_at(ts_peek().line, ts_peek().start_col,
+                                 "No puede haber una coma al final de la lista");
+                    }
                     ts_skip_newlines();
                     if (!ts_match(TOK_RBRACKET)) error(t.line, "Se esperaba ']'");
                 }
@@ -404,10 +467,25 @@ ASTNode *parse_primary() {
     if (t.type == TOK_LPAREN) {
         ts_advance();
         ASTNode *n = parse_expression(0);
-        if (!ts_match(TOK_RPAREN)) error(t.line, "Se esperaba ')'");
+        if (!ts_match(TOK_RPAREN))
+            error_at(ts_peek().line, ts_peek().start_col, "Falta ')' para cerrar la expresión que empezó aquí");
         return n;
     }
-    error(t.line, "Token inesperado '%s'", t.lexeme);
+    if (t.type == TOK_EOF)
+        error_at(t.line, 1, "Se esperaba una expresión, pero el archivo terminó aquí");
+    if (t.type == TOK_NEWLINE)
+        error_at(t.line, 1, "Se esperaba una expresión antes del final de la línea");
+    if (t.type == TOK_RPAREN || t.type == TOK_RBRACKET || t.type == TOK_RBRACE)
+        expression_expected_value(t, "una expresión");
+    if (t.type == TOK_COMMA)
+        error_at(t.line, t.start_col, "Hay una coma donde falta una expresión");
+    if (t.type == TOK_THEN || t.type == TOK_FI || t.type == TOK_ELSE ||
+        t.type == TOK_ELSEIF || t.type == TOK_CASE || t.type == TOK_DEFAULT ||
+        t.type == TOK_CATCH)
+        error_at(t.line, t.start_col, "'%s' no puede aparecer aquí; falta una expresión antes de este bloque", t.lexeme);
+    if (t.type == TOK_SEMI)
+        error_at(t.line, t.start_col, "';' no separa expresiones en Infernal; termina la instrucción con un salto de línea");
+    expression_expected_value(t, "una expresión");
     return NULL;
 }
 

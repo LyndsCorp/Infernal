@@ -71,6 +71,28 @@ static void validate_var_name(const char *name, int line) {
         if (strchr(invalid, *p)) error(line, "Carácter inválido '%c' en nombre de variable", *p);
 }
 
+static bool is_block_closer(TokenType type) {
+    return type == TOK_FI || type == TOK_ELSE || type == TOK_ELSEIF ||
+           type == TOK_CASE || type == TOK_DEFAULT || type == TOK_CATCH ||
+           type == TOK_EOF;
+}
+
+static bool is_expression_start(TokenType type) {
+    return type == TOK_NUMBER || type == TOK_STRING_LITERAL || type == TOK_TRUE ||
+           type == TOK_FALSE || type == TOK_IDENT || type == TOK_LBRACKET ||
+           type == TOK_LBRACE || type == TOK_LPAREN || type == TOK_MINUS ||
+           type == TOK_NOT;
+}
+
+static void require_statement_end(const char *what) {
+    Token next = ts_peek();
+    if (next.type == TOK_NEWLINE || next.type == TOK_EOF || next.type == TOK_THEN || is_block_closer(next.type))
+        return;
+    error_at(next.line, next.start_col > 0 ? next.start_col : 1,
+             "Sobra '%s' después de %s; quizá falta un operador o un salto de línea",
+             next.lexeme, what);
+}
+
 static bool valid_module_name(const char *name) {
     if (!name || !*name || strcmp(name, ".") == 0 || strcmp(name, "..") == 0)
         return false;
@@ -306,6 +328,9 @@ ASTNode *parse_if_statement() {
     Token t = ts_peek();
     int line = t.line;
     ts_advance();
+    if (!is_expression_start(ts_peek().type))
+        error_at(ts_peek().line, ts_peek().start_col > 0 ? ts_peek().start_col : 1,
+                 "Se esperaba una condición después de 'if'");
     ASTNode *cond = parse_expression(0);
     if (!ts_match(TOK_THEN)) error_missing_then(line, "if");
     NodeList then_block = parse_block("fi");
@@ -316,6 +341,9 @@ ASTNode *parse_if_statement() {
     ASTNode *current_if = first_if;
     while (ts_peek().type == TOK_ELSEIF) {
         ts_advance();
+        if (!is_expression_start(ts_peek().type))
+            error_at(ts_peek().line, ts_peek().start_col > 0 ? ts_peek().start_col : 1,
+                     "Se esperaba una condición después de 'elseif'");
         ASTNode *elseif_cond = parse_expression(0);
         if (!ts_match(TOK_THEN)) error_missing_then(line, "elseif");
         NodeList elseif_then = parse_block("fi");
@@ -338,23 +366,40 @@ ASTNode *parse_if_statement() {
 
 ASTNode *parse_assignment_expr(int line) {
     DEBUG_INFO("parse_assignment_expr: ¡LLAMADA! línea %d", line);
-    if (ts_peek().type != TOK_IDENT) error(line, "Se esperaba variable en la asignación");
+    if (ts_peek().type != TOK_IDENT)
+        error_at(ts_peek().line, ts_peek().start_col > 0 ? ts_peek().start_col : 1,
+                 "Se esperaba una variable en la asignación");
+
     Token var_tok = ts_advance();
     char *varname = clean_var_name(var_tok.lexeme);
     validate_var_name(varname, line);
 
+    /* Crear el nodo antes de parsear el valor. Si parse_expression() lanza un
+     * error, el registro del AST también se encargará de liberar varname. */
+    ASTNode *assign = node_create(NODE_ASSIGN, line);
+    assign->data.assign.name = varname;
+    assign->data.assign.value = NULL;
+    assign->data.assign.vtype = 0;
+    assign->data.assign.is_local = false;
+    assign->data.assign.is_global = false;
+    assign->data.assign.is_cmd = false;
+    assign->data.assign.cmd_str = NULL;
+    assign->data.assign.lhs_index = NULL;
+
     int op = ts_peek().type;
     if (op != TOK_EQ && op != TOK_PLUS_EQ && op != TOK_MINUS_EQ &&
         op != TOK_STAR_EQ && op != TOK_SLASH_EQ) {
-        error(line, "Se esperaba operador de asignación (=, +=, -=, *=, /=)");
-        }
-        ts_advance(); // consumir el operador
+        error_at(ts_peek().line, ts_peek().start_col > 0 ? ts_peek().start_col : 1,
+                 "Se esperaba '=', '+=', '-=', '*=' o '/=' después de '%s'",
+                 varname);
+    }
+    Token op_tok = ts_advance();
 
-        bool is_cmd = false;
+    bool is_cmd = false;
     char *cmd_str = NULL;
     ASTNode *value = NULL;
 
-    // Solo para '=' simple, detectar si es un comando
+    /* Solo para '=' simple, detectar si es un comando. */
     if (op == TOK_EQ) {
         Token next_token = ts_peek();
         DEBUG_INFO("parse_assignment_expr: valor siguiente '%s' (tipo %d)", next_token.lexeme, next_token.type);
@@ -374,65 +419,52 @@ ASTNode *parse_assignment_expr(int line) {
                 while (ts_peek().type != TOK_NEWLINE && ts_peek().type != TOK_EOF) {
                     ts_advance();
                 }
-                value = NULL;
             }
         }
     }
 
     if (!is_cmd) {
         DEBUG_INFO("parse_assignment_expr: parseando expresión normal");
+        Token rhs_start = ts_peek();
+        if (!is_expression_start(rhs_start.type))
+            error_at(rhs_start.line, rhs_start.start_col > 0 ? rhs_start.start_col : 1,
+                     "Se esperaba un valor después del operador de asignación '%s'", op_tok.lexeme);
         value = parse_expression(0);
-        if (value) {
-            DEBUG_INFO("parse_assignment_expr: expresión parseada, tipo nodo %d", value->kind);
-        } else {
-            DEBUG_INFO("parse_assignment_expr: parse_expression devolvió NULL, creando literal 0");
+        if (!value) {
             value = node_create(NODE_LITERAL, line);
             value->data.lit.type = TOK_INT;
             value->data.lit.ival = 0;
         }
+        require_statement_end("la asignación");
     }
 
     if (op == TOK_EQ) {
-        ASTNode *assign = node_create(NODE_ASSIGN, line);
-        assign->data.assign.name = varname;
         assign->data.assign.value = value;
-        assign->data.assign.vtype = 0;
-        assign->data.assign.is_local = false;
-        assign->data.assign.is_global = false;
         assign->data.assign.is_cmd = is_cmd;
         assign->data.assign.cmd_str = cmd_str;
-        assign->data.assign.lhs_index = NULL;
         DEBUG_INFO("parse_assignment_expr: creado NODE_ASSIGN para '%s', is_cmd=%d", varname, is_cmd);
         return assign;
-    } else {
-        // asignación compuesta
-        if (is_cmd) {
-            error(line, "No se puede usar un comando en una asignación compuesta");
-        }
-        ASTNode *var_node = node_create(NODE_VAR, line);
-        var_node->data.var.name = strdup(varname);
-        var_node->data.var.clone = false;
-        ASTNode *binop = node_create(NODE_BINOP, line);
-        binop->data.binop.left = var_node;
-        binop->data.binop.right = value;
-        switch (op) {
-            case TOK_PLUS_EQ:  binop->data.binop.op = TOK_PLUS;  break;
-            case TOK_MINUS_EQ: binop->data.binop.op = TOK_MINUS; break;
-            case TOK_STAR_EQ:  binop->data.binop.op = TOK_STAR;  break;
-            case TOK_SLASH_EQ: binop->data.binop.op = TOK_SLASH; break;
-            default: break;
-        }
-        ASTNode *assign = node_create(NODE_ASSIGN, line);
-        assign->data.assign.name = varname;
-        assign->data.assign.value = binop;
-        assign->data.assign.vtype = 0;
-        assign->data.assign.is_local = false;
-        assign->data.assign.is_global = false;
-        assign->data.assign.is_cmd = false;
-        assign->data.assign.cmd_str = NULL;
-        assign->data.assign.lhs_index = NULL;
-        return assign;
     }
+
+    if (is_cmd) {
+        error(line, "No se puede usar un comando en una asignación compuesta");
+    }
+
+    ASTNode *var_node = node_create(NODE_VAR, line);
+    var_node->data.var.name = strdup(varname);
+    var_node->data.var.clone = false;
+    ASTNode *binop = node_create(NODE_BINOP, line);
+    binop->data.binop.left = var_node;
+    binop->data.binop.right = value;
+    switch (op) {
+        case TOK_PLUS_EQ:  binop->data.binop.op = TOK_PLUS;  break;
+        case TOK_MINUS_EQ: binop->data.binop.op = TOK_MINUS; break;
+        case TOK_STAR_EQ:  binop->data.binop.op = TOK_STAR;  break;
+        case TOK_SLASH_EQ: binop->data.binop.op = TOK_SLASH; break;
+        default: break;
+    }
+    assign->data.assign.value = binop;
+    return assign;
 }
 
 NodeList parse_block(const char *terminator) {
@@ -579,6 +611,7 @@ NodeList parse_block(const char *terminator) {
             stmt = node_create(NODE_PORTAL, t.line);
             stmt->data.portal.name = portal_name;
             stmt->data.portal.is_local = false;
+            require_statement_end("'portal'");
             nodelist_add(&block, stmt);
             DEBUG_INFO("parse_block: añadido NODE_PORTAL en línea %d", stmt->line);
             ts_skip_newlines();
@@ -639,6 +672,9 @@ NodeList parse_block(const char *terminator) {
         /* --- WHILE --- */
         if (t.type == TOK_WHILE) {
             ts_advance();
+            if (!is_expression_start(ts_peek().type))
+                error_at(ts_peek().line, ts_peek().start_col > 0 ? ts_peek().start_col : 1,
+                         "Se esperaba una condición después de 'while'");
             ASTNode *cond = parse_expression(0);
             if (!ts_match(TOK_THEN)) error_missing_then(t.line, "while");
             NodeList body = parse_block("fi");
@@ -676,6 +712,9 @@ NodeList parse_block(const char *terminator) {
             // FOR-IN
             if (ts_peek().type == TOK_IN) {
                 ts_advance();
+                if (!is_expression_start(ts_peek().type))
+                    error_at(ts_peek().line, ts_peek().start_col > 0 ? ts_peek().start_col : 1,
+                             "Se esperaba una expresión después de 'in'");
                 ASTNode *list_expr = parse_expression(0);
                 if (!ts_match(TOK_THEN)) error_missing_then(t.line, "for-in");
                 NodeList body = parse_block("fi");
@@ -692,8 +731,12 @@ NodeList parse_block(const char *terminator) {
 
             // FOR tradicional
             if (!ts_match(TOK_EQ))
-                error(t.line, "Se esperaba '=' en la inicialización del for");
+                error_at(ts_peek().line, ts_peek().start_col > 0 ? ts_peek().start_col : 1,
+                         "Se esperaba '=' después de la variable del for");
 
+            if (!is_expression_start(ts_peek().type))
+                error_at(ts_peek().line, ts_peek().start_col > 0 ? ts_peek().start_col : 1,
+                         "Se esperaba el valor inicial del for después de '='");
             ASTNode *init_expr = parse_expression(0);
             ASTNode *init = node_create(NODE_ASSIGN, t.line);
             init->data.assign.name = varname;
@@ -706,12 +749,17 @@ NodeList parse_block(const char *terminator) {
             init->data.assign.lhs_index = NULL;
 
             if (!ts_match(TOK_COMMA))
-                error(t.line, "Se esperaba ',' después de la inicialización");
+                error_at(ts_peek().line, ts_peek().start_col > 0 ? ts_peek().start_col : 1,
+                         "Se esperaba ',' después de la inicialización del for");
 
+            if (!is_expression_start(ts_peek().type))
+                error_at(ts_peek().line, ts_peek().start_col > 0 ? ts_peek().start_col : 1,
+                         "Se esperaba la condición del for después de la primera ','");
             ASTNode *cond = parse_expression(0);
 
             if (!ts_match(TOK_COMMA))
-                error(t.line, "Se esperaba ',' después de la condición");
+                error_at(ts_peek().line, ts_peek().start_col > 0 ? ts_peek().start_col : 1,
+                         "Se esperaba ',' después de la condición del for");
 
             ASTNode *incr = NULL;
             Token next_tok = ts_peek();
@@ -740,7 +788,7 @@ NodeList parse_block(const char *terminator) {
 
                 if (!ts_match(TOK_THEN)) error_missing_then(t.line, "for");
                 NodeList body = parse_block("fi");
-            if (!ts_match(TOK_FI)) error(t.line, "Se esperaba 'fi'");
+            if (!ts_match(TOK_FI)) error(t.line, "Se esperaba 'fi' para cerrar el for");
 
             stmt = node_create(NODE_FOR, t.line);
             stmt->data.for_stmt.var = strdup(varname);
@@ -780,7 +828,9 @@ NodeList parse_block(const char *terminator) {
             if (func_lookup(stmt->data.func.name) != NULL)
                 error(t.line, "'%s' es una función interna y no puede ser redefinida.", stmt->data.func.name);
 
-            if (!ts_match(TOK_LPAREN)) error(t.line, "Se esperaba '('");
+            if (!ts_match(TOK_LPAREN))
+                error_at(ts_peek().line, ts_peek().start_col > 0 ? ts_peek().start_col : 1,
+                         "Se esperaba '(' después del nombre de la función '%s'", stmt->data.func.name);
             if (!ts_match(TOK_RPAREN)) {
                 do {
                     int ptype = 0;
@@ -790,14 +840,28 @@ NodeList parse_block(const char *terminator) {
                     if (ts_peek().type != TOK_IDENT) error(t.line, "Se esperaba nombre de parámetro");
                     char *pname = clean_var_name(ts_advance().lexeme);
                     validate_var_name(pname, t.line);
+                    for (int i = 0; i < stmt->data.func.param_count; i++) {
+                        if (strcmp(stmt->data.func.params[i], pname) == 0)
+                            error(t.line, "El parámetro '%s' está repetido", pname);
+                    }
                     int pcount = stmt->data.func.param_count;
                     stmt->data.func.params = realloc(stmt->data.func.params, (pcount + 1) * sizeof(char*));
                     stmt->data.func.ptypes = realloc(stmt->data.func.ptypes, (pcount + 1) * sizeof(int));
                     stmt->data.func.params[pcount] = pname;
                     stmt->data.func.ptypes[pcount] = ptype;
                     stmt->data.func.param_count = pcount + 1;
-                } while (ts_match(TOK_COMMA));
-                if (!ts_match(TOK_RPAREN)) error(t.line, "Se esperaba ')'");
+                    Token sep = ts_peek();
+                    if (sep.type != TOK_COMMA && sep.type != TOK_RPAREN)
+                        error_at(sep.line, sep.start_col > 0 ? sep.start_col : 1,
+                                 "Falta ',' entre parámetros de la función '%s'", stmt->data.func.name);
+                } while (ts_match(TOK_COMMA) && ts_peek().type != TOK_RPAREN);
+                if (ts_peek().type == TOK_RPAREN && ts.pos > 0 &&
+                    ts.tokens[ts.pos - 1].type == TOK_COMMA)
+                    error_at(ts_peek().line, ts_peek().start_col,
+                             "No puede haber una coma al final de los parámetros de '%s'", stmt->data.func.name);
+                if (!ts_match(TOK_RPAREN))
+                    error_at(ts_peek().line, ts_peek().start_col > 0 ? ts_peek().start_col : 1,
+                             "Se esperaba ')' para cerrar la declaración de '%s'", stmt->data.func.name);
             }
 
             stmt->data.func.body = parse_block("fi");
@@ -848,6 +912,7 @@ NodeList parse_block(const char *terminator) {
         /* --- BREAK --- */
         if (t.type == TOK_BREAK) {
             ts_advance();
+            require_statement_end("'break'");
             stmt = node_create(NODE_BREAK, t.line);
             nodelist_add(&block, stmt);
             DEBUG_INFO("parse_block: añadido NODE_BREAK en línea %d", stmt->line);
@@ -858,6 +923,7 @@ NodeList parse_block(const char *terminator) {
         /* --- CONTINUE --- */
         if (t.type == TOK_CONTINUE) {
             ts_advance();
+            require_statement_end("'continue'");
             stmt = node_create(NODE_CONTINUE, t.line);
             nodelist_add(&block, stmt);
             DEBUG_INFO("parse_block: añadido NODE_CONTINUE en línea %d", stmt->line);
@@ -874,6 +940,9 @@ NodeList parse_block(const char *terminator) {
                 stmt->data.repeat.portal_name = portal_name;
                 stmt->data.repeat.line_expr = NULL;
             } else if (ts_match(TOK_LINE)) {
+                if (!is_expression_start(ts_peek().type))
+                    error_at(ts_peek().line, ts_peek().start_col > 0 ? ts_peek().start_col : 1,
+                             "Se esperaba una expresión después de 'repeat line'");
                 ASTNode *line_expr = parse_expression(0);
                 stmt = node_create(NODE_REPEAT, t.line);
                 stmt->data.repeat.line_expr = line_expr;
@@ -881,6 +950,7 @@ NodeList parse_block(const char *terminator) {
             } else {
                 error(t.line, "Se esperaba nombre de portal o 'line' después de 'repeat'");
             }
+            require_statement_end("'repeat'");
             nodelist_add(&block, stmt);
             DEBUG_INFO("parse_block: añadido NODE_REPEAT en línea %d", stmt->line);
             ts_skip_newlines();
@@ -910,17 +980,24 @@ NodeList parse_block(const char *terminator) {
                 error(t.line, "Se esperaba nombre o ruta en import");
             }
 
-            if (nt.type == TOK_IDENT && !valid_module_name(module_name))
-                error(t.line, "Nombre de módulo inválido: %s", module_name);
+            if (nt.type == TOK_IDENT && !valid_module_name(module_name)) {
+                free(module_name);
+                error(t.line, "Nombre de módulo inválido: %s", nt.lexeme);
+            }
 
             /* import <módulo/ruta> as <alias> */
             if (ts_peek().type == TOK_IDENT && strcmp(ts_peek().lexeme, "as") == 0) {
                 ts_advance();
-                if (ts_peek().type != TOK_IDENT)
+                if (ts_peek().type != TOK_IDENT) {
+                    free(module_name);
                     error(t.line, "Se esperaba un alias después de 'as'");
+                }
                 module_alias = strdup(ts_advance().lexeme);
-                if (!valid_module_name(module_alias))
-                    error(t.line, "Alias de módulo inválido: %s", module_alias);
+                if (!valid_module_name(module_alias)) {
+                    free(module_name);
+                    free(module_alias);
+                    error(t.line, "Alias de módulo inválido: %s", ts_peek().lexeme);
+                }
             }
 
             TokenStream old_ts = ts;
@@ -938,8 +1015,11 @@ NodeList parse_block(const char *terminator) {
                     int found = 0;
                     const char *home = getenv("HOME");
                     if (home) {
-                        if (asprintf(&path, "%s/.infernal/fire/%s.fire", home, module_name) < 0)
+                        if (asprintf(&path, "%s/.infernal/fire/%s.fire", home, module_name) < 0) {
+                            free(module_name);
+                            free(module_alias);
                             error(t.line, "Memoria insuficiente al construir la ruta local");
+                        }
                         FILE *fp = fopen(path, "r");
                         if (fp) {
                             tokenize_file(fp);
@@ -950,24 +1030,38 @@ NodeList parse_block(const char *terminator) {
                         path = NULL;
                     }
                     if (!found) {
-                        if (asprintf(&path, "/usr/share/infernal/fire/%s.fire", module_name) < 0)
+                        if (asprintf(&path, "/usr/share/infernal/fire/%s.fire", module_name) < 0) {
+                            free(module_name);
+                            free(module_alias);
                             error(t.line, "Memoria insuficiente al construir la ruta global");
+                        }
                         FILE *fp = fopen(path, "r");
                         if (fp) {
                             tokenize_file(fp);
                             fclose(fp);
                             found = 1;
                         } else {
+                            free(path);
+                            free(module_name);
+                            free(module_alias);
                             error(t.line, "No se pudo abrir módulo '%s'", module_name);
                         }
                         free(path);
                     }
                 } else {
-                    if (!safe_module_path(nt.lexeme))
+                    if (!safe_module_path(nt.lexeme)) {
+                        free(module_name);
+                        free(module_alias);
                         error(t.line, "Ruta de módulo inválida o insegura: %s", nt.lexeme);
+                    }
                     path = strdup(nt.lexeme);
                     FILE *fp = fopen(path, "r");
-                    if (!fp) error(t.line, "No se pudo abrir módulo: %s", path);
+                    if (!fp) {
+                        free(path);
+                        free(module_name);
+                        free(module_alias);
+                        error(t.line, "No se pudo abrir módulo: %s", nt.lexeme);
+                    }
                     tokenize_file(fp);
                     fclose(fp);
                     free(path);
@@ -1000,6 +1094,7 @@ NodeList parse_block(const char *terminator) {
             source_line_count = old_source_line_count;
 
             free(module_name);
+            require_statement_end("la instrucción import");
             stmt = node_create(NODE_IMPORT, t.line);
             stmt->data.import.path = NULL;
             stmt->data.import.alias = module_alias;
@@ -1014,7 +1109,7 @@ NodeList parse_block(const char *terminator) {
         if (t.type == TOK_TRY) {
             ts_advance();
             NodeList try_block = parse_block("catch");
-            if (!ts_match(TOK_CATCH)) error(t.line, "Se esperaba 'catch'");
+            if (!ts_match(TOK_CATCH)) error(t.line, "Se esperaba 'catch' para cerrar el bloque 'try'");
             NodeList catch_block = parse_block("fi");
             if (!ts_match(TOK_FI)) error(t.line, "Se esperaba 'fi'");
             stmt = node_create(NODE_TRY, t.line);
@@ -1100,8 +1195,10 @@ NodeList parse_block(const char *terminator) {
                         break;
                     }
 
-                    if (!ts_match(TOK_COMMA))
+                    if (!ts_match(TOK_COMMA)) {
+                        require_statement_end("la declaración");
                         break;
+                    }
 
                     /* El tipado automático (vtype == 0) solo puede declarar una
                      * variable por línea. Las declaraciones múltiples requieren
@@ -1178,8 +1275,10 @@ NodeList parse_block(const char *terminator) {
 
             if (is_cmd)
                 break;
-            if (!ts_match(TOK_COMMA))
+            if (!ts_match(TOK_COMMA)) {
+                require_statement_end("la declaración tipada");
                 break;
+            }
             if (ts_peek().type != TOK_IDENT)
                 error(t.line, "Después de ',' se esperaba otra variable; no se puede cambiar el scope o tipo dentro de la misma línea");
         }
@@ -1213,6 +1312,7 @@ NodeList parse_block(const char *terminator) {
                     if (next_tok.type == TOK_LPAREN) {
                         ts.pos--;
                         ASTNode *expr = parse_expression(0);
+                        require_statement_end("la llamada a función");
                         stmt = node_create(NODE_EXPR_STMT, saved_t.line);
                         stmt->data.expr_stmt.expr = expr;
                         nodelist_add(&block, stmt);
@@ -1233,7 +1333,11 @@ NodeList parse_block(const char *terminator) {
                                 vname = strdup(idx_expr->data.idx.list->data.var.name);
                             }
                             if (!vname) error(saved_t.line, "Lado izquierdo inválido para asignación con índice");
+                            if (!is_expression_start(ts_peek().type))
+                                error_at(ts_peek().line, ts_peek().start_col > 0 ? ts_peek().start_col : 1,
+                                         "Se esperaba un valor después de '=' en la asignación con índice");
                             ASTNode *value = parse_expression(0);
+                            require_statement_end("la asignación con índice");
                             stmt = node_create(NODE_ASSIGN, saved_t.line);
                             stmt->data.assign.name = vname;
                             stmt->data.assign.value = value;
@@ -1248,6 +1352,7 @@ NodeList parse_block(const char *terminator) {
                             ts_skip_newlines();
                             continue;
                         } else {
+                            require_statement_end("la indexación");
                             stmt = node_create(NODE_EXPR_STMT, saved_t.line);
                             stmt->data.expr_stmt.expr = idx_expr;
                             nodelist_add(&block, stmt);
@@ -1311,8 +1416,30 @@ NodeList parse_block(const char *terminator) {
                     }
             }
 
-            /* --- Token no reconocido --- */
-            error(t.line, "Sentencia no reconocida '%s'", t.lexeme);
+            /* --- Diagnósticos de sintaxis de alto nivel --- */
+            if (t.type == TOK_FI)
+                error_at(t.line, t.start_col, "'fi' no tiene un bloque abierto que cerrar aquí");
+            if (t.type == TOK_ELSE || t.type == TOK_ELSEIF)
+                error_at(t.line, t.start_col, "'%s' solo puede aparecer dentro de un 'if'", t.lexeme);
+            if (t.type == TOK_CASE || t.type == TOK_DEFAULT)
+                error_at(t.line, t.start_col, "'%s' solo puede aparecer dentro de un 'switch'", t.lexeme);
+            if (t.type == TOK_CATCH)
+                error_at(t.line, t.start_col, "'catch' solo puede aparecer después de un 'try'");
+            if (t.type == TOK_THEN)
+                error_at(t.line, t.start_col, "'then' necesita una condición anterior y debe cerrar una estructura como 'if', 'while' o 'for'");
+            if (t.type == TOK_RPAREN)
+                error_at(t.line, t.start_col, "')' no tiene un '(' abierto que cerrar aquí");
+            if (t.type == TOK_RBRACKET)
+                error_at(t.line, t.start_col, "']' no tiene un '[' abierto que cerrar aquí");
+            if (t.type == TOK_RBRACE)
+                error_at(t.line, t.start_col, "'}' no tiene un '{' abierto que cerrar aquí");
+            if (t.type == TOK_COMMA)
+                error_at(t.line, t.start_col, "Hay una ',' fuera de una lista, mapa, llamada o declaración múltiple");
+            if (t.type == TOK_SEMI)
+                error_at(t.line, t.start_col, "';' no separa instrucciones en Infernal; usa un salto de línea");
+
+            error_at(t.line, t.start_col > 0 ? t.start_col : 1,
+                      "Sentencia no reconocida '%s'", t.lexeme);
 
             if (stmt) {
                 nodelist_add(&block, stmt);

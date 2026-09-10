@@ -312,6 +312,11 @@ void tokenize_file(FILE *fp) {
                 continue;
             }
 
+            if (*p == '?' && *(p + 1) == '?') {
+                p += 2;
+                continue;
+            }
+
             if ((*p == '$' || *p == '?') && (isalpha(*(p+1)) || *(p+1) == '_')) {
                 char *start = p;
                 p++;

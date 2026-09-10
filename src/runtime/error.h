@@ -11,6 +11,7 @@
 #include <setjmp.h>
 
 void error(int line, const char *fmt, ...);
+void error_at(int line, int column, const char *fmt, ...);
 
 /* Helper para cuando falta 'then' en estructuras de control */
 #define error_missing_then(line, context) \
