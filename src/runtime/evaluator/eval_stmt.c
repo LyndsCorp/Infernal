@@ -484,39 +484,79 @@ void exec_stmt(ASTNode *stmt) {
 
         case NODE_SWITCH: {
             Value selector = eval_expr(stmt->data.switch_stmt.expr);
-            bool matched = false;
 
-            for (int i = 0; i < stmt->data.switch_stmt.case_count && !matched; i++) {
+            /*
+             * Buscar el primer 'case' cuyo valor sea igual al selector.
+             * Nota: aunque el parser exige que cada case termine en
+             * 'break', aquí igualmente implementamos fallthrough estilo C
+             * por robustez; si algún día se relaja la validación, el
+             * runtime ya lo soporta sin cambios.
+             *
+             * Los 'case' con cuerpo vacío no consumen la coincidencia:
+             * siguen buscando hasta encontrar uno con cuerpo, igual que
+             * en C.
+             */
+            int start_idx = -1;
+            for (int i = 0; i < stmt->data.switch_stmt.case_count; i++) {
                 SwitchCase *swcase = &stmt->data.switch_stmt.cases[i];
                 Value case_value = eval_expr(swcase->value);
                 bool equal = switch_values_equal(selector, case_value);
-                value_free(&case_value);   // liberar el valor del caso
-
+                value_free(&case_value);   /* liberar el valor del caso */
                 if (equal) {
-                    matched = true;
-                    if (swcase->body.count > 0) {
-                        exec_block_impl(&swcase->body);
-                        // Si el bloque tenía break, limpiar la bandera
-                        if (control_flow == CF_BREAK) {
-                            control_flow = CF_NONE;
-                        }
-                        // Salir del bucle (ya ejecutamos el primer caso con cuerpo)
-                        break;
-                    }
-                    // Si el caso no tiene cuerpo, seguimos buscando el siguiente caso con cuerpo
-                    // (pero sin evaluar más casos, porque matched ya es true)
+                    start_idx = i;
+                    break;
                 }
             }
 
-            // Si no hubo coincidencia y existe default, ejecutarlo
-            if (!matched && stmt->data.switch_stmt.has_default) {
+            if (start_idx >= 0) {
+                /*
+                 * Ejecutar desde el case que coincidió hacia adelante.
+                 * Cada case termina en 'break' por validación del parser,
+                 * así que en la práctica solo se ejecuta un bloque; pero
+                 * si no hubiera 'break', el siguiente case también se
+                 * ejecutaría (fallthrough).
+                 */
+                bool broke = false;
+                for (int i = start_idx; i < stmt->data.switch_stmt.case_count; i++) {
+                    SwitchCase *swcase = &stmt->data.switch_stmt.cases[i];
+                    if (swcase->body.count > 0) {
+                        exec_block_impl(&swcase->body);
+                    }
+                    if (control_flow == CF_BREAK) {
+                        control_flow = CF_NONE;
+                        broke = true;
+                        break;
+                    }
+                    if (control_flow == CF_RETURN || control_flow == CF_REPEAT_LINE) {
+                        value_free(&selector);
+                        return;
+                    }
+                }
+
+                /* Si no hubo break, caer en default (que es el último bloque). */
+                if (!broke && stmt->data.switch_stmt.has_default) {
+                    exec_block_impl(&stmt->data.switch_stmt.default_block);
+                    if (control_flow == CF_BREAK) {
+                        control_flow = CF_NONE;
+                    }
+                    if (control_flow == CF_RETURN || control_flow == CF_REPEAT_LINE) {
+                        value_free(&selector);
+                        return;
+                    }
+                }
+            } else if (stmt->data.switch_stmt.has_default) {
+                /* Ningún case coincidió: ejecutar default. */
                 exec_block_impl(&stmt->data.switch_stmt.default_block);
                 if (control_flow == CF_BREAK) {
                     control_flow = CF_NONE;
                 }
+                if (control_flow == CF_RETURN || control_flow == CF_REPEAT_LINE) {
+                    value_free(&selector);
+                    return;
+                }
             }
 
-            // Liberar el selector una sola vez
+            /* Liberar el selector una sola vez, al final. */
             value_free(&selector);
             break;
         }

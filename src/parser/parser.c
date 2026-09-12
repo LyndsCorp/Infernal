@@ -257,11 +257,6 @@ static int find_switch_boundary(int start_pos) {
     return -1;
 }
 
-static bool validate_switch_body(const NodeList *body) {
-    if (!body || body->count == 0) return true;
-    return body->stmts[body->count - 1]->kind == NODE_BREAK;
-}
-
 static ASTNode *parse_switch_statement(void) {
     Token t = ts_peek();
     int line = t.line;
@@ -299,11 +294,6 @@ static ASTNode *parse_switch_statement(void) {
             NodeList body = parse_block(NULL);
             ts.tokens[boundary].type = saved_type;
             ts.pos = boundary;
-
-            if (!validate_switch_body(&body)) {
-                nodelist_free(&body);
-                error(head.line, "El case debe terminar con 'break'");
-            }
 
             int n = stmt->data.switch_stmt.case_count;
             SwitchCase *tmp = infernal_realloc(stmt->data.switch_stmt.cases, (size_t)(n + 1) * sizeof(*tmp));
