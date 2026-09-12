@@ -948,17 +948,9 @@ void exec_stmt(ASTNode *stmt) {
             ASTNode *path_node = stmt->data.execute.path_expr;
             Value path_val;
 
-            /*
-             * Un identificador que contiene '/' o '.' es una ruta literal,
-             * no una variable. El lexer permite esos caracteres dentro de
-             * identificadores para que rutas como updater/router.inf se puedan
-             * escribir sin comillas. En tal caso la variable nunca se define y
-             * evaluatearla daría un error engañoso.
-             *
-             * Un nombre de variable válido en Infernal es [A-Za-z_][A-Za-z0-9_]*
-             * (ver validate_var_name en parser.c). Cualquier otra cosa que llegue
-             * aquí como NODE_VAR es una ruta.
-            */
+            /* Un identificador que contiene '/' o '.' es una ruta literal,
+             * no una variable (el lexer permite esos caracteres en identificadores
+             * para escribir rutas sin comillas). */
             bool looks_like_path = false;
             if (path_node && path_node->kind == NODE_VAR) {
                 const char *n = path_node->data.var.name;
@@ -1013,12 +1005,29 @@ void exec_stmt(ASTNode *stmt) {
                 error(stmt->line, "No se pudo abrir el script '%s'", expanded_path);
             }
 
+            /* --- Guardar contexto completo del script padre --- */
             TokenStream saved_ts = ts;
+            char **saved_source_lines = source_lines;
+            int saved_source_line_count = source_line_count;
+            char *saved_source_file = current_source_file;
+
+            /* --- Cambiar contexto al sub-script ---
+             * tokenize_file() libera y reemplaza source_lines, así que hay que
+             * haberlos salvado antes y no dejar que apunten al padre. */
             ts_init();
+            source_lines = NULL;
+            source_line_count = 0;
+            current_source_file = expanded_path;
+
             tokenize_file(fp);
             fclose(fp);
 
             NodeList script_block = parse_block(NULL);
+
+            /* Restaurar el stream de tokens del padre, pero mantener
+             * current_source_file y source_lines apuntando al sub-script
+             * mientras se ejecuta, para que cualquier error de runtime
+             * (incluidos los de un execute anidado) señale el archivo correcto. */
             ts = saved_ts;
 
             Scope *child_scope = scope_new(current_scope, NULL);
@@ -1029,6 +1038,13 @@ void exec_stmt(ASTNode *stmt) {
 
             current_scope = old_scope;
             scope_free(child_scope);
+
+            /* --- Restaurar contexto del padre --- */
+            for (int i = 0; i < source_line_count; i++) free(source_lines[i]);
+            free(source_lines);
+            source_lines = saved_source_lines;
+            source_line_count = saved_source_line_count;
+            current_source_file = saved_source_file;
 
             script_argc = saved_argc;
             script_argv = saved_argv;
