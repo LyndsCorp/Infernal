@@ -978,15 +978,34 @@ void exec_stmt(ASTNode *stmt) {
         }
 
         case NODE_TRY: {
-            jmp_buf saved_env; memcpy(&saved_env, &exception_env, sizeof(jmp_buf));
-            int saved_raised = exception_raised; exception_raised = 0;
+            jmp_buf saved_env;
+            memcpy(&saved_env, &exception_env, sizeof(jmp_buf));
+            int saved_raised = exception_raised;
+            exception_raised = 0;
+
+            /* `caught` se modifica SOLO después de que setjmp retorne por
+             * longjmp, así que su valor es determinista; aun así lo marcamos
+             * volatile por claridad y para evitar optimizaciones agresivas. */
+            volatile bool caught = false;
+
             if (!setjmp(exception_env)) {
                 exec_block_impl(&stmt->data.try_stmt.try_block);
             } else {
+                caught = true;
+            }
+
+            /* CLAVE: restaurar SIEMPRE el environment externo ANTES de ejecutar
+             * el catch. Si un error se produce dentro del catch (por ejemplo
+             * fromfile() sobre un archivo inexistente), el longjmp debe
+             * propagarse hacia fuera, no volver a este mismo setjmp — lo que
+             * produciría un bucle infinito re-ejecutando el catch. */
+            memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
+
+            if (caught) {
                 exception_raised = 0;
                 exec_block_impl(&stmt->data.try_stmt.catch_block);
             }
-            memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
+
             exception_raised = saved_raised;
             if (control_flow == CF_REPEAT_LINE) return;
             break;
