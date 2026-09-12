@@ -30,7 +30,7 @@ extern const char* get_metadata(const char *type);
 static void infernal_internal_signal(int sig) {
     (void)sig;
     static const char msg[] =
-        "Error interno de Infernal: se produjo un fallo durante la ejecución y el proceso no pudo continuar.\n";
+    "Error interno de Infernal: se produjo un fallo durante la ejecución y el proceso no pudo continuar.\n";
     write(STDERR_FILENO, msg, sizeof(msg) - 1);
     _exit(1);
 }
@@ -211,27 +211,42 @@ int main(int argc, char **argv) {
         DEBUG_INFO("Shell ya configurado por --shell, no se cargan configuraciones");
     }
 
+    /* -------------------------------------------------------------------
+     * Leer y tokenizar el archivo del script ANTES de instalar el setjmp.
+     *
+     * tokenize_file() y fclose() NO llaman a error(), así que no hay
+     * longjmp posible en este tramo. De este modo el manejador de errores
+     * no tiene que recordar si el archivo estaba abierto ni cerrar nada:
+     * cuando longjmp nos devuelva el control, `fp` ya no existirá.
+     *
+     * (El bug original era guardar `file_open` en una variable local que
+     * se modificaba después del setjmp. Según C11 §7.13.2.1p3 ese valor
+     * es indeterminado tras el longjmp, y con -O2 el compilador lo dejaba
+     * en `true` → segundo fclose() → double free.)
+     * ----------------------------------------------------------------- */
     FILE *fp = fopen(script_file, "r");
     if (!fp) {
         perror("Error al abrir script");
         free(script_dir);
         return 1;
     }
+    ts_init();
+    tokenize_file(fp);
+    fclose(fp);
+    fp = NULL;
 
+    /* `program` se modifica después del setjmp, así que su valor es
+     * indeterminado si algo lanza longjmp. Por eso NO lo tocamos en la
+     * rama de error: parser_cleanup_on_error() (que es ast_free_all())
+     * libera todos los nodos AST registrados, estén o no colgando de
+     * `program`. */
     NodeList program = {NULL, 0, 0};
-    bool file_open = true;
-    bool parse_complete = false;
 
     if (!setjmp(exception_env)) {
-        ts_init();
-        tokenize_file(fp);
-        fclose(fp);
-        file_open = false;
-
         program = parse_block(NULL);
-        parse_complete = true;
 
-        DEBUG_INFO("main: parse_block devolvió %d sentencias (stmts=%p)", program.count, (void*)program.stmts);
+        DEBUG_INFO("main: parse_block devolvió %d sentencias (stmts=%p)",
+                   program.count, (void*)program.stmts);
 
         /* Ejecutar directamente con el evaluador (más estable que el compilador) */
         if (program.count > 0 && program.stmts != NULL) {
@@ -253,15 +268,12 @@ int main(int argc, char **argv) {
         free(script_dir);
         return 0;
     } else {
-        if (file_open) fclose(fp);
+        /* No usamos `program` aquí: su valor es indeterminado tras el
+         * longjmp. ast_free_all() ya se encarga de liberar todo el AST
+         * registrado, así como los NodeList huérfanos. */
         vm_cleanup_state();
-        if (!parse_complete) {
-            compiler_cleanup_on_error();
-            parser_cleanup_on_error();
-            program = (NodeList){NULL, 0, 0};
-        } else {
-            nodelist_free(&program);
-        }
+        compiler_cleanup_on_error();
+        parser_cleanup_on_error();      /* = ast_free_all() */
         if (ts.tokens) {
             for (int i = 0; i < ts.count; i++) free(ts.tokens[i].lexeme);
             free(ts.tokens); ts.tokens = NULL; ts.count = ts.cap = ts.pos = 0;
