@@ -22,12 +22,13 @@
 #include "developer/debug.h"
 #include "vm/vm.h"
 #include <stdio.h>
-#define MAX_COMMAND_OUTPUT (8u * 1024u * 1024u)
 #include <stdlib.h>
 #include <stdint.h>
 #include <stdarg.h>
 #include <string.h>
 #include <unistd.h>
+
+#define MAX_COMMAND_OUTPUT (8u * 1024u * 1024u)
 
 /* --- Funciones auxiliares de bloque --- */
 void exec_block_impl(NodeList *block) {
