@@ -152,150 +152,152 @@ Value eval_binop(ASTNode *expr) {
         Value right = eval_expr(expr->data.binop.right);
         if (right.type == VAL_REFERENCE)
             right = resolve_reference(right, expr->line);
-        memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
-        exception_raised = saved_raised;
-        DEBUG_INFO("Tipo de right: %d", right.type);
+    memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
+    exception_raised = saved_raised;
+    DEBUG_INFO("Tipo de right: %d", right.type);
 
-        if (expr->data.binop.op == TOK_AND || expr->data.binop.op == TOK_OR) {
-            if (left.type != VAL_BOOL || right.type != VAL_BOOL) {
+    if (expr->data.binop.op == TOK_AND || expr->data.binop.op == TOK_OR) {
+        if (left.type != VAL_BOOL || right.type != VAL_BOOL) {
+            value_free(&left);
+            value_free(&right);
+            error(expr->line, "Los operadores lógicos 'and'/'or' requieren valores bool");
+        }
+
+        bool result = (expr->data.binop.op == TOK_AND)
+        ? (left.data.bval && right.data.bval)
+        : (left.data.bval || right.data.bval);
+        Value result_value = val_bool(result);
+        value_free(&left);
+        value_free(&right);
+        return result_value;
+    }
+
+    if (expr->data.binop.op == TOK_EEQ || expr->data.binop.op == TOK_NEQ) {
+        bool equal = false;
+        if (left.type == right.type) {
+            switch (left.type) {
+                case VAL_NULL:   equal = true; break;
+                case VAL_BOOL:   equal = (left.data.bval == right.data.bval); break;
+                case VAL_INT:    equal = (left.data.ival == right.data.ival); break;
+                case VAL_FLOAT:  equal = (left.data.fval == right.data.fval); break;
+                case VAL_STRING: equal = (strcmp(left.data.sval, right.data.sval) == 0); break;
+                default: equal = false;
+            }
+        }
+        Value result = val_bool(expr->data.binop.op == TOK_EEQ ? equal : !equal);
+        value_free(&left);
+        value_free(&right);
+        return result;
+    }
+
+    if (expr->data.binop.op == TOK_LT_OP || expr->data.binop.op == TOK_GT_OP ||
+        expr->data.binop.op == TOK_LE || expr->data.binop.op == TOK_GE) {
+        double lv = (left.type == VAL_INT) ? left.data.ival : (left.type == VAL_FLOAT) ? left.data.fval : 0.0;
+    double rv = (right.type == VAL_INT) ? right.data.ival : (right.type == VAL_FLOAT) ? right.data.fval : 0.0;
+    bool result = false;
+    switch (expr->data.binop.op) {
+        case TOK_LT_OP: result = (lv < rv); break;
+        case TOK_GT_OP: result = (lv > rv); break;
+        case TOK_LE:    result = (lv <= rv); break;
+        case TOK_GE:    result = (lv >= rv); break;
+        default: break;
+    }
+    Value result_value = val_bool(result);
+    value_free(&left);
+    value_free(&right);
+    return result_value;
+        }
+
+        if (expr->data.binop.op == TOK_POW) {
+            if (left.type == VAL_INT && right.type == VAL_INT && right.data.ival >= 0) {
+                long result = 1;
+                for (long i = 0; i < right.data.ival; i++) result *= left.data.ival;
+                Value result_value = val_int((int)result);
                 value_free(&left);
                 value_free(&right);
-                error(expr->line, "Los operadores lógicos 'and'/'or' requieren valores bool");
+                return result_value;
             }
-
-            bool result = (expr->data.binop.op == TOK_AND)
-                ? (left.data.bval && right.data.bval)
-                : (left.data.bval || right.data.bval);
-            Value result_value = val_bool(result);
+            double lv = (left.type == VAL_INT) ? left.data.ival : left.data.fval;
+            double rv = (right.type == VAL_INT) ? right.data.ival : right.data.fval;
+            Value result_value = val_float(pow(lv, rv));
             value_free(&left);
             value_free(&right);
             return result_value;
         }
 
-        if (expr->data.binop.op == TOK_EEQ || expr->data.binop.op == TOK_NEQ) {
-            bool equal = false;
-            if (left.type == right.type) {
-                switch (left.type) {
-                    case VAL_NULL:   equal = true; break;
-                    case VAL_BOOL:   equal = (left.data.bval == right.data.bval); break;
-                    case VAL_INT:    equal = (left.data.ival == right.data.ival); break;
-                    case VAL_FLOAT:  equal = (left.data.fval == right.data.fval); break;
-                    case VAL_STRING: equal = (strcmp(left.data.sval, right.data.sval) == 0); break;
-                    default: equal = false;
-                }
+        if (left.type == VAL_STRING || right.type == VAL_STRING) {
+            char lbuf[64], rbuf[64];
+            const char *ls = left.type == VAL_STRING ? left.data.sval : lbuf;
+            const char *rs = right.type == VAL_STRING ? right.data.sval : rbuf;
+            if (left.type != VAL_STRING) {
+                if (left.type == VAL_INT)
+                    snprintf(lbuf, sizeof(lbuf), "%d", left.data.ival);
+                else if (left.type == VAL_FLOAT)
+                    snprintf(lbuf, sizeof(lbuf), "%.15g", left.data.fval);
+                else if (left.type == VAL_BOOL)
+                    snprintf(lbuf, sizeof(lbuf), "%s", left.data.bval ? "true" : "false");
+                else if (left.type == VAL_NULL)
+                    snprintf(lbuf, sizeof(lbuf), "null");
+                else
+                    error(expr->line, "No se puede concatenar un valor de tipo %s con un string",
+                          value_type_name(left.type));
             }
-            Value result = val_bool(expr->data.binop.op == TOK_EEQ ? equal : !equal);
+            if (right.type != VAL_STRING) {
+                if (right.type == VAL_INT)
+                    snprintf(rbuf, sizeof(rbuf), "%d", right.data.ival);
+                else if (right.type == VAL_FLOAT)
+                    snprintf(rbuf, sizeof(rbuf), "%.15g", right.data.fval);
+                else if (right.type == VAL_BOOL)
+                    snprintf(rbuf, sizeof(rbuf), "%s", right.data.bval ? "true" : "false");
+                else if (right.type == VAL_NULL)
+                    snprintf(rbuf, sizeof(rbuf), "null");
+                else
+                    error(expr->line, "No se puede concatenar un valor de tipo %s con un string",
+                          value_type_name(right.type));
+            }
+            size_t total = strlen(ls) + strlen(rs) + 1;
+            char *buf = malloc(total);
+            if (!buf) error(expr->line, "Memoria insuficiente al concatenar cadenas");
+            snprintf(buf, total, "%s%s", ls, rs);
+            Value result = val_string(buf);
+            free(buf);
             value_free(&left);
             value_free(&right);
             return result;
         }
 
-        if (expr->data.binop.op == TOK_LT_OP || expr->data.binop.op == TOK_GT_OP ||
-            expr->data.binop.op == TOK_LE || expr->data.binop.op == TOK_GE) {
-            double lv = (left.type == VAL_INT) ? left.data.ival : (left.type == VAL_FLOAT) ? left.data.fval : 0.0;
-        double rv = (right.type == VAL_INT) ? right.data.ival : (right.type == VAL_FLOAT) ? right.data.fval : 0.0;
-        bool result = false;
-        switch (expr->data.binop.op) {
-            case TOK_LT_OP: result = (lv < rv); break;
-            case TOK_GT_OP: result = (lv > rv); break;
-            case TOK_LE:    result = (lv <= rv); break;
-            case TOK_GE:    result = (lv >= rv); break;
-            default: break;
-        }
-        Value result_value = val_bool(result);
-        value_free(&left);
-        value_free(&right);
-        return result_value;
-            }
-
-            if (expr->data.binop.op == TOK_POW) {
-                if (left.type == VAL_INT && right.type == VAL_INT && right.data.ival >= 0) {
-                    long result = 1;
-                    for (long i = 0; i < right.data.ival; i++) result *= left.data.ival;
-                    Value result_value = val_int((int)result);
-                    value_free(&left);
-                    value_free(&right);
-                    return result_value;
-                }
-                double lv = (left.type == VAL_INT) ? left.data.ival : left.data.fval;
-                double rv = (right.type == VAL_INT) ? right.data.ival : right.data.fval;
-                Value result_value = val_float(pow(lv, rv));
-                value_free(&left);
-                value_free(&right);
-                return result_value;
-            }
-
-            if (left.type == VAL_STRING || right.type == VAL_STRING) {
-                char lbuf[64], rbuf[64];
-                const char *ls = left.type == VAL_STRING ? left.data.sval : lbuf;
-                const char *rs = right.type == VAL_STRING ? right.data.sval : rbuf;
-                if (left.type != VAL_STRING) {
-                    if (left.type == VAL_INT)
-                        snprintf(lbuf, sizeof(lbuf), "%d", left.data.ival);
-                    else if (left.type == VAL_FLOAT)
-                        snprintf(lbuf, sizeof(lbuf), "%.15g", left.data.fval);
-                    else if (left.type == VAL_BOOL)
-                        snprintf(lbuf, sizeof(lbuf), "%s", left.data.bval ? "true" : "false");
-                    else if (left.type == VAL_NULL)
-                        snprintf(lbuf, sizeof(lbuf), "null");
-                    else
-                        error(expr->line, "No se puede concatenar el tipo %d con string", left.type);
-                }
-                if (right.type != VAL_STRING) {
-                    if (right.type == VAL_INT)
-                        snprintf(rbuf, sizeof(rbuf), "%d", right.data.ival);
-                    else if (right.type == VAL_FLOAT)
-                        snprintf(rbuf, sizeof(rbuf), "%.15g", right.data.fval);
-                    else if (right.type == VAL_BOOL)
-                        snprintf(rbuf, sizeof(rbuf), "%s", right.data.bval ? "true" : "false");
-                    else if (right.type == VAL_NULL)
-                        snprintf(rbuf, sizeof(rbuf), "null");
-                    else
-                        error(expr->line, "No se puede concatenar el tipo %d con string", right.type);
-                }
-                size_t total = strlen(ls) + strlen(rs) + 1;
-                char *buf = malloc(total);
-                if (!buf) error(expr->line, "Memoria insuficiente al concatenar cadenas");
-                snprintf(buf, total, "%s%s", ls, rs);
-                Value result = val_string(buf);
-                free(buf);
-                value_free(&left);
-                value_free(&right);
-                return result;
-            }
-
-            if (left.type == VAL_INT && right.type == VAL_INT) {
-                int lv = left.data.ival, rv = right.data.ival;
-                Value result;
-                switch (expr->data.binop.op) {
-                    case TOK_PLUS:  result = val_int(lv + rv); break;
-                    case TOK_MINUS: result = val_int(lv - rv); break;
-                    case TOK_STAR:  result = val_int(lv * rv); break;
-                    case TOK_SLASH: if (rv == 0) error(expr->line, "División por cero"); result = val_float((double)lv / rv); break;
-                    case TOK_PERCENT: if (rv == 0) error(expr->line, "Módulo por cero"); result = val_int(lv % rv); break;
-                    default: error(expr->line, "Operador no soportado");
-                }
-                value_free(&left);
-                value_free(&right);
-                return result;
-            }
-
-            double lv = (left.type == VAL_INT) ? left.data.ival :
-            (left.type == VAL_FLOAT) ? left.data.fval :
-            (left.type == VAL_BOOL) ? (left.data.bval ? 1.0 : 0.0) : 0.0;
-            double rv = (right.type == VAL_INT) ? right.data.ival :
-            (right.type == VAL_FLOAT) ? right.data.fval :
-            (right.type == VAL_BOOL) ? (right.data.bval ? 1.0 : 0.0) : 0.0;
+        if (left.type == VAL_INT && right.type == VAL_INT) {
+            int lv = left.data.ival, rv = right.data.ival;
             Value result;
             switch (expr->data.binop.op) {
-                case TOK_PLUS: result = val_float(lv + rv); break;
-                case TOK_MINUS: result = val_float(lv - rv); break;
-                case TOK_STAR: result = val_float(lv * rv); break;
-                case TOK_SLASH: if (rv == 0) error(expr->line, "División por cero"); result = val_float(lv / rv); break;
-                case TOK_PERCENT: if (rv == 0) error(expr->line, "Módulo por cero"); result = val_float((int)lv % (int)rv); break;
+                case TOK_PLUS:  result = val_int(lv + rv); break;
+                case TOK_MINUS: result = val_int(lv - rv); break;
+                case TOK_STAR:  result = val_int(lv * rv); break;
+                case TOK_SLASH: if (rv == 0) error(expr->line, "División por cero"); result = val_float((double)lv / rv); break;
+                case TOK_PERCENT: if (rv == 0) error(expr->line, "Módulo por cero"); result = val_int(lv % rv); break;
                 default: error(expr->line, "Operador no soportado");
             }
             value_free(&left);
             value_free(&right);
             return result;
+        }
+
+        double lv = (left.type == VAL_INT) ? left.data.ival :
+        (left.type == VAL_FLOAT) ? left.data.fval :
+        (left.type == VAL_BOOL) ? (left.data.bval ? 1.0 : 0.0) : 0.0;
+        double rv = (right.type == VAL_INT) ? right.data.ival :
+        (right.type == VAL_FLOAT) ? right.data.fval :
+        (right.type == VAL_BOOL) ? (right.data.bval ? 1.0 : 0.0) : 0.0;
+        Value result;
+        switch (expr->data.binop.op) {
+            case TOK_PLUS: result = val_float(lv + rv); break;
+            case TOK_MINUS: result = val_float(lv - rv); break;
+            case TOK_STAR: result = val_float(lv * rv); break;
+            case TOK_SLASH: if (rv == 0) error(expr->line, "División por cero"); result = val_float(lv / rv); break;
+            case TOK_PERCENT: if (rv == 0) error(expr->line, "Módulo por cero"); result = val_float((int)lv % (int)rv); break;
+            default: error(expr->line, "Operador no soportado");
+        }
+        value_free(&left);
+        value_free(&right);
+        return result;
 }

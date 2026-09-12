@@ -20,20 +20,6 @@
 #include "vm/vm.h"
 #include "stdlib/output.h"
 
-static const char *value_type_name(int type) {
-    switch (type) {
-        case VAL_INT: return "int";
-        case VAL_FLOAT: return "float";
-        case VAL_BOOL: return "bool";
-        case VAL_STRING: return "string";
-        case VAL_LIST: return "list";
-        case VAL_MAP: return "map";
-        case VAL_NULL: return "null";
-        case VAL_REFERENCE: return "reference";
-        default: return "unknown";
-    }
-}
-
 static void print_var_entry(const VarEntry *entry, const char *indent, int line) {
     printf("%s%s", indent, entry->name);
     if (entry->value.type == VAL_REFERENCE) {

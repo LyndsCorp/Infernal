@@ -41,6 +41,23 @@ const char *type_name(int tok_type) {
     }
 }
 
+/* Nombre legible del tipo de un Value (VAL_INT, VAL_LIST, etc.).
+ * Se usa en mensajes de error para no mostrar números crudos al usuario. */
+const char *value_type_name(int val_type) {
+    switch (val_type) {
+        case VAL_NULL:      return "null";
+        case VAL_INT:       return "int";
+        case VAL_FLOAT:     return "float";
+        case VAL_BOOL:      return "bool";
+        case VAL_STRING:    return "string";
+        case VAL_LIST:      return "list";
+        case VAL_MAP:       return "map";
+        case VAL_REFERENCE: return "reference";
+        case VAL_PTR:       return "ptr";
+        default:            return "desconocido";
+    }
+}
+
 int get_node_line(ASTNode *node) {
     if (!node) return 0;
     if (node->line != 0) return node->line;
