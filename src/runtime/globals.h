@@ -44,7 +44,7 @@ extern int max_loop_iterations;
 /* --- Error y control de flujo ----------------------------- */
 extern jmp_buf exception_env;
 extern int exception_raised;
-extern char exception_msg[512];
+extern char exception_msg[1024];
 extern char **source_lines;
 extern int source_line_count;
 extern int control_flow;

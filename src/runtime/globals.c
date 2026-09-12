@@ -23,7 +23,7 @@ int max_loop_iterations = 10000;
 
 jmp_buf exception_env;
 int exception_raised = 0;
-char exception_msg[512];
+char exception_msg[1024];
 char **source_lines = NULL;
 int source_line_count = 0;
 int control_flow = CF_NONE;
