@@ -200,15 +200,20 @@ static ASTNode *parse_map_literal(int line) {
         return node;
     }
 
-    do {
+    while (1) {
         ts_skip_newlines();
+        if (ts_peek().type == TOK_RBRACKET) {
+            ts_advance();
+            break;
+        }
+
         Token key = ts_peek();
         if (key.type == TOK_EOF) {
             error_at(line, 1,
                      "El list o map empieza aquí, pero nunca se cerró; falta ']' antes del final del archivo");
         }
-        int value_type = 0;
 
+        int value_type = 0;
         if (key.type == TOK_INT || key.type == TOK_FLOAT || key.type == TOK_BOOL ||
             key.type == TOK_STRING || key.type == TOK_LIST || key.type == TOK_MAP) {
             value_type = ts_advance().type;
@@ -216,7 +221,9 @@ static ASTNode *parse_map_literal(int line) {
             }
 
             if (key.type != TOK_IDENT && key.type != TOK_STRING_LITERAL) {
-                error(line, "Se esperaba una clave de mapa (identificador o string)");
+                error_at(key.line, key.start_col > 0 ? key.start_col : 1,
+                         "Se esperaba una clave de mapa (identificador o string), pero apareció '%s'",
+                         key.lexeme);
             }
             if (key.lexeme[0] == '$' || key.lexeme[0] == '?') {
                 error(line, "Los mapas no permiten punteros ni comandos en las claves");
@@ -225,7 +232,8 @@ static ASTNode *parse_map_literal(int line) {
 
             Token eq = ts_peek();
             if (eq.type != TOK_EQ) {
-                error(line, "Se esperaba '=' después de la clave del mapa");
+                error_at(eq.line, eq.start_col > 0 ? eq.start_col : 1,
+                         "Se esperaba '=' después de la clave del mapa");
             }
             if (eq.line != key.line || eq.start_col <= key.end_col) {
                 error(line, "Error de sintaxis en mapa: debe haber al menos un espacio entre la clave y '='");
@@ -236,6 +244,7 @@ static ASTNode *parse_map_literal(int line) {
             if (!key_name) error(line, "Memoria insuficiente para clave de mapa");
 
             ASTNode *value = parse_expression(0);
+
         void *new_pairs = realloc(node->data.map.pairs,
                                   (size_t)(node->data.map.pair_count + 1) * sizeof(*node->data.map.pairs));
         if (!new_pairs) {
@@ -247,11 +256,39 @@ static ASTNode *parse_map_literal(int line) {
         node->data.map.pairs[node->data.map.pair_count].value = value;
         node->data.map.pairs[node->data.map.pair_count].value_type = value_type;
         node->data.map.pair_count++;
-        ts_skip_newlines();
-    } while (ts_match(TOK_COMMA));
 
-    if (!ts_match(TOK_RBRACKET))
-        error(line, "Se esperaba ']' al final del mapa");
+        /* --- Separador: salto de línea, coma, ambos, o directamente ']' ---
+         *
+         *   a = 1
+         *   b = 2          →  salto de línea
+         *
+         *   a = 1, b = 2   →  coma
+         *
+         *   a = 1,
+         *   b = 2          →  coma + salto de línea
+         *
+         *   a = 1,         →  coma final (permitida)
+         *   ]
+         */
+        bool saw_sep = false;
+        while (ts_peek().type == TOK_NEWLINE) { ts_advance(); saw_sep = true; }
+        if (ts_match(TOK_COMMA)) {
+            saw_sep = true;
+            while (ts_peek().type == TOK_NEWLINE) ts_advance();
+        }
+
+        if (ts_peek().type == TOK_RBRACKET) {
+            ts_advance();
+            break;
+        }
+
+        if (!saw_sep) {
+            Token bad = ts_peek();
+            error_at(bad.line, bad.start_col > 0 ? bad.start_col : 1,
+                     "Se esperaba ',', ']' o un salto de línea después del valor del par '%s' del mapa",
+                     key_name);
+        }
+    }
     return node;
 }
 
