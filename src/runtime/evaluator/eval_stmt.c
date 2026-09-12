@@ -945,16 +945,34 @@ void exec_stmt(ASTNode *stmt) {
         }
 
         case NODE_EXECUTE: {
-            Value path_val = eval_expr(stmt->data.execute.path_expr);
-            if (stmt->data.execute.path_expr && stmt->data.execute.path_expr->kind == NODE_VAR) {
-                const char *var_name = stmt->data.execute.path_expr->data.var.name;
-                if (strchr(var_name, '/') != NULL) {
-                    error(stmt->line,
-                          "Uso incorrecto de variable con barra: '%s'. Si intentabas concatenar, usa '+': "
-                          "$%s + '/resto'. La barra '/' directa solo es válida en comandos shell, no en execute.",
-                          var_name, var_name);
+            ASTNode *path_node = stmt->data.execute.path_expr;
+            Value path_val;
+
+            /*
+             * Un identificador que contiene '/' o '.' es una ruta literal,
+             * no una variable. El lexer permite esos caracteres dentro de
+             * identificadores para que rutas como updater/router.inf se puedan
+             * escribir sin comillas. En tal caso la variable nunca se define y
+             * evaluatearla daría un error engañoso.
+             *
+             * Un nombre de variable válido en Infernal es [A-Za-z_][A-Za-z0-9_]*
+             * (ver validate_var_name en parser.c). Cualquier otra cosa que llegue
+             * aquí como NODE_VAR es una ruta.
+            */
+            bool looks_like_path = false;
+            if (path_node && path_node->kind == NODE_VAR) {
+                const char *n = path_node->data.var.name;
+                if (n && (strchr(n, '/') != NULL || strchr(n, '.') != NULL)) {
+                    looks_like_path = true;
                 }
             }
+
+            if (looks_like_path) {
+                path_val = val_string(path_node->data.var.name);
+            } else {
+                path_val = eval_expr(path_node);
+            }
+
             if (path_val.type != VAL_STRING) {
                 error(stmt->line, "La ruta del script debe ser una cadena");
             }
