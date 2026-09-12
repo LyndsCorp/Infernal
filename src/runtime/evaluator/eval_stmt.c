@@ -160,140 +160,164 @@ void exec_stmt(ASTNode *stmt) {
                 if (bare_func && bare_func->kind == FUNC_BUILTIN &&
                     strpbrk(expanded_cmd, " \t\r\n") == NULL) {
                     val = bare_func->builtin(0, NULL);
-                    free(expanded_cmd);
-                    goto assign_value;
-                }
+                free(expanded_cmd);
+                goto assign_value;
+                    }
 
-                // Determinar si es un comando embebido (entre !!)
-                int is_embedded = (expanded_cmd[0] == '!' && expanded_cmd[strlen(expanded_cmd)-1] == '!');
+                    // Determinar si es un comando embebido (entre !!)
+                    int is_embedded = (expanded_cmd[0] == '!' && expanded_cmd[strlen(expanded_cmd)-1] == '!');
 
-                char *cmd_with_redir = NULL;
-                if (is_embedded) {
-                    // Los embebidos no se ejecutan a través del shell, no podemos redirigir con 2>&1
-                    cmd_with_redir = strdup(expanded_cmd);
-                } else {
-                    // Redirigir stderr según el tipo de la variable
+                    char *cmd_with_redir = NULL;
+                    if (is_embedded) {
+                        // Los embebidos no se ejecutan a través del shell, no podemos redirigir con 2>&1
+                        cmd_with_redir = strdup(expanded_cmd);
+                    } else {
+                        // Redirigir stderr según el tipo de la variable
+                        if (stmt->data.assign.vtype == TOK_BOOL) {
+                            // Para booleanos: queremos silenciar completamente la salida
+                            asprintf(&cmd_with_redir, "%s 2>/dev/null", expanded_cmd);
+                        } else {
+                            // Para otros tipos: capturamos también stderr (2>&1) para que no llegue a la terminal
+                            asprintf(&cmd_with_redir, "%s 2>&1", expanded_cmd);
+                        }
+                    }
+                    free(expanded_cmd);  // ya no necesitamos el original
+
+                    if (!cmd_with_redir) {
+                        error(stmt->line, "Memoria insuficiente para redirigir comando");
+                    }
+
+                    FILE *fp = NULL;
+                    char *temp_path = NULL;
+
+                    if (is_embedded) {
+                        // Los embebidos se manejan con popen_embedded_with_path
+                        char *trimmed = strdup(cmd_with_redir + 1);
+                        trimmed[strlen(trimmed)-1] = '\0';
+                        fp = popen_embedded_with_path(trimmed, "r", &temp_path);
+                        free(trimmed);
+                    } else {
+                        fp = popen(cmd_with_redir, "r");
+                    }
+
+                    free(cmd_with_redir);  // ya podemos liberar la cadena con redirección
+
+                    if (!fp) {
+                        error(stmt->line, "Error al ejecutar comando: %s", cmd);
+                    }
+
+                    // Si es booleano, solo nos interesa el código de salida
                     if (stmt->data.assign.vtype == TOK_BOOL) {
-                        // Para booleanos: queremos silenciar completamente la salida
-                        asprintf(&cmd_with_redir, "%s 2>/dev/null", expanded_cmd);
+                        char buf[1024];
+                        while (fgets(buf, sizeof(buf), fp) != NULL) {} // descartar salida
+                        int status = pclose(fp);
+                        if (WIFEXITED(status)) {
+                            exit_code = WEXITSTATUS(status);
+                        } else {
+                            exit_code = -1;
+                        }
+                        if (temp_path) {
+                            unlink(temp_path);
+                            free(temp_path);
+                        }
+                        val = val_bool(exit_code == 0);
                     } else {
-                        // Para otros tipos: capturamos también stderr (2>&1) para que no llegue a la terminal
-                        asprintf(&cmd_with_redir, "%s 2>&1", expanded_cmd);
-                    }
-                }
-                free(expanded_cmd);  // ya no necesitamos el original
-
-                if (!cmd_with_redir) {
-                    error(stmt->line, "Memoria insuficiente para redirigir comando");
-                }
-
-                FILE *fp = NULL;
-                char *temp_path = NULL;
-
-                if (is_embedded) {
-                    // Los embebidos se manejan con popen_embedded_with_path
-                    char *trimmed = strdup(cmd_with_redir + 1);
-                    trimmed[strlen(trimmed)-1] = '\0';
-                    fp = popen_embedded_with_path(trimmed, "r", &temp_path);
-                    free(trimmed);
-                } else {
-                    fp = popen(cmd_with_redir, "r");
-                }
-
-                free(cmd_with_redir);  // ya podemos liberar la cadena con redirección
-
-                if (!fp) {
-                    error(stmt->line, "Error al ejecutar comando: %s", cmd);
-                }
-
-                // Si es booleano, solo nos interesa el código de salida
-                if (stmt->data.assign.vtype == TOK_BOOL) {
-                    char buf[1024];
-                    while (fgets(buf, sizeof(buf), fp) != NULL) {} // descartar salida
-                    int status = pclose(fp);
-                    if (WIFEXITED(status)) {
-                        exit_code = WEXITSTATUS(status);
-                    } else {
-                        exit_code = -1;
-                    }
-                    if (temp_path) {
-                        unlink(temp_path);
-                        free(temp_path);
-                    }
-                    val = val_bool(exit_code == 0);
-                } else {
-                    // Para otros tipos: capturar la salida (incluyendo stderr si se redirigió)
-                    char buf[4096];
-                    char *out = strdup("");
-                    if (!out) {
-                        pclose(fp);
-                        if (temp_path) { unlink(temp_path); free(temp_path); }
-                        error(stmt->line, "Memoria insuficiente para capturar salida");
-                    }
-                    while (fgets(buf, sizeof(buf), fp)) {
-                        size_t old_len = strlen(out);
-                        size_t add_len = strlen(buf);
-                        if (old_len > MAX_COMMAND_OUTPUT || add_len > MAX_COMMAND_OUTPUT - old_len - 1) {
-                            free(out);
+                        // Para otros tipos: capturar la salida (incluyendo stderr si se redirigió)
+                        char buf[4096];
+                        char *out = strdup("");
+                        if (!out) {
                             pclose(fp);
                             if (temp_path) { unlink(temp_path); free(temp_path); }
-                            error(stmt->line, "Salida de comando demasiado grande");
+                            error(stmt->line, "Memoria insuficiente para capturar salida");
                         }
-                        char *tmp_out = realloc(out, old_len + add_len + 1);
-                        if (!tmp_out) {
-                            free(out);
-                            pclose(fp);
-                            if (temp_path) { unlink(temp_path); free(temp_path); }
-                            error(stmt->line, "Memoria insuficiente para salida de comando");
+                        while (fgets(buf, sizeof(buf), fp)) {
+                            size_t old_len = strlen(out);
+                            size_t add_len = strlen(buf);
+                            if (old_len > MAX_COMMAND_OUTPUT || add_len > MAX_COMMAND_OUTPUT - old_len - 1) {
+                                free(out);
+                                pclose(fp);
+                                if (temp_path) { unlink(temp_path); free(temp_path); }
+                                error(stmt->line, "Salida de comando demasiado grande");
+                            }
+                            char *tmp_out = realloc(out, old_len + add_len + 1);
+                            if (!tmp_out) {
+                                free(out);
+                                pclose(fp);
+                                if (temp_path) { unlink(temp_path); free(temp_path); }
+                                error(stmt->line, "Memoria insuficiente para salida de comando");
+                            }
+                            out = tmp_out;
+                            memcpy(out + old_len, buf, add_len + 1);
                         }
-                        out = tmp_out;
-                        memcpy(out + old_len, buf, add_len + 1);
-                    }
-                    int status = pclose(fp);
-                    if (status != 0 && status != -1) {
-                        /* Si el comando tiene el mismo nombre que una variable accesible,
-                         * casi seguro que el usuario quería usar su valor. En este punto
-                         * ya sabemos que se intentó ejecutar como comando y falló. */
-                        VarEntry *same_name = scope_find(current_scope, cmd);
-                        if (same_name && strpbrk(cmd, " \t\r\n") == NULL) {
-                            free(out);
-                            error(stmt->line,
-                                  "Se ejecutó un comando que falló que tiene el mismo nombre que una variable. "
-                                  "Quizás querías obtener su valor. Para eso utiliza $ antes de la variable para clonar su valor. "
-                                  "El $ también representa que vas a trabajar con variables en lugar de comandos, "
-                                  "así que no necesitarás más $ en las siguientes variables de la línea.");
-                        }
-                    }
-                    if (temp_path) {
-                        unlink(temp_path);
-                        free(temp_path);
-                    }
-                    // Quitar salto de línea final
-                    size_t len = strlen(out);
-                    if (len > 0 && out[len-1] == '\n') out[len-1] = '\0';
+                        int status = pclose(fp);
 
-                    // Asignar según el tipo esperado
-                    if (stmt->data.assign.vtype == TOK_LIST) {
-                        Value list = val_list_empty();
-                        char *dup = strdup(out);
-                        char *saveptr;
-                        char *line = strtok_r(dup, "\n", &saveptr);
-                        while (line) {
-                            val_list_append(&list, val_string(line));
-                            line = strtok_r(NULL, "\n", &saveptr);
+                        if (status != 0 && status != -1) {
+                            int code = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+                            bool simple_name = (strpbrk(cmd, " \t\r\n") == NULL);
+
+                            if (simple_name) {
+                                /* Si el comando tiene el mismo nombre que una variable accesible,
+                                 * casi seguro que el usuario quería usar su valor. */
+                                VarEntry *same_name = scope_find(current_scope, cmd);
+                                if (same_name) {
+                                    free(out);
+                                    if (temp_path) { unlink(temp_path); free(temp_path); }
+                                    error(stmt->line,
+                                          "Se ejecutó un comando que falló y que tiene el mismo nombre que una variable. "
+                                          "Quizás querías obtener su valor. Usa '$%s' para clonar su valor. "
+                                          "El '$' también representa que vas a trabajar con variables en lugar de comandos.",
+                                          cmd);
+                                }
+
+                                /* Comando simple que no existe: error de comando no encontrado.
+                                 * Esto hace que el intérprete salga con código 1 en lugar de
+                                 * asignar el mensaje de error del shell a la variable. */
+                                if (code == 127) {
+                                    free(out);
+                                    if (temp_path) { unlink(temp_path); free(temp_path); }
+                                    error(stmt->line, "Comando no encontrado: '%s'", cmd);
+                                }
+
+                                /* Cualquier otro fallo de un comando simple también es error. */
+                                free(out);
+                                if (temp_path) { unlink(temp_path); free(temp_path); }
+                                error(stmt->line, "El comando '%s' falló (código de salida %d)", cmd, code);
+                            }
+
+                            /* Los comandos con argumentos (por ejemplo 'ls archivo_inexistente')
+                             * pueden fallar sin abortar el script; su salida y código de salida
+                             * quedan reflejados en el valor capturado, como antes. */
                         }
-                        free(dup);
-                        free(out);
-                        val = list;
-                    } else {
-                        // Para int, float, string, etc. se asigna como string (luego se convertirá)
-                        val = val_string(out);
-                        free(out);
+
+                        if (temp_path) {
+                            unlink(temp_path);
+                            free(temp_path);
+                        }
+                        // Quitar salto de línea final
+                        size_t len = strlen(out);
+                        if (len > 0 && out[len-1] == '\n') out[len-1] = '\0';
+
+                        // Asignar según el tipo esperado
+                        if (stmt->data.assign.vtype == TOK_LIST) {
+                            Value list = val_list_empty();
+                            char *dup = strdup(out);
+                            char *saveptr;
+                            char *line = strtok_r(dup, "\n", &saveptr);
+                            while (line) {
+                                val_list_append(&list, val_string(line));
+                                line = strtok_r(NULL, "\n", &saveptr);
+                            }
+                            free(dup);
+                            free(out);
+                            val = list;
+                        } else {
+                            // Para int, float, string, etc. se asigna como string (luego se convertirá)
+                            val = val_string(out);
+                            free(out);
+                        }
                     }
-                }
             } else {
                 // Asignación normal (no comando)
-                // ... (el código existente para asignaciones normales, sin cambios)
                 if (stmt->data.assign.value != NULL && stmt->data.assign.lhs_index) {
                     // Asignación con índice (ej: lista[2] = 5)
                     VarEntry *var = scope_find(current_scope, stmt->data.assign.name);
@@ -336,7 +360,7 @@ void exec_stmt(ASTNode *stmt) {
                     val = val_map_empty();
             }
 
-assign_value:
+            assign_value:
             // --- Conversión de tipos (si hay tipo fijo) ---
             int vtype = stmt->data.assign.vtype;
 
@@ -423,38 +447,38 @@ assign_value:
             if (value_node && value_node->kind == NODE_UNARY &&
                 value_node->data.unary.op == TOK_NOT) {
                 negate = true;
-                value_node = value_node->data.unary.operand;
-            }
-
-            if (value_node && value_node->kind == NODE_VAR) {
-                const char *name = value_node->data.var.name;
-                if (name[0] == '$' || name[0] == '?') name++;
-
-                VarEntry *entry = scope_find(current_scope, name);
-                if (!entry) {
-                    /* Una variable inexistente es false en una condición. */
-                    truthy = false;
-                } else if (entry->value.type == VAL_BOOL) {
-                    /* Los bool conservan su valor real. */
-                    truthy = entry->value.data.bval;
-                } else {
-                    /* Para cualquier otro tipo, existir ya implica true. */
-                    truthy = true;
+            value_node = value_node->data.unary.operand;
                 }
 
-                if (negate) truthy = !truthy;
-            } else {
-                Value cond = eval_expr(cond_node);
-                truthy = val_is_truthy(cond);
-                value_free(&cond);
-            }
+                if (value_node && value_node->kind == NODE_VAR) {
+                    const char *name = value_node->data.var.name;
+                    if (name[0] == '$' || name[0] == '?') name++;
 
-            if (truthy) {
-                exec_block_impl(&stmt->data.if_stmt.then_block);
-            } else {
-                exec_block_impl(&stmt->data.if_stmt.else_block);
-            }
-            break;
+                    VarEntry *entry = scope_find(current_scope, name);
+                    if (!entry) {
+                        /* Una variable inexistente es false en una condición. */
+                        truthy = false;
+                    } else if (entry->value.type == VAL_BOOL) {
+                        /* Los bool conservan su valor real. */
+                        truthy = entry->value.data.bval;
+                    } else {
+                        /* Para cualquier otro tipo, existir ya implica true. */
+                        truthy = true;
+                    }
+
+                    if (negate) truthy = !truthy;
+                } else {
+                    Value cond = eval_expr(cond_node);
+                    truthy = val_is_truthy(cond);
+                    value_free(&cond);
+                }
+
+                if (truthy) {
+                    exec_block_impl(&stmt->data.if_stmt.then_block);
+                } else {
+                    exec_block_impl(&stmt->data.if_stmt.else_block);
+                }
+                break;
         }
 
         case NODE_SWITCH: {

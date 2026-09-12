@@ -6,6 +6,7 @@
 */
 
 #include <string.h>
+#include <strings.h>
 #include "keywords.h"
 
 TokenType lookup_keyword(const char *lexeme) {
@@ -50,9 +51,9 @@ TokenType lookup_keyword(const char *lexeme) {
     if (strcmp(lexeme, "list") == 0) return TOK_LIST;
     if (strcmp(lexeme, "map") == 0) return TOK_MAP;
 
-    // Booleanos
-    if (strcmp(lexeme, "true") == 0) return TOK_TRUE;
-    if (strcmp(lexeme, "false") == 0) return TOK_FALSE;
+    // Booleanos: aceptar true/True/TRUE y false/False/FALSE
+    if (strcasecmp(lexeme, "true") == 0) return TOK_TRUE;
+    if (strcasecmp(lexeme, "false") == 0) return TOK_FALSE;
 
     // Scopes para variables
     if (strcmp(lexeme, "local") == 0) return TOK_LOCAL;
