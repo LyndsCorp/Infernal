@@ -161,15 +161,6 @@ void tokenize_file(FILE *fp) {
                 ts_add(t); p += 2; continue;
             }
 
-            // Operadores de dos caracteres existentes
-            if (*p == '&' && *(p+1) == '&') {
-                Token t = {TOK_AND, strdup("&&"), lineno, start_col, start_col + 2};
-                ts_add(t); p += 2; continue;
-            }
-            if (*p == '|' && *(p+1) == '|') {
-                Token t = {TOK_OR, strdup("||"), lineno, start_col, start_col + 2};
-                ts_add(t); p += 2; continue;
-            }
             if (*p == '=' && *(p+1) == '=') {
                 Token t = {TOK_EEQ, strdup("=="), lineno, start_col, start_col + 2};
                 ts_add(t); p += 2; continue;
@@ -178,7 +169,7 @@ void tokenize_file(FILE *fp) {
                 Token t = {TOK_NEQ, strdup("!="), lineno, start_col, start_col + 2};
                 ts_add(t); p += 2; continue;
             }
-            // CORRECCIÓN: <= debe ser '<' seguido de '=', no '<' seguido de '<'
+
             if (*p == '<' && *(p+1) == '=') {
                 Token t = {TOK_LE, strdup("<="), lineno, start_col, start_col + 2};
                 ts_add(t); p += 2; continue;
