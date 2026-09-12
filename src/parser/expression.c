@@ -212,30 +212,30 @@ static ASTNode *parse_map_literal(int line) {
         if (key.type == TOK_INT || key.type == TOK_FLOAT || key.type == TOK_BOOL ||
             key.type == TOK_STRING || key.type == TOK_LIST || key.type == TOK_MAP) {
             value_type = ts_advance().type;
-            key = ts_peek();
-        }
+        key = ts_peek();
+            }
 
-        if (key.type != TOK_IDENT && key.type != TOK_STRING_LITERAL) {
-            error(line, "Se esperaba una clave de mapa (identificador o string)");
-        }
-        if (key.lexeme[0] == '$' || key.lexeme[0] == '?') {
-            error(line, "Los mapas no permiten punteros ni comandos en las claves");
-        }
-        ts_advance();
+            if (key.type != TOK_IDENT && key.type != TOK_STRING_LITERAL) {
+                error(line, "Se esperaba una clave de mapa (identificador o string)");
+            }
+            if (key.lexeme[0] == '$' || key.lexeme[0] == '?') {
+                error(line, "Los mapas no permiten punteros ni comandos en las claves");
+            }
+            ts_advance();
 
-        Token eq = ts_peek();
-        if (eq.type != TOK_EQ) {
-            error(line, "Se esperaba '=' después de la clave del mapa");
-        }
-        if (eq.line != key.line || eq.start_col <= key.end_col) {
-            error(line, "Error de sintaxis en mapa: debe haber al menos un espacio entre la clave y '='");
-        }
-        ts_advance();
+            Token eq = ts_peek();
+            if (eq.type != TOK_EQ) {
+                error(line, "Se esperaba '=' después de la clave del mapa");
+            }
+            if (eq.line != key.line || eq.start_col <= key.end_col) {
+                error(line, "Error de sintaxis en mapa: debe haber al menos un espacio entre la clave y '='");
+            }
+            ts_advance();
 
-        char *key_name = strdup(key.lexeme);
-        if (!key_name) error(line, "Memoria insuficiente para clave de mapa");
+            char *key_name = strdup(key.lexeme);
+            if (!key_name) error(line, "Memoria insuficiente para clave de mapa");
 
-        ASTNode *value = parse_expression(0);
+            ASTNode *value = parse_expression(0);
         void *new_pairs = realloc(node->data.map.pairs,
                                   (size_t)(node->data.map.pair_count + 1) * sizeof(*node->data.map.pairs));
         if (!new_pairs) {
@@ -363,10 +363,10 @@ ASTNode *parse_primary() {
                     ts.pos > 0 && ts.tokens[ts.pos - 1].type == TOK_COMMA) {
                     error_at(ts_peek().line, ts_peek().start_col,
                              "No puede haber una coma al final de los argumentos de '%s'", func_name);
-                }
-                if (!ts_match(TOK_RPAREN))
-                    error_at(ts_peek().line, ts_peek().start_col,
-                             "Se esperaba ')' para cerrar la llamada a '%s'", func_name);
+                    }
+                    if (!ts_match(TOK_RPAREN))
+                        error_at(ts_peek().line, ts_peek().start_col,
+                                 "Se esperaba ')' para cerrar la llamada a '%s'", func_name);
             }
             return n;
         } else {
@@ -469,8 +469,8 @@ ASTNode *parse_primary() {
                         ts.tokens[ts.pos - 1].type == TOK_COMMA) {
                         error_at(ts_peek().line, ts_peek().start_col,
                                  "No puede haber una coma al final de la lista");
-                    }
-                    ts_skip_newlines();
+                        }
+                        ts_skip_newlines();
                     if (!ts_match(TOK_RBRACKET)) {
                         Token at = ts_peek();
                         if (at.type == TOK_EOF) {
@@ -598,26 +598,50 @@ static ASTNode *parse_expr() {
         DEBUG_INFO("parse_expr: operador '%s', siguiente token: '%s' (tipo %d)", op.lexeme, ts_peek().lexeme, ts_peek().type);
 
         if (op.type == TOK_MINUS && ts_peek().type == TOK_LBRACKET) {
-            DEBUG_INFO("parse_expr: detectado '- [' -> slice");
-            ts_advance();
-            ASTNode *slice = parse_slice_content(op.line);
-            slice->data.slice.list = left;
-            ASTNode *n = node_create(NODE_BINOP, op.line);
-            n->data.binop.op = TOK_MINUS;
-            n->data.binop.left = left;
-            n->data.binop.right = slice;
-            left = n;
-            DEBUG_INFO("parse_expr: creado NODE_BINOP con NODE_SLICE");
-            break;
-        } else {
-            ASTNode *right = parse_term();
-            ASTNode *n = node_create(NODE_BINOP, op.line);
-            n->data.binop.op = op.type;
-            n->data.binop.left = left;
-            n->data.binop.right = right;
-            left = n;
-            DEBUG_INFO("parse_expr: creado NODE_BINOP normal con operador %d", op.type);
+            /* Distinguir entre un slice real (`$lista - [*]`, `$lista - [2:5]`,
+             * `$lista - [2*]`, `$lista - [*2]`, `$lista - [3]`) y una lista
+             * literal usada como índice de eliminación (`$lista - [i]`,
+             * `$lista - [$n]`).
+             *
+             * Un slice siempre empieza por '*' o por un literal numérico
+             * dentro de los corchetes. Si el contenido empieza por un
+             * identificador, debe interpretarse como lista literal para
+             * que el runtime (`eval_binop.c`) pueda extraer el índice a
+             * eliminar. Sin esta comprobación, `[i]` se intentaba parsear
+             * como slice y fallaba con "Se esperaba '*' o un número". */
+            int look = ts.pos + 1;
+            bool is_slice = false;
+            if (look < ts.count) {
+                TokenType inner = ts.tokens[look].type;
+                if (inner == TOK_STAR || inner == TOK_NUMBER) {
+                    is_slice = true;
+                }
+            }
+
+            if (is_slice) {
+                DEBUG_INFO("parse_expr: detectado '- [' -> slice");
+                ts_advance();
+                ASTNode *slice = parse_slice_content(op.line);
+                slice->data.slice.list = left;
+                ASTNode *n = node_create(NODE_BINOP, op.line);
+                n->data.binop.op = TOK_MINUS;
+                n->data.binop.left = left;
+                n->data.binop.right = slice;
+                left = n;
+                DEBUG_INFO("parse_expr: creado NODE_BINOP con NODE_SLICE");
+                break;
+            }
+            /* No es un slice: caemos al parseo normal y parse_term() se
+             * encargará de construir un NODE_LIST con `[...]`. */
         }
+
+        ASTNode *right = parse_term();
+        ASTNode *n = node_create(NODE_BINOP, op.line);
+        n->data.binop.op = op.type;
+        n->data.binop.left = left;
+        n->data.binop.right = right;
+        left = n;
+        DEBUG_INFO("parse_expr: creado NODE_BINOP normal con operador %d", op.type);
     }
     return left;
 }
