@@ -988,9 +988,9 @@ void exec_stmt(ASTNode *stmt) {
             ASTNode *path_node = stmt->data.execute.path_expr;
             Value path_val;
 
-            /* Un identificador que contiene '/' o '.' es una ruta literal,
-             * no una variable (el lexer permite esos caracteres en identificadores
-             * para escribir rutas sin comillas). */
+            /* Un identificador desnudo que contiene '/' o '.' es una ruta
+             * literal, no una variable (el lexer permite esos caracteres
+             * en identificadores para escribir rutas sin comillas). */
             bool looks_like_path = false;
             if (path_node && path_node->kind == NODE_VAR) {
                 const char *n = path_node->data.var.name;
@@ -1015,6 +1015,39 @@ void exec_stmt(ASTNode *stmt) {
                 error(stmt->line, "Error al expandir la ruta del script");
             }
 
+            /*
+             * Resolver rutas relativas contra el directorio del script que
+             * se está ejecutando, no contra el CWD. Si main.inf (en motor/)
+             * hace execute updater/router.inf, entonces router.inf debe
+             * poder hacer execute verificar_existencia.inf y encontrar el
+             * archivo que está junto a él (motor/updater/).
+             *
+             * Los paths absolutos se usan tal cual.
+             */
+            char *resolved_path = NULL;
+            if (expanded_path[0] != '/') {
+                const char *base = current_source_file;
+                char *base_abs = base ? realpath(base, NULL) : NULL;
+                if (base_abs) {
+                    char *slash = strrchr(base_abs, '/');
+                    if (slash) {
+                        *slash = '\0';
+                        size_t need = strlen(base_abs) + 1 +
+                        strlen(expanded_path) + 1;
+                        resolved_path = malloc(need);
+                        if (!resolved_path) {
+                            free(base_abs);
+                            free(expanded_path);
+                            error(stmt->line, "Memoria insuficiente al resolver la ruta del script");
+                        }
+                        snprintf(resolved_path, need, "%s/%s",
+                                 base_abs, expanded_path);
+                    }
+                    free(base_abs);
+                }
+            }
+            const char *final_path = resolved_path ? resolved_path : expanded_path;
+
             int expanded_argc = stmt->data.execute.argc;
             char **expanded_args = NULL;
             if (expanded_argc > 0) {
@@ -1030,7 +1063,7 @@ void exec_stmt(ASTNode *stmt) {
             int saved_flags_arg_index = flags_arg_index;
 
             char **new_argv = malloc((expanded_argc + 2) * sizeof(char*));
-            new_argv[0] = expanded_path;
+            new_argv[0] = (char*)final_path;
             for (int i = 0; i < expanded_argc; i++) {
                 new_argv[i + 1] = expanded_args[i];
             }
@@ -1040,9 +1073,9 @@ void exec_stmt(ASTNode *stmt) {
             script_argv = new_argv;
             flags_arg_index = 1;
 
-            FILE *fp = fopen(expanded_path, "r");
+            FILE *fp = fopen(final_path, "r");
             if (!fp) {
-                error(stmt->line, "No se pudo abrir el script '%s'", expanded_path);
+                error(stmt->line, "No se pudo abrir el script '%s'", final_path);
             }
 
             /* --- Guardar contexto completo del script padre --- */
@@ -1052,12 +1085,12 @@ void exec_stmt(ASTNode *stmt) {
             char *saved_source_file = current_source_file;
 
             /* --- Cambiar contexto al sub-script ---
-             * tokenize_file() libera y reemplaza source_lines, así que hay que
-             * haberlos salvado antes y no dejar que apunten al padre. */
+             * tokenize_file() libera y reemplaza source_lines, así que hay
+             * que haberlos salvado antes y no dejar que apunten al padre. */
             ts_init();
             source_lines = NULL;
             source_line_count = 0;
-            current_source_file = expanded_path;
+            current_source_file = (char*)final_path;
 
             tokenize_file(fp);
             fclose(fp);
@@ -1067,7 +1100,8 @@ void exec_stmt(ASTNode *stmt) {
             /* Restaurar el stream de tokens del padre, pero mantener
              * current_source_file y source_lines apuntando al sub-script
              * mientras se ejecuta, para que cualquier error de runtime
-             * (incluidos los de un execute anidado) señale el archivo correcto. */
+             * (incluidos los de un execute anidado) señale el archivo
+             * correcto. */
             ts = saved_ts;
 
             Scope *child_scope = scope_new(current_scope, NULL);
@@ -1090,6 +1124,7 @@ void exec_stmt(ASTNode *stmt) {
             script_argv = saved_argv;
             flags_arg_index = saved_flags_arg_index;
 
+            free(resolved_path);
             free(expanded_path);
             for (int i = 0; i < expanded_argc; i++) free(expanded_args[i]);
             free(expanded_args);
