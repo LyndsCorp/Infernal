@@ -251,10 +251,18 @@ void exec_stmt(ASTNode *stmt) {
                     }
                     int status = pclose(fp);
                     if (status != 0 && status != -1) {
-                        // El comando falló, pero aún queremos la salida (si la hay)
-                        // No lanzamos error, simplemente asignamos lo que haya devuelto.
-                        // Opcional: si se quiere lanzar error, descomentar:
-                        // error(stmt->line, "Comando falló: %s", cmd);
+                        /* Si el comando tiene el mismo nombre que una variable accesible,
+                         * casi seguro que el usuario quería usar su valor. En este punto
+                         * ya sabemos que se intentó ejecutar como comando y falló. */
+                        VarEntry *same_name = scope_find(current_scope, cmd);
+                        if (same_name && strpbrk(cmd, " \t\r\n") == NULL) {
+                            free(out);
+                            error(stmt->line,
+                                  "Se ejecutó un comando que falló que tiene el mismo nombre que una variable. "
+                                  "Quizás querías obtener su valor. Para eso utiliza $ antes de la variable para clonar su valor. "
+                                  "El $ también representa que vas a trabajar con variables en lugar de comandos, "
+                                  "así que no necesitarás más $ en las siguientes variables de la línea.");
+                        }
                     }
                     if (temp_path) {
                         unlink(temp_path);

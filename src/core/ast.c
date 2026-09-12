@@ -25,6 +25,10 @@ static NodeListAllocEntry *nodelist_alloc_registry = NULL;
 
 static void nodelist_alloc_add(ASTNode **ptr) {
     if (!ptr) return;
+    /* Evitar entradas duplicadas que provocan dobles free */
+    for (NodeListAllocEntry *entry = nodelist_alloc_registry; entry; entry = entry->next) {
+        if (entry->ptr == ptr) return;
+    }
     NodeListAllocEntry *entry = infernal_malloc(sizeof(*entry));
     if (!entry) return;
     entry->ptr = ptr;
@@ -33,25 +37,45 @@ static void nodelist_alloc_add(ASTNode **ptr) {
 }
 
 static void nodelist_alloc_update(ASTNode **old_ptr, ASTNode **new_ptr) {
+    if (old_ptr == new_ptr) return;
     for (NodeListAllocEntry *entry = nodelist_alloc_registry; entry; entry = entry->next) {
         if (entry->ptr == old_ptr) {
             entry->ptr = new_ptr;
+            /* Si el nuevo puntero ya estaba registrado en otra entrada,
+             * eliminamos la entrada antigua para no dejar duplicados. */
+            for (NodeListAllocEntry *other = nodelist_alloc_registry; other; other = other->next) {
+                if (other != entry && other->ptr == new_ptr) {
+                    /* Quitar esta entrada duplicada de la lista */
+                    NodeListAllocEntry **link = &nodelist_alloc_registry;
+                    while (*link) {
+                        if (*link == other) {
+                            *link = other->next;
+                            free(other);
+                            return;
+                        }
+                        link = &(*link)->next;
+                    }
+                }
+            }
             return;
         }
     }
+    /* El puntero antiguo no estaba registrado: registrar el nuevo. */
     nodelist_alloc_add(new_ptr);
 }
 
 static void nodelist_alloc_remove(ASTNode **ptr) {
+    if (!ptr) return;
     NodeListAllocEntry **link = &nodelist_alloc_registry;
     while (*link) {
         if ((*link)->ptr == ptr) {
             NodeListAllocEntry *entry = *link;
             *link = entry->next;
             free(entry);
-            return;
+            /* No avanzar: puede haber más entradas con el mismo ptr */
+        } else {
+            link = &(*link)->next;
         }
-        link = &(*link)->next;
     }
 }
 
@@ -59,7 +83,10 @@ static void nodelist_alloc_free_orphans(void) {
     while (nodelist_alloc_registry) {
         NodeListAllocEntry *entry = nodelist_alloc_registry;
         nodelist_alloc_registry = entry->next;
-        free(entry->ptr);
+        if (entry->ptr) {
+            free(entry->ptr);
+            entry->ptr = NULL;
+        }
         free(entry);
     }
 }
@@ -183,8 +210,8 @@ static void ast_free_internal(ASTNode *node) {
             free(node->data.func.name);
             for (int i = 0; i < node->data.func.param_count; i++) free(node->data.func.params[i]);
             free(node->data.func.params); free(node->data.func.ptypes);
-            nodelist_free_internal(&node->data.func.body);
-            break;
+        nodelist_free_internal(&node->data.func.body);
+        break;
         case NODE_RETURN: ast_free_internal(node->data.ret.expr); break;
         case NODE_IMPORT: free(node->data.import.path); free(node->data.import.alias); nodelist_free_internal(&node->data.import.module_block); break;
         case NODE_TRY: nodelist_free_internal(&node->data.try_stmt.try_block); nodelist_free_internal(&node->data.try_stmt.catch_block); break;
@@ -195,16 +222,16 @@ static void ast_free_internal(ASTNode *node) {
             free(node->data.call.name);
             for (int i = 0; i < node->data.call.argc; i++) ast_free_internal(node->data.call.args[i]);
             free(node->data.call.args);
-            break;
+        break;
         case NODE_INDEX: ast_free_internal(node->data.idx.list); ast_free_internal(node->data.idx.index); break;
         case NODE_FLAGS:
             for (int i = 0; i < node->data.flags.spec_count; i++) free_flag_spec(&node->data.flags.specs[i]);
             free(node->data.flags.specs);
-            break;
+        break;
         case NODE_LIST:
             for (int i = 0; i < node->data.list_lit.count; i++) ast_free_internal(node->data.list_lit.items[i]);
             free(node->data.list_lit.items);
-            break;
+        break;
         case NODE_FOR_IN: free(node->data.for_in.var); ast_free_internal(node->data.for_in.list_expr); nodelist_free_internal(&node->data.for_in.body); break;
         case NODE_PORTAL: free(node->data.portal.name); break;
         case NODE_REPEAT: ast_free_internal(node->data.repeat.line_expr); free(node->data.repeat.portal_name); break;
@@ -213,7 +240,7 @@ static void ast_free_internal(ASTNode *node) {
             ast_free_internal(node->data.execute.path_expr);
             for (int i = 0; i < node->data.execute.argc; i++) free(node->data.execute.args[i]);
             free(node->data.execute.args);
-            break;
+        break;
         case NODE_MAP:
             for (int i = 0; i < node->data.map.pair_count; i++) {
                 free(node->data.map.pairs[i].key);

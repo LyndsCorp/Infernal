@@ -176,7 +176,12 @@ ASTNode *parse_index_or_slice(int line) {
         node = parse_slice_content(line);
     } else {
         ASTNode *idx = parse_expression(0);
-        if (!ts_match(TOK_RBRACKET)) error(line, "Se esperaba ']'");
+        if (!ts_match(TOK_RBRACKET)) {
+            Token at = ts_peek();
+            if (at.type == TOK_EOF)
+                error_at(line, 1, "El list o map empieza aquí, pero nunca se cerró; falta ']' antes del final del archivo");
+            error_at(at.line, at.start_col > 0 ? at.start_col : 1, "Se esperaba ']' para cerrar el acceso");
+        }
         node = node_create(NODE_INDEX, line);
         node->data.idx.index = idx;
     }
@@ -198,6 +203,10 @@ static ASTNode *parse_map_literal(int line) {
     do {
         ts_skip_newlines();
         Token key = ts_peek();
+        if (key.type == TOK_EOF) {
+            error_at(line, 1,
+                     "El list o map empieza aquí, pero nunca se cerró; falta ']' antes del final del archivo");
+        }
         int value_type = 0;
 
         if (key.type == TOK_INT || key.type == TOK_FLOAT || key.type == TOK_BOOL ||
@@ -401,6 +410,11 @@ ASTNode *parse_primary() {
         int is_map = 0;
 
         Token first = ts_peek();
+        if (first.type == TOK_RBRACKET) {
+            ts_advance();
+            error_at(t.line, t.start_col,
+                     "'[]' es ambiguo: Infernal no sabe si quieres un list o un map. Usa 'list nombre = []' o 'map nombre = []'");
+        }
         if (first.type == TOK_IDENT || first.type == TOK_STRING_LITERAL || first.type == TOK_NUMBER) {
             ts_advance();
             if (ts_peek().type == TOK_EQ) {
@@ -423,14 +437,7 @@ ASTNode *parse_primary() {
             if (is_map) {
                 return parse_map_literal(t.line);
             } else {
-                /* [] no tiene tipo suficiente para decidir entre list y map.
-         * Solo una declaración tipada puede darle el significado correcto. */
-        if (ts_peek().type == TOK_RBRACKET) {
-            error_at(t.line, t.start_col > 0 ? t.start_col : 1,
-                     "'[]' es ambiguo: Infernal no sabe si quieres un list o un map. Usa tipado explícito.");
-        }
-
-        ASTNode *n = node_create(NODE_LIST, t.line);
+                ASTNode *n = node_create(NODE_LIST, t.line);
                 n->data.list_lit.items = NULL;
                 n->data.list_lit.count = 0;
                 if (!ts_match(TOK_RBRACKET)) {
@@ -464,7 +471,14 @@ ASTNode *parse_primary() {
                                  "No puede haber una coma al final de la lista");
                     }
                     ts_skip_newlines();
-                    if (!ts_match(TOK_RBRACKET)) error(t.line, "Se esperaba ']'");
+                    if (!ts_match(TOK_RBRACKET)) {
+                        Token at = ts_peek();
+                        if (at.type == TOK_EOF) {
+                            error_at(t.line, t.start_col,
+                                     "El list o map empieza aquí, pero nunca se cerró; falta ']' antes del final del archivo");
+                        }
+                        error_at(at.line, at.start_col > 0 ? at.start_col : 1, "Se esperaba ']' para cerrar el list");
+                    }
                 }
                 return n;
             }

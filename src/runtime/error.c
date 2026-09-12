@@ -12,7 +12,7 @@
 #include "runtime/globals.h"
 
 static void error_build(int line, int column, const char *fmt, va_list ap) {
-    char base[384];
+    char base[220];
     vsnprintf(base, sizeof(base), fmt, ap);
 
     const char *file = current_source_file ? current_source_file : "<entrada>";
@@ -29,15 +29,15 @@ static void error_build(int line, int column, const char *fmt, va_list ap) {
         marker[spaces] = '^';
         marker[spaces + 1] = '\0';
         snprintf(exception_msg, sizeof(exception_msg),
-                 "Error en '%-.72s', línea %d, columna %d:\n    %-.150s\n    %s\n    %-.210s",
+                 "Error en '%-.64s', línea %d, columna %d:\n    %-.100s\n    %s\n    %-.150s",
                  file, line, column, source, marker, base);
     } else if (source) {
         snprintf(exception_msg, sizeof(exception_msg),
-                 "Error en '%-.72s', línea %d:\n    %-.180s\n    %-.220s",
+                 "Error en '%-.64s', línea %d:\n    %-.120s\n    %-.180s",
                  file, line, source, base);
     } else {
         snprintf(exception_msg, sizeof(exception_msg),
-                 "Error en '%-.72s', línea %d: %-.390s", file, line, base);
+                 "Error en '%-.64s', línea %d: %-.200s", file, line, base);
     }
 
     exception_raised = 1;

@@ -11,6 +11,7 @@
 #include <unistd.h>
 #include <limits.h>
 #include <stdbool.h>
+#include <signal.h>
 #include "core/value.h"
 #include "lexer/lexer.h"
 #include "parser/parser.h"
@@ -25,6 +26,25 @@
 #include "runtime/evaluator/evaluator.h"
 
 extern const char* get_metadata(const char *type);
+
+static void infernal_internal_signal(int sig) {
+    (void)sig;
+    static const char msg[] =
+        "Error interno de Infernal: se produjo un fallo durante la ejecución y el proceso no pudo continuar.\n";
+    write(STDERR_FILENO, msg, sizeof(msg) - 1);
+    _exit(1);
+}
+
+static void install_internal_error_handlers(void) {
+    struct sigaction sa;
+    memset(&sa, 0, sizeof(sa));
+    sigemptyset(&sa.sa_mask);
+    sa.sa_handler = infernal_internal_signal;
+    sigaction(SIGABRT, &sa, NULL);
+    sigaction(SIGSEGV, &sa, NULL);
+    sigaction(SIGBUS, &sa, NULL);
+    sigaction(SIGFPE, &sa, NULL);
+}
 
 void chunk_free(Chunk *ch) {
     if (!ch) return;
@@ -63,6 +83,7 @@ static void cleanup_runtime_state(void) {
 }
 
 int main(int argc, char **argv) {
+    install_internal_error_handlers();
     if (argc < 2) {
         const char *welcome = get_metadata("WELCOME");
         if (welcome) printf("%s\n", welcome);

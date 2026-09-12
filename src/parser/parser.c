@@ -84,40 +84,6 @@ static bool is_expression_start(TokenType type) {
            type == TOK_NOT;
 }
 
-/* [] necesita contexto de tipo. En una declaración explícita, el tipo de la
- * variable resuelve la ambigüedad sin obligar al parser de expresiones a
- * adivinar si se trata de un list o un map. */
-static ASTNode *parse_typed_value(int vtype) {
-    Token t = ts_peek();
-    if (t.type != TOK_LBRACKET || (vtype != TOK_LIST && vtype != TOK_MAP))
-        return parse_expression(0);
-
-    int save_pos = ts.pos;
-    ts_advance();
-    ts_skip_newlines();
-
-    if (ts_peek().type != TOK_RBRACKET) {
-        ts.pos = save_pos;
-        return parse_expression(0);
-    }
-
-    ts_advance();
-    ASTNode *node = node_create(vtype == TOK_MAP ? NODE_MAP : NODE_LIST, t.line);
-    if (!node)
-        error_at(t.line, t.start_col > 0 ? t.start_col : 1,
-                 "No se pudo crear el valor vacío de la variable");
-
-    if (vtype == TOK_MAP) {
-        node->data.map.pairs = NULL;
-        node->data.map.pair_count = 0;
-    } else {
-        node->data.list_lit.items = NULL;
-        node->data.list_lit.count = 0;
-    }
-
-    return node;
-}
-
 static void require_statement_end(const char *what) {
     Token next = ts_peek();
     if (next.type == TOK_NEWLINE || next.type == TOK_EOF || next.type == TOK_THEN || is_block_closer(next.type))
@@ -125,6 +91,28 @@ static void require_statement_end(const char *what) {
     error_at(next.line, next.start_col > 0 ? next.start_col : 1,
              "Sobra '%s' después de %s; quizá falta un operador o un salto de línea",
              next.lexeme, what);
+}
+
+static ASTNode *parse_typed_empty_collection(int vtype, int line) {
+    if (ts_peek().type != TOK_LBRACKET ||
+        ts.pos + 1 >= ts.count || ts.tokens[ts.pos + 1].type != TOK_RBRACKET) {
+        return NULL;
+    }
+
+    if (vtype != TOK_LIST && vtype != TOK_MAP) return NULL;
+
+    ts_advance();
+    ts_advance();
+
+    ASTNode *node = node_create(vtype == TOK_LIST ? NODE_LIST : NODE_MAP, line);
+    if (node->kind == NODE_LIST) {
+        node->data.list_lit.items = NULL;
+        node->data.list_lit.count = 0;
+    } else {
+        node->data.map.pairs = NULL;
+        node->data.map.pair_count = 0;
+    }
+    return node;
 }
 
 static bool valid_module_name(const char *name) {
@@ -439,14 +427,14 @@ ASTNode *parse_assignment_expr(int line) {
         DEBUG_INFO("parse_assignment_expr: valor siguiente '%s' (tipo %d)", next_token.lexeme, next_token.type);
         if (next_token.type == TOK_IDENT && next_token.lexeme[0] != '$' && next_token.lexeme[0] != '?') {
             int save_pos = ts.pos;
-            Token rhs_ident = ts_advance();
+            ts_advance();                 /* consumir el identificador */
             Token next_next = ts_peek();
             ts.pos = save_pos;
 
-            bool rhs_is_command = command_exists(rhs_ident.lexeme) || func_lookup(rhs_ident.lexeme) != NULL;
-
-            if (rhs_is_command &&
-                next_next.type != TOK_LPAREN && next_next.type != TOK_LBRACKET) {
+            /* Un identificador desnudo en el lado derecho de '=' es SIEMPRE
+             * un comando. Solo se exceptúan llamadas a función e indexación.
+             * Para usar el valor de una variable hay que escribir $var. */
+            if (next_next.type != TOK_LPAREN && next_next.type != TOK_LBRACKET) {
                 is_cmd = true;
                 cmd_str = extract_literal_command(line);
                 DEBUG_INFO("parse_assignment_expr: comando detectado: '%s'", cmd_str);
@@ -1075,10 +1063,12 @@ NodeList parse_block(const char *terminator) {
                             fclose(fp);
                             found = 1;
                         } else {
+                            char module_error_name[256];
+                            snprintf(module_error_name, sizeof(module_error_name), "%s", module_name);
                             free(path);
                             free(module_name);
                             free(module_alias);
-                            error(t.line, "No se pudo abrir módulo '%s'", module_name);
+                            error(t.line, "No se pudo abrir módulo '%s'", module_error_name);
                         }
                         free(path);
                     }
@@ -1194,22 +1184,24 @@ NodeList parse_block(const char *terminator) {
                         Token next_token = ts_peek();
                         if (next_token.type == TOK_IDENT && next_token.lexeme[0] != '$' && next_token.lexeme[0] != '?') {
                             int save_pos = ts.pos;
-                            Token rhs_ident = ts_advance();
+                            ts_advance();                 /* consumir el identificador */
                             Token rhs_follow = ts_peek();
                             ts.pos = save_pos;
 
-                            bool rhs_is_command = command_exists(rhs_ident.lexeme) || func_lookup(rhs_ident.lexeme) != NULL;
-
-                            if (rhs_is_command &&
-                                rhs_follow.type != TOK_LPAREN && rhs_follow.type != TOK_LBRACKET) {
+                            /* Un identificador desnudo a la derecha de '=' es
+                             * siempre un comando (excepto llamada o indexación).
+                             * Para usar el valor de una variable hay que usar $var. */
+                            if (rhs_follow.type != TOK_LPAREN && rhs_follow.type != TOK_LBRACKET) {
                                 is_cmd = true;
                                 cmd_str = extract_literal_command(t.line);
                                 while (ts_peek().type != TOK_NEWLINE && ts_peek().type != TOK_EOF) ts_advance();
                             } else {
-                                value = parse_typed_value(vtype);
+                                value = parse_typed_empty_collection(vtype, t.line);
+                                if (!value) value = parse_expression(0);
                             }
                         } else {
-                            value = parse_typed_value(vtype);
+                            value = parse_typed_empty_collection(vtype, t.line);
+                            if (!value) value = parse_expression(0);
                         }
                     }
 
@@ -1276,22 +1268,24 @@ NodeList parse_block(const char *terminator) {
                 Token next_token = ts_peek();
                 if (next_token.type == TOK_IDENT && next_token.lexeme[0] != '$' && next_token.lexeme[0] != '?') {
                     int save_pos = ts.pos;
-                    Token rhs_ident = ts_advance();
+                    ts_advance();                 /* consumir el identificador */
                     Token rhs_follow = ts_peek();
                     ts.pos = save_pos;
 
-                    bool rhs_is_command = command_exists(rhs_ident.lexeme) || func_lookup(rhs_ident.lexeme) != NULL;
-
-                    if (rhs_is_command &&
-                        rhs_follow.type != TOK_LPAREN && rhs_follow.type != TOK_LBRACKET) {
+                    /* Un identificador desnudo a la derecha de '=' es
+                     * siempre un comando (excepto llamada o indexación).
+                     * Para usar el valor de una variable hay que usar $var. */
+                    if (rhs_follow.type != TOK_LPAREN && rhs_follow.type != TOK_LBRACKET) {
                         is_cmd = true;
                         cmd_str = extract_literal_command(t.line);
                         while (ts_peek().type != TOK_NEWLINE && ts_peek().type != TOK_EOF) ts_advance();
                     } else {
-                        value = parse_expression(0);
+                        value = parse_typed_empty_collection(vtype, t.line);
+                        if (!value) value = parse_expression(0);
                     }
                 } else {
-                    value = parse_typed_value(vtype);
+                    value = parse_typed_empty_collection(vtype, t.line);
+                    if (!value) value = parse_expression(0);
                 }
             }
 
