@@ -381,6 +381,28 @@ ASTNode *parse_if_statement() {
     return first_if;
 }
 
+/*
+ * Determina si el token actual es el inicio de una expresión de
+ * post-incremento/decremento (x++ o x--) seguida solo de un salto
+ * de línea o EOF. En tal caso NO es un comando shell, aunque empiece
+ * por un identificador y esté seguido por un token que no sea '(' ni '['.
+ * La posición del parser no se modifica.
+ *
+ * Misma regla que en parse_block: en cuanto hay algo después de ++/--,
+ * se considera un comando (g++ --help, g++ archivo, etc.).
+ */
+static bool rhs_is_post_op(void) {
+    Token t = ts_peek();
+    if (t.type != TOK_IDENT) return false;
+    if (ts.pos + 1 >= ts.count) return false;
+    TokenType incdec = ts.tokens[ts.pos + 1].type;
+    if (incdec != TOK_INC && incdec != TOK_DEC) return false;
+    int after = ts.pos + 2;
+    if (after >= ts.count) return true;
+    TokenType at = ts.tokens[after].type;
+    return at == TOK_NEWLINE || at == TOK_EOF;
+}
+
 ASTNode *parse_assignment_expr(int line) {
     DEBUG_INFO("parse_assignment_expr: ¡LLAMADA! línea %d", line);
     if (ts_peek().type != TOK_IDENT)
@@ -427,9 +449,13 @@ ASTNode *parse_assignment_expr(int line) {
             ts.pos = save_pos;
 
             /* Un identificador desnudo en el lado derecho de '=' es SIEMPRE
-             * un comando. Solo se exceptúan llamadas a función e indexación.
+             * un comando. Se exceptúan:
+             *   - llamadas a función: f(...)
+             *   - indexación:         l[...]
+             *   - post-incremento/decremento sueltos: x++  o  x--
              * Para usar el valor de una variable hay que escribir $var. */
-            if (next_next.type != TOK_LPAREN && next_next.type != TOK_LBRACKET) {
+            bool post_op = rhs_is_post_op();
+            if (!post_op && next_next.type != TOK_LPAREN && next_next.type != TOK_LBRACKET) {
                 is_cmd = true;
                 cmd_str = extract_literal_command(line);
                 DEBUG_INFO("parse_assignment_expr: comando detectado: '%s'", cmd_str);
@@ -1157,7 +1183,7 @@ NodeList parse_block(const char *terminator) {
                 }
 
                 /* Una sola línea puede declarar varias variables, pero todas
-                 *              comparten exactamente el mismo scope y tipo definidos arriba. */
+                 * comparten exactamente el mismo scope y tipo definidos arriba. */
                 while (1) {
                     if (ts_peek().type != TOK_IDENT)
                         error(t.line, "Se esperaba nombre de variable después del tipo o de ','");
@@ -1184,16 +1210,21 @@ NodeList parse_block(const char *terminator) {
                             ts.pos = save_pos;
 
                             /* Un identificador desnudo a la derecha de '=' es
-                             * siempre un comando (excepto llamada o indexación).
+                             * siempre un comando. Se exceptúan:
+                             *   - llamadas a función: f(...)
+                             *   - indexación:         l[...]
+                             *   - post-incremento/decremento sueltos: x++  o  x--
                              * Para usar el valor de una variable hay que usar $var. */
-                            if (rhs_follow.type != TOK_LPAREN && rhs_follow.type != TOK_LBRACKET) {
-                                is_cmd = true;
-                                cmd_str = extract_literal_command(t.line);
-                                while (ts_peek().type != TOK_NEWLINE && ts_peek().type != TOK_EOF) ts_advance();
-                            } else {
-                                value = parse_typed_empty_collection(vtype, t.line);
-                                if (!value) value = parse_expression(0);
-                            }
+                            bool post_op = rhs_is_post_op();                       /* FIX 2 */
+                            if (!post_op && rhs_follow.type != TOK_LPAREN &&
+                                rhs_follow.type != TOK_LBRACKET) {                 /* FIX 2 */
+                                    is_cmd = true;
+                                    cmd_str = extract_literal_command(t.line);
+                                    while (ts_peek().type != TOK_NEWLINE && ts_peek().type != TOK_EOF) ts_advance();
+                                } else {
+                                    value = parse_typed_empty_collection(vtype, t.line);
+                                    if (!value) value = parse_expression(0);
+                                }
                         } else {
                             value = parse_typed_empty_collection(vtype, t.line);
                             if (!value) value = parse_expression(0);
