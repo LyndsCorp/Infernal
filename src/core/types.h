@@ -173,7 +173,12 @@ struct ASTNode {
             struct { ASTNode *list, *index; } idx;
             struct { int mode; FlagSpec *specs; int spec_count; } flags;
             struct { ASTNode **items; int count; } list_lit;
-            struct { char *var; ASTNode *list_expr; NodeList body; } for_in;
+            struct {
+                char *var;         /* variable del valor */
+                char *index_var;   /* variable del índice (opcional, puede ser NULL) */
+                ASTNode *list_expr;
+                NodeList body;
+            } for_in;
             struct { ASTNode *line_expr; char *portal_name; } repeat;
             struct { char *name; bool is_local; } portal;
             struct { ASTNode *list; int mode; int start; int end; } slice;

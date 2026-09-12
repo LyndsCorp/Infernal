@@ -232,7 +232,12 @@ static void ast_free_internal(ASTNode *node) {
             for (int i = 0; i < node->data.list_lit.count; i++) ast_free_internal(node->data.list_lit.items[i]);
             free(node->data.list_lit.items);
         break;
-        case NODE_FOR_IN: free(node->data.for_in.var); ast_free_internal(node->data.for_in.list_expr); nodelist_free_internal(&node->data.for_in.body); break;
+        case NODE_FOR_IN:
+            free(node->data.for_in.var);
+            free(node->data.for_in.index_var);
+            ast_free_internal(node->data.for_in.list_expr);
+            nodelist_free_internal(&node->data.for_in.body);
+            break;
         case NODE_PORTAL: free(node->data.portal.name); break;
         case NODE_REPEAT: ast_free_internal(node->data.repeat.line_expr); free(node->data.repeat.portal_name); break;
         case NODE_SLICE: ast_free_internal(node->data.slice.list); break;

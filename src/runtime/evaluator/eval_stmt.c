@@ -868,6 +868,14 @@ void exec_stmt(ASTNode *stmt) {
 
                 scope_define(iter_scope, stmt->data.for_in.var, 0, item);
 
+                /* Si el usuario escribió 'for i, elemento in ...', definimos
+                 * también la variable del índice en el scope local del bucle.
+                 * Las listas de Infernal son base 1, por lo que se usa i + 1. */
+                if (stmt->data.for_in.index_var) {
+                    scope_define(iter_scope, stmt->data.for_in.index_var,
+                                 TOK_INT, val_int(i + 1));
+                }
+
                 jmp_buf saved_env;
                 memcpy(&saved_env, &exception_env, sizeof(jmp_buf));
                 int saved_raised = exception_raised;

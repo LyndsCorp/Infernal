@@ -73,15 +73,15 @@ static void validate_var_name(const char *name, int line) {
 
 static bool is_block_closer(TokenType type) {
     return type == TOK_FI || type == TOK_ELSE || type == TOK_ELSEIF ||
-           type == TOK_CASE || type == TOK_DEFAULT || type == TOK_CATCH ||
-           type == TOK_EOF;
+    type == TOK_CASE || type == TOK_DEFAULT || type == TOK_CATCH ||
+    type == TOK_EOF;
 }
 
 static bool is_expression_start(TokenType type) {
     return type == TOK_NUMBER || type == TOK_STRING_LITERAL || type == TOK_TRUE ||
-           type == TOK_FALSE || type == TOK_IDENT || type == TOK_LBRACKET ||
-           type == TOK_LBRACE || type == TOK_LPAREN || type == TOK_MINUS ||
-           type == TOK_NOT;
+    type == TOK_FALSE || type == TOK_IDENT || type == TOK_LBRACKET ||
+    type == TOK_LBRACE || type == TOK_LPAREN || type == TOK_MINUS ||
+    type == TOK_NOT;
 }
 
 static void require_statement_end(const char *what) {
@@ -97,11 +97,11 @@ static ASTNode *parse_typed_empty_collection(int vtype, int line) {
     if (ts_peek().type != TOK_LBRACKET ||
         ts.pos + 1 >= ts.count || ts.tokens[ts.pos + 1].type != TOK_RBRACKET) {
         return NULL;
-    }
+        }
 
-    if (vtype != TOK_LIST && vtype != TOK_MAP) return NULL;
+        if (vtype != TOK_LIST && vtype != TOK_MAP) return NULL;
 
-    ts_advance();
+        ts_advance();
     ts_advance();
 
     ASTNode *node = node_create(vtype == TOK_LIST ? NODE_LIST : NODE_MAP, line);
@@ -348,7 +348,7 @@ ASTNode *parse_if_statement() {
     if (!is_expression_start(ts_peek().type))
         error_at(ts_peek().line, ts_peek().start_col > 0 ? ts_peek().start_col : 1,
                  "Se esperaba una condición después de 'if'");
-    ASTNode *cond = parse_expression(0);
+        ASTNode *cond = parse_expression(0);
     if (!ts_match(TOK_THEN)) error_missing_then(line, "if");
     NodeList then_block = parse_block("fi");
     ASTNode *first_if = node_create(NODE_IF, line);
@@ -361,7 +361,7 @@ ASTNode *parse_if_statement() {
         if (!is_expression_start(ts_peek().type))
             error_at(ts_peek().line, ts_peek().start_col > 0 ? ts_peek().start_col : 1,
                      "Se esperaba una condición después de 'elseif'");
-        ASTNode *elseif_cond = parse_expression(0);
+            ASTNode *elseif_cond = parse_expression(0);
         if (!ts_match(TOK_THEN)) error_missing_then(line, "elseif");
         NodeList elseif_then = parse_block("fi");
         ASTNode *elseif_node = node_create(NODE_IF, line);
@@ -409,7 +409,7 @@ ASTNode *parse_assignment_expr(int line) {
         error_at(ts_peek().line, ts_peek().start_col > 0 ? ts_peek().start_col : 1,
                  "Se esperaba una variable en la asignación");
 
-    Token var_tok = ts_advance();
+        Token var_tok = ts_advance();
     char *varname = clean_var_name(var_tok.lexeme);
     validate_var_name(varname, line);
 
@@ -431,8 +431,8 @@ ASTNode *parse_assignment_expr(int line) {
         error_at(ts_peek().line, ts_peek().start_col > 0 ? ts_peek().start_col : 1,
                  "Se esperaba '=', '+=', '-=', '*=' o '/=' después de '%s'",
                  varname);
-    }
-    Token op_tok = ts_advance();
+        }
+        Token op_tok = ts_advance();
 
     bool is_cmd = false;
     char *cmd_str = NULL;
@@ -472,7 +472,7 @@ ASTNode *parse_assignment_expr(int line) {
         if (!is_expression_start(rhs_start.type))
             error_at(rhs_start.line, rhs_start.start_col > 0 ? rhs_start.start_col : 1,
                      "Se esperaba un valor después del operador de asignación '%s'", op_tok.lexeme);
-        value = parse_expression(0);
+            value = parse_expression(0);
         if (!value) {
             value = node_create(NODE_LITERAL, line);
             value->data.lit.type = TOK_INT;
@@ -718,7 +718,7 @@ NodeList parse_block(const char *terminator) {
             if (!is_expression_start(ts_peek().type))
                 error_at(ts_peek().line, ts_peek().start_col > 0 ? ts_peek().start_col : 1,
                          "Se esperaba una condición después de 'while'");
-            ASTNode *cond = parse_expression(0);
+                ASTNode *cond = parse_expression(0);
             if (!ts_match(TOK_THEN)) error_missing_then(t.line, "while");
             NodeList body = parse_block("fi");
             if (!ts_match(TOK_FI)) error(t.line, "Se esperaba 'fi'");
@@ -752,17 +752,59 @@ NodeList parse_block(const char *terminator) {
             char *varname = clean_var_name(ts_advance().lexeme);
             validate_var_name(varname, t.line);
 
+            /* FOR-IN con índice: for i, elemento in lista then
+             *
+             * Las variables del for-in son SIEMPRE locales al bucle, por
+             * lo que aquí no se admite 'local'/'global' ni tipo explícito.
+             * El primer identificador actúa como índice (base 1) y el
+             * segundo recibe el valor de cada elemento. */
+            if (ts_peek().type == TOK_COMMA) {
+                ts_advance();
+                if (ts_peek().type != TOK_IDENT) {
+                    free(varname);
+                    error(t.line, "Se esperaba nombre de variable después de ',' en for-in");
+                }
+                char *second = clean_var_name(ts_advance().lexeme);
+                validate_var_name(second, t.line);
+                if (ts_peek().type != TOK_IN) {
+                    free(varname);
+                    free(second);
+                    error(t.line, "Se esperaba 'in' después de las variables del for-in");
+                }
+                ts_advance();
+                if (!is_expression_start(ts_peek().type)) {
+                    free(varname);
+                    free(second);
+                    error_at(ts_peek().line, ts_peek().start_col > 0 ? ts_peek().start_col : 1,
+                             "Se esperaba una expresión después de 'in'");
+                }
+                ASTNode *list_expr = parse_expression(0);
+                if (!ts_match(TOK_THEN)) error_missing_then(t.line, "for-in");
+                NodeList body = parse_block("fi");
+                if (!ts_match(TOK_FI)) error(t.line, "Se esperaba 'fi'");
+                stmt = node_create(NODE_FOR_IN, t.line);
+                stmt->data.for_in.index_var = varname;   /* primer identificador: índice */
+                stmt->data.for_in.var = second;          /* segundo identificador: valor */
+                stmt->data.for_in.list_expr = list_expr;
+                stmt->data.for_in.body = body;
+                nodelist_add(&block, stmt);
+                DEBUG_INFO("parse_block: añadido NODE_FOR_IN con índice en línea %d", stmt->line);
+                ts_skip_newlines();
+                continue;
+            }
+
             // FOR-IN
             if (ts_peek().type == TOK_IN) {
                 ts_advance();
                 if (!is_expression_start(ts_peek().type))
                     error_at(ts_peek().line, ts_peek().start_col > 0 ? ts_peek().start_col : 1,
                              "Se esperaba una expresión después de 'in'");
-                ASTNode *list_expr = parse_expression(0);
+                    ASTNode *list_expr = parse_expression(0);
                 if (!ts_match(TOK_THEN)) error_missing_then(t.line, "for-in");
                 NodeList body = parse_block("fi");
                 if (!ts_match(TOK_FI)) error(t.line, "Se esperaba 'fi'");
                 stmt = node_create(NODE_FOR_IN, t.line);
+                stmt->data.for_in.index_var = NULL;
                 stmt->data.for_in.var = varname;
                 stmt->data.for_in.list_expr = list_expr;
                 stmt->data.for_in.body = body;
@@ -777,11 +819,11 @@ NodeList parse_block(const char *terminator) {
                 error_at(ts_peek().line, ts_peek().start_col > 0 ? ts_peek().start_col : 1,
                          "Se esperaba '=' después de la variable del for");
 
-            if (!is_expression_start(ts_peek().type))
-                error_at(ts_peek().line, ts_peek().start_col > 0 ? ts_peek().start_col : 1,
-                         "Se esperaba el valor inicial del for después de '='");
-            ASTNode *init_expr = parse_expression(0);
-            ASTNode *init = node_create(NODE_ASSIGN, t.line);
+                if (!is_expression_start(ts_peek().type))
+                    error_at(ts_peek().line, ts_peek().start_col > 0 ? ts_peek().start_col : 1,
+                             "Se esperaba el valor inicial del for después de '='");
+                    ASTNode *init_expr = parse_expression(0);
+                ASTNode *init = node_create(NODE_ASSIGN, t.line);
             init->data.assign.name = varname;
             init->data.assign.value = init_expr;
             init->data.assign.vtype = vtype;
@@ -795,19 +837,19 @@ NodeList parse_block(const char *terminator) {
                 error_at(ts_peek().line, ts_peek().start_col > 0 ? ts_peek().start_col : 1,
                          "Se esperaba ',' después de la inicialización del for");
 
-            if (!is_expression_start(ts_peek().type))
-                error_at(ts_peek().line, ts_peek().start_col > 0 ? ts_peek().start_col : 1,
-                         "Se esperaba la condición del for después de la primera ','");
-            ASTNode *cond = parse_expression(0);
+                if (!is_expression_start(ts_peek().type))
+                    error_at(ts_peek().line, ts_peek().start_col > 0 ? ts_peek().start_col : 1,
+                             "Se esperaba la condición del for después de la primera ','");
+                    ASTNode *cond = parse_expression(0);
 
-            if (!ts_match(TOK_COMMA))
-                error_at(ts_peek().line, ts_peek().start_col > 0 ? ts_peek().start_col : 1,
-                         "Se esperaba ',' después de la condición del for");
+                if (!ts_match(TOK_COMMA))
+                    error_at(ts_peek().line, ts_peek().start_col > 0 ? ts_peek().start_col : 1,
+                             "Se esperaba ',' después de la condición del for");
 
-            ASTNode *incr = NULL;
-            Token next_tok = ts_peek();
-            if (next_tok.type == TOK_IDENT && next_tok.lexeme[0] == '$')
-                error(t.line, "En el incremento de un for debes usar 'i++' o 'i--', sin '$'");
+                    ASTNode *incr = NULL;
+                Token next_tok = ts_peek();
+                if (next_tok.type == TOK_IDENT && next_tok.lexeme[0] == '$')
+                    error(t.line, "En el incremento de un for debes usar 'i++' o 'i--', sin '$'");
             if (next_tok.type == TOK_IDENT) {
                 int pos = ts.pos + 1;
                 if (pos < ts.count) {
@@ -874,43 +916,43 @@ NodeList parse_block(const char *terminator) {
             if (!ts_match(TOK_LPAREN))
                 error_at(ts_peek().line, ts_peek().start_col > 0 ? ts_peek().start_col : 1,
                          "Se esperaba '(' después del nombre de la función '%s'", stmt->data.func.name);
-            if (!ts_match(TOK_RPAREN)) {
-                do {
-                    int ptype = 0;
-                    TokenType tt = ts_peek().type;
-                    if (tt == TOK_INT || tt == TOK_FLOAT || tt == TOK_BOOL || tt == TOK_STRING || tt == TOK_LIST || tt == TOK_MAP)
-                        ptype = ts_advance().type;
-                    if (ts_peek().type != TOK_IDENT) error(t.line, "Se esperaba nombre de parámetro");
-                    char *pname = clean_var_name(ts_advance().lexeme);
-                    validate_var_name(pname, t.line);
-                    for (int i = 0; i < stmt->data.func.param_count; i++) {
-                        if (strcmp(stmt->data.func.params[i], pname) == 0)
-                            error(t.line, "El parámetro '%s' está repetido", pname);
-                    }
-                    int pcount = stmt->data.func.param_count;
-                    stmt->data.func.params = realloc(stmt->data.func.params, (pcount + 1) * sizeof(char*));
-                    stmt->data.func.ptypes = realloc(stmt->data.func.ptypes, (pcount + 1) * sizeof(int));
-                    stmt->data.func.params[pcount] = pname;
-                    stmt->data.func.ptypes[pcount] = ptype;
-                    stmt->data.func.param_count = pcount + 1;
-                    Token sep = ts_peek();
-                    if (sep.type != TOK_COMMA && sep.type != TOK_RPAREN)
-                        error_at(sep.line, sep.start_col > 0 ? sep.start_col : 1,
-                                 "Falta ',' entre parámetros de la función '%s'", stmt->data.func.name);
-                } while (ts_match(TOK_COMMA) && ts_peek().type != TOK_RPAREN);
-                if (ts_peek().type == TOK_RPAREN && ts.pos > 0 &&
-                    ts.tokens[ts.pos - 1].type == TOK_COMMA)
-                    error_at(ts_peek().line, ts_peek().start_col,
-                             "No puede haber una coma al final de los parámetros de '%s'", stmt->data.func.name);
-                if (!ts_match(TOK_RPAREN))
-                    error_at(ts_peek().line, ts_peek().start_col > 0 ? ts_peek().start_col : 1,
-                             "Se esperaba ')' para cerrar la declaración de '%s'", stmt->data.func.name);
-            }
+                if (!ts_match(TOK_RPAREN)) {
+                    do {
+                        int ptype = 0;
+                        TokenType tt = ts_peek().type;
+                        if (tt == TOK_INT || tt == TOK_FLOAT || tt == TOK_BOOL || tt == TOK_STRING || tt == TOK_LIST || tt == TOK_MAP)
+                            ptype = ts_advance().type;
+                        if (ts_peek().type != TOK_IDENT) error(t.line, "Se esperaba nombre de parámetro");
+                        char *pname = clean_var_name(ts_advance().lexeme);
+                        validate_var_name(pname, t.line);
+                        for (int i = 0; i < stmt->data.func.param_count; i++) {
+                            if (strcmp(stmt->data.func.params[i], pname) == 0)
+                                error(t.line, "El parámetro '%s' está repetido", pname);
+                        }
+                        int pcount = stmt->data.func.param_count;
+                        stmt->data.func.params = realloc(stmt->data.func.params, (pcount + 1) * sizeof(char*));
+                        stmt->data.func.ptypes = realloc(stmt->data.func.ptypes, (pcount + 1) * sizeof(int));
+                        stmt->data.func.params[pcount] = pname;
+                        stmt->data.func.ptypes[pcount] = ptype;
+                        stmt->data.func.param_count = pcount + 1;
+                        Token sep = ts_peek();
+                        if (sep.type != TOK_COMMA && sep.type != TOK_RPAREN)
+                            error_at(sep.line, sep.start_col > 0 ? sep.start_col : 1,
+                                     "Falta ',' entre parámetros de la función '%s'", stmt->data.func.name);
+                    } while (ts_match(TOK_COMMA) && ts_peek().type != TOK_RPAREN);
+                    if (ts_peek().type == TOK_RPAREN && ts.pos > 0 &&
+                        ts.tokens[ts.pos - 1].type == TOK_COMMA)
+                        error_at(ts_peek().line, ts_peek().start_col,
+                                 "No puede haber una coma al final de los parámetros de '%s'", stmt->data.func.name);
+                        if (!ts_match(TOK_RPAREN))
+                            error_at(ts_peek().line, ts_peek().start_col > 0 ? ts_peek().start_col : 1,
+                                     "Se esperaba ')' para cerrar la declaración de '%s'", stmt->data.func.name);
+                }
 
-            stmt->data.func.body = parse_block("fi");
-            if (!ts_match(TOK_FI)) error(t.line, "Se esperaba 'fi'");
+                stmt->data.func.body = parse_block("fi");
+                if (!ts_match(TOK_FI)) error(t.line, "Se esperaba 'fi'");
 
-            func_register(stmt->data.func.name, stmt);
+                func_register(stmt->data.func.name, stmt);
             if (current_import_prefix) {
                 char prefixed[512];
                 snprintf(prefixed, sizeof(prefixed), "%s.%s", current_import_prefix, stmt->data.func.name);
@@ -986,7 +1028,7 @@ NodeList parse_block(const char *terminator) {
                 if (!is_expression_start(ts_peek().type))
                     error_at(ts_peek().line, ts_peek().start_col > 0 ? ts_peek().start_col : 1,
                              "Se esperaba una expresión después de 'repeat line'");
-                ASTNode *line_expr = parse_expression(0);
+                    ASTNode *line_expr = parse_expression(0);
                 stmt = node_create(NODE_REPEAT, t.line);
                 stmt->data.repeat.line_expr = line_expr;
                 stmt->data.repeat.portal_name = NULL;
@@ -1390,13 +1432,13 @@ NodeList parse_block(const char *terminator) {
                             if (!is_expression_start(ts_peek().type))
                                 error_at(ts_peek().line, ts_peek().start_col > 0 ? ts_peek().start_col : 1,
                                          "Se esperaba un valor después de '=' en la asignación con índice");
-                            ASTNode *value = parse_expression(0);
+                                ASTNode *value = parse_expression(0);
                             require_statement_end("la asignación con índice");
                             stmt = node_create(NODE_ASSIGN, saved_t.line);
                             stmt->data.assign.name = vname;
                             stmt->data.assign.value = value;
                             stmt->data.assign.vtype = 0;
-                                                stmt->data.assign.is_local = false;
+                            stmt->data.assign.is_local = false;
                             stmt->data.assign.is_global = false;
                             stmt->data.assign.is_cmd = false;
                             stmt->data.assign.cmd_str = NULL;
@@ -1430,10 +1472,10 @@ NodeList parse_block(const char *terminator) {
                      * hay un argumento, `++`/`--` forma parte del comando. */
                     if (next_tok.type == TOK_INC || next_tok.type == TOK_DEC) {
                         Token after_op = (ts.pos + 1 < ts.count)
-                                         ? ts.tokens[ts.pos + 1]
-                                         : (Token){TOK_EOF, "", 0, 0, 0};
+                        ? ts.tokens[ts.pos + 1]
+                        : (Token){TOK_EOF, "", 0, 0, 0};
                         bool post_op_only = (after_op.type == TOK_NEWLINE ||
-                                             after_op.type == TOK_EOF);
+                        after_op.type == TOK_EOF);
                         if (post_op_only) {
                             ts.pos--;
                             ASTNode *expr = parse_expression(0);
@@ -1473,35 +1515,35 @@ NodeList parse_block(const char *terminator) {
             /* --- Diagnósticos de sintaxis de alto nivel --- */
             if (t.type == TOK_FI)
                 error_at(t.line, t.start_col, "'fi' no tiene un bloque abierto que cerrar aquí");
-            if (t.type == TOK_ELSE || t.type == TOK_ELSEIF)
-                error_at(t.line, t.start_col, "'%s' solo puede aparecer dentro de un 'if'", t.lexeme);
-            if (t.type == TOK_CASE || t.type == TOK_DEFAULT)
-                error_at(t.line, t.start_col, "'%s' solo puede aparecer dentro de un 'switch'", t.lexeme);
-            if (t.type == TOK_CATCH)
-                error_at(t.line, t.start_col, "'catch' solo puede aparecer después de un 'try'");
-            if (t.type == TOK_THEN)
-                error_at(t.line, t.start_col, "'then' necesita una condición anterior y debe cerrar una estructura como 'if', 'while' o 'for'");
-            if (t.type == TOK_RPAREN)
-                error_at(t.line, t.start_col, "')' no tiene un '(' abierto que cerrar aquí");
-            if (t.type == TOK_RBRACKET)
-                error_at(t.line, t.start_col, "']' no tiene un '[' abierto que cerrar aquí");
-            if (t.type == TOK_RBRACE)
-                error_at(t.line, t.start_col, "'}' no tiene un '{' abierto que cerrar aquí");
-            if (t.type == TOK_COMMA)
-                error_at(t.line, t.start_col, "Hay una ',' fuera de una lista, mapa, llamada o declaración múltiple");
-            if (t.type == TOK_SEMI)
-                error_at(t.line, t.start_col, "';' no separa instrucciones en Infernal; usa un salto de línea");
+        if (t.type == TOK_ELSE || t.type == TOK_ELSEIF)
+            error_at(t.line, t.start_col, "'%s' solo puede aparecer dentro de un 'if'", t.lexeme);
+        if (t.type == TOK_CASE || t.type == TOK_DEFAULT)
+            error_at(t.line, t.start_col, "'%s' solo puede aparecer dentro de un 'switch'", t.lexeme);
+        if (t.type == TOK_CATCH)
+            error_at(t.line, t.start_col, "'catch' solo puede aparecer después de un 'try'");
+        if (t.type == TOK_THEN)
+            error_at(t.line, t.start_col, "'then' necesita una condición anterior y debe cerrar una estructura como 'if', 'while' o 'for'");
+        if (t.type == TOK_RPAREN)
+            error_at(t.line, t.start_col, "')' no tiene un '(' abierto que cerrar aquí");
+        if (t.type == TOK_RBRACKET)
+            error_at(t.line, t.start_col, "']' no tiene un '[' abierto que cerrar aquí");
+        if (t.type == TOK_RBRACE)
+            error_at(t.line, t.start_col, "'}' no tiene un '{' abierto que cerrar aquí");
+        if (t.type == TOK_COMMA)
+            error_at(t.line, t.start_col, "Hay una ',' fuera de una lista, mapa, llamada o declaración múltiple");
+        if (t.type == TOK_SEMI)
+            error_at(t.line, t.start_col, "';' no separa instrucciones en Infernal; usa un salto de línea");
 
-            error_at(t.line, t.start_col > 0 ? t.start_col : 1,
-                      "Sentencia no reconocida '%s'", t.lexeme);
+        error_at(t.line, t.start_col > 0 ? t.start_col : 1,
+                 "Sentencia no reconocida '%s'", t.lexeme);
 
-            if (stmt) {
-                nodelist_add(&block, stmt);
-                DEBUG_INFO("parse_block: añadida sentencia tipo %d en línea %d", stmt->kind, stmt->line);
-            }
-            ts_skip_newlines();
-            if (terminator && ts_peek().type == lookup_keyword(terminator)) break;
-            if (terminator && strcmp(terminator, "}") == 0 && ts_peek().type == TOK_RBRACE) break;
+        if (stmt) {
+            nodelist_add(&block, stmt);
+            DEBUG_INFO("parse_block: añadida sentencia tipo %d en línea %d", stmt->kind, stmt->line);
+        }
+        ts_skip_newlines();
+        if (terminator && ts_peek().type == lookup_keyword(terminator)) break;
+        if (terminator && strcmp(terminator, "}") == 0 && ts_peek().type == TOK_RBRACE) break;
     }
 
     DEBUG_INFO("=== parse_block: bloque finalizado, %d sentencias ===", block.count);
