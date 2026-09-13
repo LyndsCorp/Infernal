@@ -310,5 +310,39 @@ bool try_convert_value(Value *val, int target_tok_type) {
         val->data.ival = (int)val->data.fval;
         return true;
     }
-    return false;
+
+    /* --- Conversión entre colecciones vacías --------------------------------
+     *
+     * Un list vacío y un map vacío son estructuralmente idénticos: ambos
+     * representan "una colección sin elementos". El parser y el
+     * deserializador no siempre pueden distinguirlos — por ejemplo, un
+     * archivo con "[]" (sin espacio) se lee como list vacío, mientras que
+     * "tofile" escribe un map vacío como "[ ]" (con espacio). Si el
+     * archivo fue editado a mano o viene de una versión anterior, el
+     * tipo del archivo puede no coincidir con el tipo declarado de la
+     * variable destino.
+     *
+     * Permitimos la conversión SOLO cuando la colección está vacía. Si
+     * tiene contenido y el tipo no coincide, sigue siendo un error de
+     * tipado, porque ahí sí hay información que se perdería.
+     * ---------------------------------------------------------------------- */
+    if (val->type == VAL_LIST && val->data.list.count == 0 &&
+        target_tok_type == TOK_MAP) {
+        free(val->data.list.items);       /* puede ser NULL; free(NULL) es válido */
+        *val = val_map_empty();
+    return true;
+        }
+        if (val->type == VAL_MAP && target_tok_type == TOK_LIST) {
+            MapData *md = val->data.map;
+            if (!md || md->count == 0) {
+                if (md) {
+                    free(md->pairs);
+                    free(md);
+                }
+                *val = val_list_empty();
+                return true;
+            }
+        }
+
+        return false;
 }
