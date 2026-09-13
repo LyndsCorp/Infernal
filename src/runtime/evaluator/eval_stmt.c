@@ -133,8 +133,13 @@ void exec_stmt(ASTNode *stmt) {
             char *expanded = expand_command(stmt->data.shell_cmd.cmd);
             int ret = run_shell_command(expanded);
             if (ret != 0) {
+                /* Copiamos el comando expandido a un buffer local ANTES de liberar
+                 * 'expanded'. error() hace longjmp, así que no podemos confiar en
+                 * punteros dinámicos después de llamarlo. */
+                char msg[1024];
+                snprintf(msg, sizeof(msg), "falló: %s", expanded);
                 free(expanded);
-                error(stmt->line, "falló: %s", stmt->data.shell_cmd.cmd);
+                error(stmt->line, "%s", msg);
             }
             free(expanded);
             break;
