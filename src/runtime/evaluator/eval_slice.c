@@ -32,11 +32,12 @@ Value eval_slice(ASTNode *node) {
     Value list = eval_expr(node->data.slice.list);
     DEBUG_INFO("eval_slice: lista evaluada, tipo=%d, count=%d", list.type, list.data.list.count);
 
-    if (list.type != VAL_LIST)
+    if (list.type != VAL_LIST) {
         error(current_eval_line, "El slice solo se puede aplicar a listas (tipo recibido: %s)",
               value_type_name(list.type));
+    }
 
-        int len = list.data.list.count;
+    int len = list.data.list.count;
     if (len == 0) {
         DEBUG_INFO("eval_slice: lista vacía, devolviendo lista vacía");
         value_free(&list);
@@ -118,11 +119,12 @@ Value remove_slice(Value list, ASTNode *slice_node) {
     if (slice_node == NULL) error(0, "remove_slice: nodo slice es NULL");
     if (slice_node->kind != NODE_SLICE) error(slice_node->line, "remove_slice: nodo no es NODE_SLICE");
 
-    if (list.type != VAL_LIST)
+    if (list.type != VAL_LIST) {
         error(current_eval_line, "La eliminación solo se puede aplicar a listas (tipo recibido: %s)",
               value_type_name(list.type));
+    }
 
-        int len = list.data.list.count;
+    int len = list.data.list.count;
     if (len == 0) {
         return val_list_empty();
     }

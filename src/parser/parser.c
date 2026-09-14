@@ -124,7 +124,8 @@ static bool valid_module_name(const char *name) {
     return true;
 }
 
-static bool command_exists(const char *name) {
+/* Conservada para uso futuro; hoy no se invoca desde este archivo. */
+static bool __attribute__((unused)) command_exists(const char *name) {
     if (!name || !*name) return false;
 
     /* Los comandos con una ruta explícita se comprueban directamente. */
@@ -345,10 +346,11 @@ ASTNode *parse_if_statement() {
     Token t = ts_peek();
     int line = t.line;
     ts_advance();
-    if (!is_expression_start(ts_peek().type))
+    if (!is_expression_start(ts_peek().type)) {
         error_at(ts_peek().line, ts_peek().start_col > 0 ? ts_peek().start_col : 1,
                  "Se esperaba una condición después de 'if'");
-        ASTNode *cond = parse_expression(0);
+    }
+    ASTNode *cond = parse_expression(0);
     if (!ts_match(TOK_THEN)) error_missing_then(line, "if");
     NodeList then_block = parse_block("fi");
     ASTNode *first_if = node_create(NODE_IF, line);
@@ -358,10 +360,11 @@ ASTNode *parse_if_statement() {
     ASTNode *current_if = first_if;
     while (ts_peek().type == TOK_ELSEIF) {
         ts_advance();
-        if (!is_expression_start(ts_peek().type))
+        if (!is_expression_start(ts_peek().type)) {
             error_at(ts_peek().line, ts_peek().start_col > 0 ? ts_peek().start_col : 1,
                      "Se esperaba una condición después de 'elseif'");
-            ASTNode *elseif_cond = parse_expression(0);
+        }
+        ASTNode *elseif_cond = parse_expression(0);
         if (!ts_match(TOK_THEN)) error_missing_then(line, "elseif");
         NodeList elseif_then = parse_block("fi");
         ASTNode *elseif_node = node_create(NODE_IF, line);
@@ -405,11 +408,11 @@ static bool rhs_is_post_op(void) {
 
 ASTNode *parse_assignment_expr(int line) {
     DEBUG_INFO("parse_assignment_expr: ¡LLAMADA! línea %d", line);
-    if (ts_peek().type != TOK_IDENT)
+    if (ts_peek().type != TOK_IDENT) {
         error_at(ts_peek().line, ts_peek().start_col > 0 ? ts_peek().start_col : 1,
                  "Se esperaba una variable en la asignación");
-
-        Token var_tok = ts_advance();
+    }
+    Token var_tok = ts_advance();
     char *varname = clean_var_name(var_tok.lexeme);
     validate_var_name(varname, line);
 
@@ -469,10 +472,11 @@ ASTNode *parse_assignment_expr(int line) {
     if (!is_cmd) {
         DEBUG_INFO("parse_assignment_expr: parseando expresión normal");
         Token rhs_start = ts_peek();
-        if (!is_expression_start(rhs_start.type))
+        if (!is_expression_start(rhs_start.type)) {
             error_at(rhs_start.line, rhs_start.start_col > 0 ? rhs_start.start_col : 1,
                      "Se esperaba un valor después del operador de asignación '%s'", op_tok.lexeme);
-            value = parse_expression(0);
+        }
+        value = parse_expression(0);
         if (!value) {
             value = node_create(NODE_LITERAL, line);
             value->data.lit.type = TOK_INT;
@@ -715,10 +719,11 @@ NodeList parse_block(const char *terminator) {
         /* --- WHILE --- */
         if (t.type == TOK_WHILE) {
             ts_advance();
-            if (!is_expression_start(ts_peek().type))
+            if (!is_expression_start(ts_peek().type)) {
                 error_at(ts_peek().line, ts_peek().start_col > 0 ? ts_peek().start_col : 1,
                          "Se esperaba una condición después de 'while'");
-                ASTNode *cond = parse_expression(0);
+            }
+            ASTNode *cond = parse_expression(0);
             if (!ts_match(TOK_THEN)) error_missing_then(t.line, "while");
             NodeList body = parse_block("fi");
             if (!ts_match(TOK_FI)) error(t.line, "Se esperaba 'fi'");
@@ -796,10 +801,11 @@ NodeList parse_block(const char *terminator) {
             // FOR-IN
             if (ts_peek().type == TOK_IN) {
                 ts_advance();
-                if (!is_expression_start(ts_peek().type))
+                if (!is_expression_start(ts_peek().type)) {
                     error_at(ts_peek().line, ts_peek().start_col > 0 ? ts_peek().start_col : 1,
                              "Se esperaba una expresión después de 'in'");
-                    ASTNode *list_expr = parse_expression(0);
+                }
+                ASTNode *list_expr = parse_expression(0);
                 if (!ts_match(TOK_THEN)) error_missing_then(t.line, "for-in");
                 NodeList body = parse_block("fi");
                 if (!ts_match(TOK_FI)) error(t.line, "Se esperaba 'fi'");
@@ -815,15 +821,18 @@ NodeList parse_block(const char *terminator) {
             }
 
             // FOR tradicional
-            if (!ts_match(TOK_EQ))
+            if (!ts_match(TOK_EQ)) {
                 error_at(ts_peek().line, ts_peek().start_col > 0 ? ts_peek().start_col : 1,
                          "Se esperaba '=' después de la variable del for");
+            }
 
-                if (!is_expression_start(ts_peek().type))
-                    error_at(ts_peek().line, ts_peek().start_col > 0 ? ts_peek().start_col : 1,
-                             "Se esperaba el valor inicial del for después de '='");
-                    ASTNode *init_expr = parse_expression(0);
-                ASTNode *init = node_create(NODE_ASSIGN, t.line);
+            if (!is_expression_start(ts_peek().type)) {
+                error_at(ts_peek().line, ts_peek().start_col > 0 ? ts_peek().start_col : 1,
+                         "Se esperaba el valor inicial del for después de '='");
+            }
+            ASTNode *init_expr = parse_expression(0);
+
+            ASTNode *init = node_create(NODE_ASSIGN, t.line);
             init->data.assign.name = varname;
             init->data.assign.value = init_expr;
             init->data.assign.vtype = vtype;
@@ -833,23 +842,26 @@ NodeList parse_block(const char *terminator) {
             init->data.assign.cmd_str = NULL;
             init->data.assign.lhs_index = NULL;
 
-            if (!ts_match(TOK_COMMA))
+            if (!ts_match(TOK_COMMA)) {
                 error_at(ts_peek().line, ts_peek().start_col > 0 ? ts_peek().start_col : 1,
                          "Se esperaba ',' después de la inicialización del for");
+            }
 
-                if (!is_expression_start(ts_peek().type))
-                    error_at(ts_peek().line, ts_peek().start_col > 0 ? ts_peek().start_col : 1,
-                             "Se esperaba la condición del for después de la primera ','");
-                    ASTNode *cond = parse_expression(0);
+            if (!is_expression_start(ts_peek().type)) {
+                error_at(ts_peek().line, ts_peek().start_col > 0 ? ts_peek().start_col : 1,
+                         "Se esperaba la condición del for después de la primera ','");
+            }
+            ASTNode *cond = parse_expression(0);
 
-                if (!ts_match(TOK_COMMA))
-                    error_at(ts_peek().line, ts_peek().start_col > 0 ? ts_peek().start_col : 1,
-                             "Se esperaba ',' después de la condición del for");
+            if (!ts_match(TOK_COMMA)) {
+                error_at(ts_peek().line, ts_peek().start_col > 0 ? ts_peek().start_col : 1,
+                         "Se esperaba ',' después de la condición del for");
+            }
 
-                    ASTNode *incr = NULL;
-                Token next_tok = ts_peek();
-                if (next_tok.type == TOK_IDENT && next_tok.lexeme[0] == '$')
-                    error(t.line, "En el incremento de un for debes usar 'i++' o 'i--', sin '$'");
+            ASTNode *incr = NULL;
+            Token next_tok = ts_peek();
+            if (next_tok.type == TOK_IDENT && next_tok.lexeme[0] == '$')
+                error(t.line, "En el incremento de un for debes usar 'i++' o 'i--', sin '$'");
             if (next_tok.type == TOK_IDENT) {
                 int pos = ts.pos + 1;
                 if (pos < ts.count) {
@@ -913,46 +925,49 @@ NodeList parse_block(const char *terminator) {
             if (func_lookup(stmt->data.func.name) != NULL)
                 error(t.line, "'%s' es una función interna y no puede ser redefinida.", stmt->data.func.name);
 
-            if (!ts_match(TOK_LPAREN))
+            if (!ts_match(TOK_LPAREN)) {
                 error_at(ts_peek().line, ts_peek().start_col > 0 ? ts_peek().start_col : 1,
                          "Se esperaba '(' después del nombre de la función '%s'", stmt->data.func.name);
-                if (!ts_match(TOK_RPAREN)) {
-                    do {
-                        int ptype = 0;
-                        TokenType tt = ts_peek().type;
-                        if (tt == TOK_INT || tt == TOK_FLOAT || tt == TOK_BOOL || tt == TOK_STRING || tt == TOK_LIST || tt == TOK_MAP)
-                            ptype = ts_advance().type;
-                        if (ts_peek().type != TOK_IDENT) error(t.line, "Se esperaba nombre de parámetro");
-                        char *pname = clean_var_name(ts_advance().lexeme);
-                        validate_var_name(pname, t.line);
-                        for (int i = 0; i < stmt->data.func.param_count; i++) {
-                            if (strcmp(stmt->data.func.params[i], pname) == 0)
-                                error(t.line, "El parámetro '%s' está repetido", pname);
-                        }
-                        int pcount = stmt->data.func.param_count;
-                        stmt->data.func.params = realloc(stmt->data.func.params, (pcount + 1) * sizeof(char*));
-                        stmt->data.func.ptypes = realloc(stmt->data.func.ptypes, (pcount + 1) * sizeof(int));
-                        stmt->data.func.params[pcount] = pname;
-                        stmt->data.func.ptypes[pcount] = ptype;
-                        stmt->data.func.param_count = pcount + 1;
-                        Token sep = ts_peek();
-                        if (sep.type != TOK_COMMA && sep.type != TOK_RPAREN)
-                            error_at(sep.line, sep.start_col > 0 ? sep.start_col : 1,
-                                     "Falta ',' entre parámetros de la función '%s'", stmt->data.func.name);
-                    } while (ts_match(TOK_COMMA) && ts_peek().type != TOK_RPAREN);
-                    if (ts_peek().type == TOK_RPAREN && ts.pos > 0 &&
-                        ts.tokens[ts.pos - 1].type == TOK_COMMA)
-                        error_at(ts_peek().line, ts_peek().start_col,
-                                 "No puede haber una coma al final de los parámetros de '%s'", stmt->data.func.name);
-                        if (!ts_match(TOK_RPAREN))
-                            error_at(ts_peek().line, ts_peek().start_col > 0 ? ts_peek().start_col : 1,
-                                     "Se esperaba ')' para cerrar la declaración de '%s'", stmt->data.func.name);
-                }
+            }
+            if (!ts_match(TOK_RPAREN)) {
+                do {
+                    int ptype = 0;
+                    TokenType tt = ts_peek().type;
+                    if (tt == TOK_INT || tt == TOK_FLOAT || tt == TOK_BOOL || tt == TOK_STRING || tt == TOK_LIST || tt == TOK_MAP)
+                        ptype = ts_advance().type;
+                    if (ts_peek().type != TOK_IDENT) error(t.line, "Se esperaba nombre de parámetro");
+                    char *pname = clean_var_name(ts_advance().lexeme);
+                    validate_var_name(pname, t.line);
+                    for (int i = 0; i < stmt->data.func.param_count; i++) {
+                        if (strcmp(stmt->data.func.params[i], pname) == 0)
+                            error(t.line, "El parámetro '%s' está repetido", pname);
+                    }
+                    int pcount = stmt->data.func.param_count;
+                    stmt->data.func.params = realloc(stmt->data.func.params, (pcount + 1) * sizeof(char*));
+                    stmt->data.func.ptypes = realloc(stmt->data.func.ptypes, (pcount + 1) * sizeof(int));
+                    stmt->data.func.params[pcount] = pname;
+                    stmt->data.func.ptypes[pcount] = ptype;
+                    stmt->data.func.param_count = pcount + 1;
+                    Token sep = ts_peek();
+                    if (sep.type != TOK_COMMA && sep.type != TOK_RPAREN)
+                        error_at(sep.line, sep.start_col > 0 ? sep.start_col : 1,
+                                 "Falta ',' entre parámetros de la función '%s'", stmt->data.func.name);
+                } while (ts_match(TOK_COMMA) && ts_peek().type != TOK_RPAREN);
+                if (ts_peek().type == TOK_RPAREN && ts.pos > 0 &&
+                    ts.tokens[ts.pos - 1].type == TOK_COMMA) {
+                    error_at(ts_peek().line, ts_peek().start_col,
+                             "No puede haber una coma al final de los parámetros de '%s'", stmt->data.func.name);
+                    }
+                    if (!ts_match(TOK_RPAREN)) {
+                        error_at(ts_peek().line, ts_peek().start_col > 0 ? ts_peek().start_col : 1,
+                                 "Se esperaba ')' para cerrar la declaración de '%s'", stmt->data.func.name);
+                    }
+            }
 
-                stmt->data.func.body = parse_block("fi");
-                if (!ts_match(TOK_FI)) error(t.line, "Se esperaba 'fi'");
+            stmt->data.func.body = parse_block("fi");
+            if (!ts_match(TOK_FI)) error(t.line, "Se esperaba 'fi'");
 
-                func_register(stmt->data.func.name, stmt);
+            func_register(stmt->data.func.name, stmt);
             if (current_import_prefix) {
                 char prefixed[512];
                 snprintf(prefixed, sizeof(prefixed), "%s.%s", current_import_prefix, stmt->data.func.name);
@@ -1025,10 +1040,11 @@ NodeList parse_block(const char *terminator) {
                 stmt->data.repeat.portal_name = portal_name;
                 stmt->data.repeat.line_expr = NULL;
             } else if (ts_match(TOK_LINE)) {
-                if (!is_expression_start(ts_peek().type))
+                if (!is_expression_start(ts_peek().type)) {
                     error_at(ts_peek().line, ts_peek().start_col > 0 ? ts_peek().start_col : 1,
                              "Se esperaba una expresión después de 'repeat line'");
-                    ASTNode *line_expr = parse_expression(0);
+                }
+                ASTNode *line_expr = parse_expression(0);
                 stmt = node_create(NODE_REPEAT, t.line);
                 stmt->data.repeat.line_expr = line_expr;
                 stmt->data.repeat.portal_name = NULL;
@@ -1429,10 +1445,11 @@ NodeList parse_block(const char *terminator) {
                                 vname = strdup(idx_expr->data.idx.list->data.var.name);
                             }
                             if (!vname) error(saved_t.line, "Lado izquierdo inválido para asignación con índice");
-                            if (!is_expression_start(ts_peek().type))
+                            if (!is_expression_start(ts_peek().type)) {
                                 error_at(ts_peek().line, ts_peek().start_col > 0 ? ts_peek().start_col : 1,
                                          "Se esperaba un valor después de '=' en la asignación con índice");
-                                ASTNode *value = parse_expression(0);
+                            }
+                            ASTNode *value = parse_expression(0);
                             require_statement_end("la asignación con índice");
                             stmt = node_create(NODE_ASSIGN, saved_t.line);
                             stmt->data.assign.name = vname;

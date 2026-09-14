@@ -11,7 +11,7 @@
 #include "error.h"
 #include "runtime/globals.h"
 
-static void error_build(int line, int column, const char *fmt, va_list ap) {
+static void __attribute__((noreturn)) error_build(int line, int column, const char *fmt, va_list ap) {
     char base[512];
     vsnprintf(base, sizeof(base), fmt, ap);
 
