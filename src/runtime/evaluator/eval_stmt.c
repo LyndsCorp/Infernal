@@ -814,7 +814,7 @@ void exec_stmt(ASTNode *stmt) {
                 error(stmt->line, "Se esperaba una lista, string o mapa en for-in");
             }
 
-            int count = 0;
+            volatile int count = 0;
             if (iterable.type == VAL_LIST) {
                 count = iterable.data.list.count;
             } else if (iterable.type == VAL_MAP) {
@@ -833,7 +833,7 @@ void exec_stmt(ASTNode *stmt) {
                 }
             }
 
-            for (int i = 0; i < count; i++) {
+            for (volatile int i = 0; i < count; i++) {
                 Scope *iter_scope = scope_new(current_scope, NULL);
                 Scope *old_scope = current_scope;
                 current_scope = iter_scope;
