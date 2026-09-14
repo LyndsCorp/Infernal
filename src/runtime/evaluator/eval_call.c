@@ -60,17 +60,36 @@ Value eval_call(ASTNode *expr) {
     } else {
         /* Función de usuario */
         ASTNode *func = fobj->def;
-        if (expr->data.call.argc != func->data.func.param_count) {
-            error(expr->line, "La función '%s' espera %d argumento(s), recibió %d",
-                  expr->data.call.name, func->data.func.param_count, expr->data.call.argc);
+
+        /* Si el llamador pasa MÁS argumentos que parámetros tiene la
+         * función, es un error claro: probablemente se equivocó de
+         * función o de orden. Si pasa MENOS, los parámetros faltantes
+         * simplemente no se definen en el ámbito de la función, de modo
+         * que `if not param then` puede detectar su ausencia. */
+        if (expr->data.call.argc > func->data.func.param_count) {
+            error(expr->line,
+                  "La función '%s' espera como máximo %d argumento(s), recibió %d",
+                  expr->data.call.name,
+                  func->data.func.param_count,
+                  expr->data.call.argc);
         }
+
         Scope *new_scope = scope_new(current_scope, expr->data.call.name);
         Scope *prev_scope = current_scope;
         current_scope = new_scope;
-        for (int i = 0; i < func->data.func.param_count; i++) {
-            Value arg = (i < expr->data.call.argc) ? eval_expr(expr->data.call.args[i]) : val_make_null();
-            scope_define(new_scope, func->data.func.params[i], func->data.func.ptypes[i], arg);
+
+        /* Solo definimos los parámetros realmente pasados por el
+         * llamador. Los parámetros faltantes quedan sin definir dentro
+         * del scope de la función, para que `if not param then`
+         * funcione como comprobación de existencia. */
+        for (int i = 0; i < expr->data.call.argc; i++) {
+            Value arg = eval_expr(expr->data.call.args[i]);
+            scope_define(new_scope,
+                         func->data.func.params[i],
+                         func->data.func.ptypes[i],
+                         arg);
         }
+
         int saved_cf = control_flow;
         Value saved_ret = return_value;
         return_value = val_make_null();
@@ -81,7 +100,7 @@ Value eval_call(ASTNode *expr) {
         if (control_flow == CF_RETURN)
             return_value = val_make_null(); /* ownership transferred to ret */
 
-        control_flow = saved_cf;
+            control_flow = saved_cf;
         return_value = saved_ret;
         current_scope = prev_scope;
         scope_free(new_scope);
