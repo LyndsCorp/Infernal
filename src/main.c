@@ -28,10 +28,16 @@
 extern const char* get_metadata(const char *type);
 
 static void infernal_internal_signal(int sig) {
-    (void)sig;
     static const char msg[] =
     "Error interno de Infernal: se produjo un fallo durante la ejecución y el proceso no pudo continuar.\n";
     write(STDERR_FILENO, msg, sizeof(msg) - 1);
+
+    /* SIGABRT lo levanta glibc desde abort() cuando detecta
+     * corrupción del heap: double free, free() inválido, overflow
+     * de tcache, etc. Salimos con 42 para distinguirlo desde fuera. */
+    if (sig == SIGABRT) {
+        _exit(42);
+    }
     _exit(1);
 }
 
