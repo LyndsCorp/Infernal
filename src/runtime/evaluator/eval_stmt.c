@@ -99,6 +99,86 @@ static bool switch_values_equal(Value left, Value right) {
     }
 }
 
+/* --- Asignación con índice anidado ---
+ *
+ * Recorre la cadena de NODE_INDEX desde el nivel más interno (primera
+ * clave de la ruta) hasta el más externo (última clave). Si un nivel
+ * intermedio no existe, se crea como map vacío. El último nivel asigna
+ * `new_val` en la clave/posición correspondiente.
+ *
+ * `var_value` debe ser un map o un list; `lhs_index` es el NODE_INDEX
+ * más externo (aquel cuyo .index es la última clave). */
+static void assign_nested_index(Value *var_value, ASTNode *lhs_index,
+                                Value new_val, int line) {
+    ASTNode *stack[64];
+    int depth = 0;
+    ASTNode *cur = lhs_index;
+    while (cur && cur->kind == NODE_INDEX && depth < 64) {
+        stack[depth++] = cur;
+        cur = cur->data.idx.list;
+    }
+    if (depth == 0) {
+        error(line, "Estructura de índice inválida en asignación");
+    }
+
+    Value *container = var_value;
+    for (int i = depth - 1; i >= 0; i--) {
+        ASTNode *idx_expr = stack[i]->data.idx.index;
+        Value key = eval_expr(idx_expr);
+        if (key.type == VAL_REFERENCE)
+            key = resolve_reference(key, line);
+
+        bool is_last = (i == 0);
+
+        if (container->type == VAL_MAP) {
+            if (key.type != VAL_STRING) {
+                value_free(&key);
+                error(line, "La clave de mapa debe ser string");
+            }
+            if (is_last) {
+                val_map_set(container, key.data.sval, new_val);
+            } else {
+                if (!val_map_has(*container, key.data.sval)) {
+                    val_map_set(container, key.data.sval, val_map_empty());
+                }
+                MapData *md = container->data.map;
+                bool found = false;
+                for (int j = 0; j < md->count; j++) {
+                    if (strcmp(md->pairs[j].key, key.data.sval) == 0) {
+                        container = &md->pairs[j].value;
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) {
+                    value_free(&key);
+                    error(line, "Error interno al crear submapa");
+                }
+            }
+        } else if (container->type == VAL_LIST) {
+            if (key.type != VAL_INT) {
+                value_free(&key);
+                error(line, "Índice de lista debe ser entero");
+            }
+            int k = key.data.ival;
+            if (k < 1 || k > container->data.list.count) {
+                value_free(&key);
+                error(line, "Índice fuera de rango");
+            }
+            if (is_last) {
+                value_free(&container->data.list.items[k - 1]);
+                container->data.list.items[k - 1] = copy_value_secure(new_val);
+            } else {
+                container = &container->data.list.items[k - 1];
+            }
+        } else {
+            value_free(&key);
+            error(line, "No se puede indexar este tipo de valor");
+        }
+        value_free(&key);
+    }
+}
+
 /* --- Implementación de exec_stmt --- */
 void exec_stmt(ASTNode *stmt) {
     DEBUG_INFO("exec_stmt: kind=%d, line=%d", stmt->kind, stmt->line);
@@ -325,28 +405,34 @@ void exec_stmt(ASTNode *stmt) {
             } else {
                 // Asignación normal (no comando)
                 if (stmt->data.assign.value != NULL && stmt->data.assign.lhs_index) {
-                    // Asignación con índice (ej: lista[2] = 5)
+                    /* Asignación con índice, potencialmente anidado:
+                     *   lista[2] = 5
+                     *   stats["vida"] = 1000
+                     *   pages[web][pagina] = []   (declaración con tipo) */
                     VarEntry *var = scope_find(current_scope, stmt->data.assign.name);
-                    if (!var) error(stmt->line, "Variable no definida: %s", stmt->data.assign.name);
-                    Value idx_val = eval_expr(stmt->data.assign.lhs_index->data.idx.index);
-                    if (var->value.type == VAL_LIST) {
-                        if (idx_val.type != VAL_INT) error(stmt->line, "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
-                        int idx = idx_val.data.ival;
-                        if (idx < 1 || idx > var->value.data.list.count) error(stmt->line, "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
-                        Value new_val = eval_expr(stmt->data.assign.value);
-                        value_free(&var->value.data.list.items[idx - 1]);
-                        var->value.data.list.items[idx - 1] = copy_value_secure(new_val);
-                        value_free(&new_val);
-                    } else if (var->value.type == VAL_MAP) {
-                        if (idx_val.type != VAL_STRING) error(stmt->line, "La clave de mapa debe ser string");
-                        Value new_val = eval_expr(stmt->data.assign.value);
-                        val_map_set(&var->value, idx_val.data.sval, new_val);
-                        value_free(&new_val);
-                    } else {
-                        value_free(&idx_val);
-                        error(stmt->line, "No se puede indexar este tipo de variable");
+                    if (!var) {
+                        /* Si la declaración trae tipo map/list, crear el
+                         * contenedor en el scope global del script. */
+                        int vtype = stmt->data.assign.vtype;
+                        if (vtype == TOK_MAP || vtype == TOK_LIST) {
+                            Value init = (vtype == TOK_MAP)
+                            ? val_map_empty()
+                            : val_list_empty();
+                            scope_define(global_scope, stmt->data.assign.name,
+                                         vtype, init);
+                            var = scope_find_current(global_scope,
+                                                     stmt->data.assign.name);
+                        }
+                        if (!var) {
+                            error(stmt->line, "Variable no definida: %s",
+                                  stmt->data.assign.name);
+                        }
                     }
-                    value_free(&idx_val);
+
+                    Value new_val = eval_expr(stmt->data.assign.value);
+                    assign_nested_index(&var->value, stmt->data.assign.lhs_index,
+                                        new_val, stmt->line);
+                    value_free(&new_val);
                     break;
                 }
                 // Asignación sin índice

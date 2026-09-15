@@ -1252,8 +1252,58 @@ NodeList parse_block(const char *terminator) {
                     if (ts_peek().type == TOK_LOCAL || ts_peek().type == TOK_GLOBAL)
                         error(t.line, "No se puede cambiar el scope dentro de una declaración múltiple; todas las variables deben compartir scope y tipo");
 
-                    if (ts_peek().type == TOK_LBRACKET)
-                        error(t.line, "No se puede usar indexación al declarar una variable");
+                    /* --- Indexación anidada en la declaración ---
+                     *
+                     *   map pages[web][pagina] = []
+                     *   list casas[1] = "algo"
+                     *
+                     * Si tras el nombre viene '[', construimos una cadena de
+                     * NODE_INDEX cuyo nodo raíz es un NODE_VAR con el nombre.
+                     * El runtime creará la variable y los contenedores
+                     * intermedios que falten.
+                     *
+                     * Indexación solo tiene sentido para map y list. */
+                    ASTNode *lhs_index = NULL;
+                    if (ts_peek().type == TOK_LBRACKET) {
+                        if (vtype != TOK_MAP && vtype != TOK_LIST) {
+                            const char *tipo_str = "ese tipo";
+                            if (vtype == TOK_INT)         tipo_str = "int";
+                            else if (vtype == TOK_FLOAT)  tipo_str = "float";
+                            else if (vtype == TOK_BOOL)   tipo_str = "bool";
+                            else if (vtype == TOK_STRING) tipo_str = "string";
+                            else if (vtype == 0)          tipo_str = "sin tipo declarado";
+
+                            error(t.line,
+                                  "No puedes poner corchetes '[ ... ]' justo después del nombre al declarar una variable de tipo %s.\n"
+                                  "    Los corchetes solo sirven para decir \"qué parte del map/list quiero tocar\".\n"
+                                  "    Ejemplos válidos:\n"
+                                  "        map %s[clave] = []              (crea un submapa dentro del map %s)\n"
+                                  "        map %s[clave1][clave2] = []     (crea un submapa dentro de otro submapa)\n"
+                                  "        list %s[1] = valor              (guarda 'valor' en la posición 1 de la lista %s)\n"
+                                  "    Si solo quieres declarar %s sin tocar sus elementos, escríbelo así:\n"
+                                  "        %s %s = ...",
+                                  tipo_str,
+                                  vname, vname,
+                                  vname,
+                                  vname, vname,
+                                  vname,
+                                  tipo_str, vname);
+                        }
+                        ASTNode *base = node_create(NODE_VAR, t.line);
+                        base->data.var.name = strdup(vname);
+                        base->data.var.clone = false;
+                        ASTNode *prev = base;
+                        while (ts_peek().type == TOK_LBRACKET) {
+                            Token lb = ts_advance();
+                            ASTNode *idx = parse_expression(0);
+                            if (!ts_match(TOK_RBRACKET)) error(lb.line, "Se esperaba ']' para cerrar el índice");
+                            ASTNode *ni = node_create(NODE_INDEX, lb.line);
+                            ni->data.idx.list = prev;
+                            ni->data.idx.index = idx;
+                            prev = ni;
+                        }
+                        lhs_index = prev;
+                    }
 
                     ASTNode *value = NULL;
                     bool is_cmd = false;
@@ -1261,7 +1311,10 @@ NodeList parse_block(const char *terminator) {
 
                     if (ts_match(TOK_EQ)) {
                         Token next_token = ts_peek();
-                        if (next_token.type == TOK_IDENT && next_token.lexeme[0] != '$' && next_token.lexeme[0] != '?') {
+                        bool try_cmd = (lhs_index == NULL) &&
+                        next_token.type == TOK_IDENT &&
+                        next_token.lexeme[0] != '$' && next_token.lexeme[0] != '?';
+                        if (try_cmd) {
                             int save_pos = ts.pos;
                             ts_advance();                 /* consumir el identificador */
                             Token rhs_follow = ts_peek();
@@ -1273,12 +1326,12 @@ NodeList parse_block(const char *terminator) {
                              *   - indexación:         l[...]
                              *   - post-incremento/decremento sueltos: x++  o  x--
                              * Para usar el valor de una variable hay que usar $var. */
-                            bool post_op = rhs_is_post_op();                       /* FIX 2 */
+                            bool post_op = rhs_is_post_op();
                             if (!post_op && rhs_follow.type != TOK_LPAREN &&
-                                rhs_follow.type != TOK_LBRACKET) {                 /* FIX 2 */
-                                    is_cmd = true;
-                                    cmd_str = extract_literal_command(t.line);
-                                    while (ts_peek().type != TOK_NEWLINE && ts_peek().type != TOK_EOF) ts_advance();
+                                rhs_follow.type != TOK_LBRACKET) {
+                                is_cmd = true;
+                            cmd_str = extract_literal_command(t.line);
+                            while (ts_peek().type != TOK_NEWLINE && ts_peek().type != TOK_EOF) ts_advance();
                                 } else {
                                     value = parse_typed_empty_collection(vtype, t.line);
                                     if (!value) value = parse_expression(0);
@@ -1297,11 +1350,19 @@ NodeList parse_block(const char *terminator) {
                     stmt->data.assign.vtype = vtype;
                     stmt->data.assign.is_local = is_local;
                     stmt->data.assign.is_global = is_global;
-                    stmt->data.assign.lhs_index = NULL;
+                    stmt->data.assign.lhs_index = lhs_index;
                     nodelist_add(&block, stmt);
 
                     if (is_cmd) {
                         /* extract_literal_command consume el resto de la línea. */
+                        break;
+                    }
+
+                    if (lhs_index) {
+                        /* Una declaración con índice no admite ',' y más
+                         * variables en la misma línea: la ruta afecta solo
+                         * a un destino. */
+                        require_statement_end("la declaración");
                         break;
                     }
 
@@ -1341,8 +1402,53 @@ NodeList parse_block(const char *terminator) {
             if (ts_peek().type == TOK_LOCAL || ts_peek().type == TOK_GLOBAL)
                 error(t.line, "No se puede cambiar el scope dentro de una declaración múltiple; todas las variables deben compartir scope y tipo");
 
-            if (ts_peek().type == TOK_LBRACKET)
-                error(t.line, "No se puede usar indexación al declarar una variable");
+            /* --- Indexación anidada en la declaración tipada ---
+             *
+             *   map pages[web][pagina] = []
+             *   list casas[1] = "algo"
+             *
+             * Ver el comentario extenso en el bloque local/global de arriba.
+             * Aquí va el mismo tratamiento. */
+            ASTNode *lhs_index = NULL;
+            if (ts_peek().type == TOK_LBRACKET) {
+                if (vtype != TOK_MAP && vtype != TOK_LIST) {
+                    const char *tipo_str = "ese tipo";
+                    if (vtype == TOK_INT)         tipo_str = "int";
+                    else if (vtype == TOK_FLOAT)  tipo_str = "float";
+                    else if (vtype == TOK_BOOL)   tipo_str = "bool";
+                    else if (vtype == TOK_STRING) tipo_str = "string";
+
+                    error(t.line,
+                          "No puedes poner corchetes '[ ... ]' justo después del nombre al declarar una variable de tipo %s.\n"
+                          "    Los corchetes solo sirven para decir \"qué parte del map/list quiero tocar\".\n"
+                          "    Ejemplos válidos:\n"
+                          "        map %s[clave] = []              (crea un submapa dentro del map %s)\n"
+                          "        map %s[clave1][clave2] = []     (crea un submapa dentro de otro submapa)\n"
+                          "        list %s[1] = valor              (guarda 'valor' en la posición 1 de la lista %s)\n"
+                          "    Si solo quieres declarar %s sin tocar sus elementos, escríbelo así:\n"
+                          "        %s %s = ...",
+                          tipo_str,
+                          vname, vname,
+                          vname,
+                          vname, vname,
+                          vname,
+                          tipo_str, vname);
+                }
+                ASTNode *base = node_create(NODE_VAR, t.line);
+                base->data.var.name = strdup(vname);
+                base->data.var.clone = false;
+                ASTNode *prev = base;
+                while (ts_peek().type == TOK_LBRACKET) {
+                    Token lb = ts_advance();
+                    ASTNode *idx = parse_expression(0);
+                    if (!ts_match(TOK_RBRACKET)) error(lb.line, "Se esperaba ']' para cerrar el índice");
+                    ASTNode *ni = node_create(NODE_INDEX, lb.line);
+                    ni->data.idx.list = prev;
+                    ni->data.idx.index = idx;
+                    prev = ni;
+                }
+                lhs_index = prev;
+            }
 
             ASTNode *value = NULL;
             bool is_cmd = false;
@@ -1350,7 +1456,10 @@ NodeList parse_block(const char *terminator) {
 
             if (ts_match(TOK_EQ)) {
                 Token next_token = ts_peek();
-                if (next_token.type == TOK_IDENT && next_token.lexeme[0] != '$' && next_token.lexeme[0] != '?') {
+                bool try_cmd = (lhs_index == NULL) &&
+                next_token.type == TOK_IDENT &&
+                next_token.lexeme[0] != '$' && next_token.lexeme[0] != '?';
+                if (try_cmd) {
                     int save_pos = ts.pos;
                     ts_advance();                 /* consumir el identificador */
                     Token rhs_follow = ts_peek();
@@ -1381,12 +1490,18 @@ NodeList parse_block(const char *terminator) {
             stmt->data.assign.vtype = vtype;
             stmt->data.assign.is_local = false;
             stmt->data.assign.is_global = false;
-            stmt->data.assign.lhs_index = NULL;
+            stmt->data.assign.lhs_index = lhs_index;
             nodelist_add(&block, stmt);
             DEBUG_INFO("parse_block: añadida declaración tipada de '%s' en línea %d", vname, stmt->line);
 
             if (is_cmd)
                 break;
+            if (lhs_index) {
+                /* Con índice anidado no permitimos más variables en la misma
+                 * línea: la ruta apunta a un único destino dentro del contenedor. */
+                require_statement_end("la declaración tipada");
+                break;
+            }
             if (!ts_match(TOK_COMMA)) {
                 require_statement_end("la declaración tipada");
                 break;
@@ -1441,8 +1556,12 @@ NodeList parse_block(const char *terminator) {
                             // stats["vida"] = 1000
                             ts_advance(); // consumir '='
                             char *vname = NULL;
-                            if (idx_expr->kind == NODE_INDEX && idx_expr->data.idx.list->kind == NODE_VAR) {
-                                vname = strdup(idx_expr->data.idx.list->data.var.name);
+                            if (idx_expr->kind == NODE_INDEX) {
+                                ASTNode *base = idx_expr;
+                                while (base->kind == NODE_INDEX) base = base->data.idx.list;
+                                if (base->kind == NODE_VAR) {
+                                    vname = strdup(base->data.var.name);
+                                }
                             }
                             if (!vname) error(saved_t.line, "Lado izquierdo inválido para asignación con índice");
                             if (!is_expression_start(ts_peek().type)) {
