@@ -339,3 +339,7 @@ install: $(TARGET)
 		echo "Infernal instalado para el usuario."; \
 		echo "Asegúrate de que $$HOME/.local/bin está en tu PATH."; \
 	fi
+
+re: $(TARGET)
+	$(MAKE) clean
+	$(MAKE)
