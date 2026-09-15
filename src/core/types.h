@@ -136,7 +136,8 @@ struct ASTNode {
         NODE_MAP,
         NODE_UNARY,
         NODE_POST_INC,
-        NODE_POST_DEC
+        NODE_POST_DEC,
+        NODE_EMPTY_AMBIGUOUS
     } kind;
     union {
         struct { NodeList stmts; } prog;

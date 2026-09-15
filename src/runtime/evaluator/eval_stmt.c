@@ -350,8 +350,45 @@ void exec_stmt(ASTNode *stmt) {
                     break;
                 }
                 // Asignación sin índice
-                if (stmt->data.assign.value != NULL)
-                    val = eval_expr(stmt->data.assign.value);
+                if (stmt->data.assign.value != NULL) {
+                    if (stmt->data.assign.value->kind == NODE_EMPTY_AMBIGUOUS) {
+                        /* '[]' sin tipo explícito. Es válido SOLO si:
+                         *   - el destino tiene tipo explícito (vtype), o
+                         *   - la variable ya existe y su tipo es list/map.
+                         * En cualquier otro caso se mantiene la ambigüedad. */
+                        int vtype = stmt->data.assign.vtype;
+                        if (vtype == TOK_LIST) {
+                            val = val_list_empty();
+                        } else if (vtype == TOK_MAP) {
+                            val = val_map_empty();
+                        } else {
+                            VarEntry *existing =
+                            scope_find(current_scope, stmt->data.assign.name);
+                            if (!existing) {
+                                error(stmt->line,
+                                      "'[]' es ambiguo: la variable '%s' no existe todavía, "
+                                      "así que hay que declararla con tipo explícito. "
+                                      "Usa 'list %s = []' o 'map %s = []'.",
+                                      stmt->data.assign.name,
+                                      stmt->data.assign.name,
+                                      stmt->data.assign.name);
+                            }
+                            if (existing->vtype == TOK_LIST) {
+                                val = val_list_empty();
+                            } else if (existing->vtype == TOK_MAP) {
+                                val = val_map_empty();
+                            } else {
+                                error(stmt->line,
+                                      "'[]' solo se puede asignar a variables list o map; "
+                                      "la variable '%s' es de tipo %s.",
+                                      stmt->data.assign.name,
+                                      type_name(existing->vtype));
+                            }
+                        }
+                    } else {
+                        val = eval_expr(stmt->data.assign.value);
+                    }
+                }
                 else if (stmt->data.assign.vtype == TOK_INT)
                     val = val_int(0);
                 else if (stmt->data.assign.vtype == TOK_FLOAT)

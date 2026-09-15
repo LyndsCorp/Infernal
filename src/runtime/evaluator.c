@@ -97,6 +97,10 @@ Value eval_expr(ASTNode *expr) {
             e->value = copy_value_secure(new_val);
             return new_val;
         }
+        case NODE_EMPTY_AMBIGUOUS:
+            error(expr->line,
+                  "'[]' es ambiguo en este contexto: no se puede saber si es list o map. "
+                  "Usa 'list nombre = []' o 'map nombre = []' para declararlo con un tipo.");
         default:
             error(expr->line, "Se encontró una sentencia donde se esperaba una expresión. "
             "Revisa el incremento del bucle for: debe ser una expresión simple "

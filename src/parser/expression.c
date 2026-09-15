@@ -449,8 +449,10 @@ ASTNode *parse_primary() {
         Token first = ts_peek();
         if (first.type == TOK_RBRACKET) {
             ts_advance();
-            error_at(t.line, t.start_col,
-                     "'[]' es ambiguo: Infernal no sabe si quieres un list o un map. Usa 'list nombre = []' o 'map nombre = []'");
+            /* Emitimos un nodo especial. El parser no sabe si la variable destino
+             * existe ni de qué tipo, así que la decisión se aplaza al runtime
+             * (ver NODE_ASSIGN en eval_stmt.c). */
+            return node_create(NODE_EMPTY_AMBIGUOUS, t.line);
         }
         if (first.type == TOK_IDENT || first.type == TOK_STRING_LITERAL || first.type == TOK_NUMBER) {
             ts_advance();
