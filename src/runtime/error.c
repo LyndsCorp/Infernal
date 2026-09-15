@@ -12,7 +12,7 @@
 #include "runtime/globals.h"
 
 static void __attribute__((noreturn)) error_build(int line, int column, const char *fmt, va_list ap) {
-    char base[512];
+    char base[1024];
     vsnprintf(base, sizeof(base), fmt, ap);
 
     const char *file = current_source_file ? current_source_file : "<entrada>";
@@ -22,22 +22,23 @@ static void __attribute__((noreturn)) error_build(int line, int column, const ch
     }
 
     if (source && column > 0) {
-        char marker[96];
+        char marker[256];
         int spaces = column - 1;
-        if (spaces > 80) spaces = 80;
+        if (spaces > 200) spaces = 200;
         memset(marker, ' ', (size_t)spaces);
         marker[spaces] = '^';
         marker[spaces + 1] = '\0';
         snprintf(exception_msg, sizeof(exception_msg),
-                 "Error en '%-.64s', línea %d, columna %d:\n    %-.150s\n    %s\n    %-.280s",
+                 "Error en '%-.240s', línea %d, columna %d:\n    %-.240s\n    %s\n    %-.900s",
                  file, line, column, source, marker, base);
     } else if (source) {
         snprintf(exception_msg, sizeof(exception_msg),
-                 "Error en '%-.64s', línea %d:\n    %-.200s\n    %-.300s",
+                 "Error en '%-.240s', línea %d:\n    %-.240s\n    %-.900s",
                  file, line, source, base);
     } else {
         snprintf(exception_msg, sizeof(exception_msg),
-                 "Error en '%-.64s', línea %d: %-.300s", file, line, base);
+                 "Error en '%-.240s', línea %d: %-.900s",
+                 file, line, base);
     }
 
     exception_raised = 1;
