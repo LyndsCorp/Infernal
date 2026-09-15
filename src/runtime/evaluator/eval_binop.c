@@ -135,6 +135,29 @@ Value eval_binop(ASTNode *expr) {
     return new_list;
         }
 
+        /* --- Concatenación/append: lista + valor (no indexado) ---
+         *
+         * Si el lado derecho no es un NODE_INDEX (ese caso ya se resolvió
+         * arriba como inserción en posición), interpretamos `lista + valor`
+         * como añadir `valor` al final de la lista.
+         *
+         * Esto cubre tanto `var = var + x` como `var += x`, porque
+         * parse_assignment_expr() traduce `+=` a un NODE_BINOP con TOK_PLUS.
+         * El valor se añade como UN elemento (no se aplana si es lista). */
+        if (left.type == VAL_LIST && expr->data.binop.op == TOK_PLUS) {
+            Value right = eval_expr(expr->data.binop.right);
+            if (right.type == VAL_REFERENCE)
+                right = resolve_reference(right, expr->line);
+
+            Value new_list = val_list_empty();
+            for (int i = 0; i < left.data.list.count; i++) {
+                val_list_append(&new_list, copy_value_secure(left.data.list.items[i]));
+            }
+            val_list_append(&new_list, right);   /* transferimos la propiedad de `right` */
+            value_free(&left);
+            return new_list;
+        }
+
         if (left.type == VAL_LIST) {
             error(expr->line, "Operación no soportada con lista y operador '%s'", op_name);
         }
