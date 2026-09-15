@@ -176,19 +176,37 @@ ASTNode *parse_flags() {
             if (!ts_match(TOK_EQ)) {
                 error(ts_peek().line, "Se esperaba '=' después de 'empty'");
             }
-            TokenType t = ts_peek().type;
-            if (!(t == TOK_INT || t == TOK_FLOAT || t == TOK_BOOL || t == TOK_STRING || t == TOK_LIST)) {
-                error(ts_peek().line, "Se esperaba un tipo después de '='");
-            }
-            spec.vtype = ts_advance().type;
-            if (ts_peek().type != TOK_IDENT) {
-                error(ts_peek().line, "Se esperaba nombre de variable");
-            }
-            spec.var_name = strdup(ts_advance().lexeme);
-            if (ts_peek().type == TOK_LBRACE) {
+
+            /* --- Calificador opcional: global / local --- */
+            bool is_global = false;
+            if (ts.pos < ts.count &&
+                (ts_peek().type == TOK_GLOBAL || ts_peek().type == TOK_LOCAL)) {
+                if (ts_peek().type == TOK_GLOBAL) is_global = true;
                 ts_advance();
-                parse_flag_body_tokens(&spec.body_tokens, &spec.body_count, 1);
-            }
+                }
+
+                /* --- Tipo opcional. Si se omite, la variable es string --- */
+                TokenType t = ts_peek().type;
+            if (t == TOK_INT || t == TOK_FLOAT || t == TOK_BOOL ||
+                t == TOK_STRING || t == TOK_LIST || t == TOK_MAP) {
+                spec.vtype = ts_advance().type;
+                } else if (t == TOK_IDENT) {
+                    spec.vtype = TOK_STRING;   /* tipado automático: string */
+                } else {
+                    error(ts_peek().line,
+                          "Se esperaba un tipo (int, float, bool, string, list, map) "
+                          "o un nombre de variable después de '='");
+                }
+
+                if (ts_peek().type != TOK_IDENT) {
+                    error(ts_peek().line, "Se esperaba nombre de variable");
+                }
+                spec.var_name = strdup(ts_advance().lexeme);
+                spec.is_global = is_global;
+                if (ts_peek().type == TOK_LBRACE) {
+                    ts_advance();
+                    parse_flag_body_tokens(&spec.body_tokens, &spec.body_count, 1);
+                }
         }
         /* --- catch-all (*) --- */
         else if (ts.pos < ts.count && ts_peek().type == TOK_STAR) {
