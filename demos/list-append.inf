@@ -1,0 +1,6 @@
+var = ["hola", "holaa"]
+var += "holaadasd"
+var += 3[1]
+var += 67
+var = $var + "esto"[2] #despues del 3
+print(var)
