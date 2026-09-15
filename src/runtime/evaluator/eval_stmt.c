@@ -1072,8 +1072,15 @@ void exec_stmt(ASTNode *stmt) {
 
         case NODE_PORTAL: {
             const char *name = stmt->data.portal.name;
-            bool is_local = stmt->data.portal.is_local;
-            Scope *target_scope = is_local ? current_scope : global_scope;
+
+            /* Los portales viven en el ámbito actual. Para el script principal
+             * current_scope == global_scope (comportamiento sin cambios). Para
+             * un script lanzado con 'execute', current_scope es el child_scope
+             * temporal que NODE_EXECUTE crea y libera al terminar, de modo que
+             * ejecutar el mismo script varias veces no reutiliza portales
+             * huérfanos de ejecuciones anteriores. */
+            Scope *target_scope = current_scope;
+
             if (portal_find_in_scope(target_scope, name)) {
                 error(stmt->line, "Portal '%s' ya existe en este ámbito", name);
             }
