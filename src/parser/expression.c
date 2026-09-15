@@ -307,6 +307,36 @@ ASTNode *parse_primary() {
             n->data.lit.type = TOK_INT;
             n->data.lit.ival = atoi(t.lexeme);
         }
+        /* Permitir indexación/slice sobre un literal numérico:
+         *   3[i]      → NODE_INDEX(list=3, index=i)
+         *   3[*]      → NODE_SLICE (modo *)
+         *   3[2:5]    → NODE_SLICE (modo rango)
+         *   3[2*]     → NODE_SLICE (desde 2 hasta el final)
+         *   3[*2]     → NODE_SLICE (desde el principio hasta 2)
+         *
+         * El runtime (eval_binop.c) interpreta `lista + N[i]` como
+         * inserción de N en la posición i, por lo que expresiones del
+         * tipo `var += 3[3]` insertan el valor 3 en la posición 3 de
+         * la lista `var`. */
+        while (ts_peek().type == TOK_LBRACKET) {
+            Token lb = ts_advance();
+            Token next = ts_peek();
+            if (next.type == TOK_STAR ||
+                (next.type == TOK_NUMBER &&
+                (ts.tokens[ts.pos+1].type == TOK_COLON ||
+                ts.tokens[ts.pos+1].type == TOK_STAR))) {
+                ASTNode *slice = parse_slice_content(lb.line);
+            slice->data.slice.list = n;
+            n = slice;
+                } else {
+                    ASTNode *idx = parse_expression(0);
+                    if (!ts_match(TOK_RBRACKET)) error(lb.line, "Se esperaba ']'");
+                    ASTNode *ni = node_create(NODE_INDEX, lb.line);
+                    ni->data.idx.list = n;
+                    ni->data.idx.index = idx;
+                    n = ni;
+                }
+        }
         return n;
     }
     if (t.type == TOK_STRING_LITERAL) {
