@@ -33,6 +33,7 @@ static ASTNode *parse_unary(void);
 static ASTNode *parse_term(void);
 static ASTNode *parse_expr(void);
 static ASTNode *parse_comparison(void);
+static ASTNode *parse_not(void);
 static ASTNode *parse_logic_and(void);
 static ASTNode *parse_logic_or(void);
 static void expect_index_close_bracket(int line);
@@ -730,13 +731,6 @@ static ASTNode *parse_unary() {
         node->data.binop.right = operand;
         return node;
     }
-    if (ts_match(TOK_NOT)) {
-        ASTNode *operand = parse_unary();
-        ASTNode *node = node_create(NODE_UNARY, operand->line);
-        node->data.unary.op = TOK_NOT;
-        node->data.unary.operand = operand;
-        return node;
-    }
     return parse_power();
 }
 
@@ -828,12 +822,37 @@ static ASTNode *parse_comparison() {
         return left;
 }
 
+/* --- parse_not (interna) ---
+ *
+ * NOT con precedencia baja, como en Python:
+ *     not a == b     →  not (a == b)
+ *     not a != b     →  not (a != b)
+ *     not a < b      →  not (a < b)
+ *     not a and b    →  (not a) and b
+ *     not a or b     →  (not a) or b
+ *     not not a      →  not (not a)
+ *
+ * Al colocarlo entre parse_comparison() y parse_logic_and(), el 'not'
+ * envuelve a toda la comparación que tiene a su derecha, en vez de
+ * comerse solo el primer operando. */
+static ASTNode *parse_not(void) {
+    if (ts_peek().type == TOK_NOT) {
+        Token op = ts_advance();
+        ASTNode *operand = parse_not();        /* permite cadenas 'not not x' */
+        ASTNode *node = node_create(NODE_UNARY, op.line);
+        node->data.unary.op = TOK_NOT;
+        node->data.unary.operand = operand;
+        return node;
+    }
+    return parse_comparison();
+}
+
 /* --- parse_logic_and (interna) --- */
 static ASTNode *parse_logic_and() {
-    ASTNode *left = parse_comparison();
+    ASTNode *left = parse_not();
     while (ts_peek().type == TOK_AND) {
         Token op = ts_advance();
-        ASTNode *right = parse_comparison();
+        ASTNode *right = parse_not();
         ASTNode *n = node_create(NODE_BINOP, op.line);
         n->data.binop.op = TOK_AND;
         n->data.binop.left = left;
