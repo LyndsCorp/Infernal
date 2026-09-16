@@ -31,6 +31,26 @@ void parser_cleanup_on_error(void) {
     ast_free_all();
 }
 
+/* --- Contador de bloques abiertos que esperan un 'fi' ---
+ *
+ * Se incrementa al entrar en un bloque que se cierra con 'fi'
+ * (if / while / for / for-in / function / try / switch) y se
+ * decrementa al consumir su 'fi'.
+ *
+ * Sirve para que, cuando un bloque intenta consumir un 'fi', podamos
+ * comprobar si ese 'fi' realmente le pertenece: si en el resto del
+ * archivo quedan menos 'fi' que bloques abiertos, es que este 'fi'
+ * pertenece a un bloque externo y al nuestro le falta el suyo. */
+static int fi_block_nesting = 0;
+
+static int count_remaining_fi(void) {
+    int count = 0;
+    for (int i = ts.pos; i < ts.count; i++) {
+        if (ts.tokens[i].type == TOK_FI) count++;
+    }
+    return count;
+}
+
 /* --- Funciones auxiliares --- */
 static char *strip_quotes(const char *s) {
     if (!s) return NULL;
@@ -267,6 +287,7 @@ static ASTNode *parse_switch_statement(void) {
     Token t = ts_peek();
     int line = t.line;
     ts_advance();
+    fi_block_nesting++;
 
     ASTNode *stmt = node_create(NODE_SWITCH, line);
     stmt->data.switch_stmt.expr = parse_expression(0);
@@ -280,6 +301,13 @@ static ASTNode *parse_switch_statement(void) {
     while (1) {
         Token head = ts_peek();
         if (head.type == TOK_FI) {
+            int remaining = count_remaining_fi();
+            if (remaining < fi_block_nesting) {
+                error(line,
+                      "Falta el 'fi' que cierra este 'switch' (abierto en la línea %d).\n"
+                      "    Quedan %d 'fi' en el archivo pero hay %d bloque(s) abierto(s) esperando el suyo.",
+                      line, remaining, fi_block_nesting);
+            }
             ts_advance();
             break;
         }
@@ -339,6 +367,7 @@ static ASTNode *parse_switch_statement(void) {
         error(head.line, "Se esperaba 'case', 'default' o 'fi' dentro del switch");
     }
 
+    fi_block_nesting--;
     return stmt;
 }
 
@@ -346,6 +375,7 @@ ASTNode *parse_if_statement() {
     Token t = ts_peek();
     int line = t.line;
     ts_advance();
+    fi_block_nesting++;
     if (!is_expression_start(ts_peek().type)) {
         error_at(ts_peek().line, ts_peek().start_col > 0 ? ts_peek().start_col : 1,
                  "Se esperaba una condición después de 'if'");
@@ -381,6 +411,7 @@ ASTNode *parse_if_statement() {
         current_if->data.if_stmt.else_block = else_block;
     }
     if (!ts_match(TOK_FI)) error(line, "Se esperaba 'fi' al final del bloque if");
+    fi_block_nesting--;
     return first_if;
 }
 
@@ -726,8 +757,10 @@ NodeList parse_block(const char *terminator) {
             }
             ASTNode *cond = parse_expression(0);
             if (!ts_match(TOK_THEN)) error_missing_then(t.line, "while");
+            fi_block_nesting++;
             NodeList body = parse_block("fi");
             if (!ts_match(TOK_FI)) error(t.line, "Se esperaba 'fi'");
+            fi_block_nesting--;
             stmt = node_create(NODE_WHILE, t.line);
             stmt->data.while_stmt.cond = cond;
             stmt->data.while_stmt.body = body;
@@ -788,8 +821,10 @@ NodeList parse_block(const char *terminator) {
                 }
                 ASTNode *list_expr = parse_expression(0);
                 if (!ts_match(TOK_THEN)) error_missing_then(t.line, "for-in");
+                fi_block_nesting++;
                 NodeList body = parse_block("fi");
                 if (!ts_match(TOK_FI)) error(t.line, "Se esperaba 'fi'");
+                fi_block_nesting--;
                 stmt = node_create(NODE_FOR_IN, t.line);
                 stmt->data.for_in.index_var = varname;   /* primer identificador: índice */
                 stmt->data.for_in.var = second;          /* segundo identificador: valor */
@@ -810,8 +845,10 @@ NodeList parse_block(const char *terminator) {
                 }
                 ASTNode *list_expr = parse_expression(0);
                 if (!ts_match(TOK_THEN)) error_missing_then(t.line, "for-in");
+                fi_block_nesting++;
                 NodeList body = parse_block("fi");
                 if (!ts_match(TOK_FI)) error(t.line, "Se esperaba 'fi'");
+                fi_block_nesting--;
                 stmt = node_create(NODE_FOR_IN, t.line);
                 stmt->data.for_in.index_var = NULL;
                 stmt->data.for_in.var = varname;
@@ -925,8 +962,10 @@ NodeList parse_block(const char *terminator) {
                 }
 
                 if (!ts_match(TOK_THEN)) error_missing_then(t.line, "for");
-                NodeList body = parse_block("fi");
+                fi_block_nesting++;
+            NodeList body = parse_block("fi");
             if (!ts_match(TOK_FI)) error(t.line, "Se esperaba 'fi' para cerrar el for");
+            fi_block_nesting--;
 
             stmt = node_create(NODE_FOR, t.line);
             stmt->data.for_stmt.var = strdup(varname);
@@ -1005,8 +1044,10 @@ NodeList parse_block(const char *terminator) {
                     }
             }
 
+            fi_block_nesting++;
             stmt->data.func.body = parse_block("fi");
             if (!ts_match(TOK_FI)) error(t.line, "Se esperaba 'fi'");
+            fi_block_nesting--;
 
             func_register(stmt->data.func.name, stmt);
             if (current_import_prefix) {
@@ -1252,10 +1293,12 @@ NodeList parse_block(const char *terminator) {
         /* --- TRY --- */
         if (t.type == TOK_TRY) {
             ts_advance();
+            fi_block_nesting++;
             NodeList try_block = parse_block("catch");
             if (!ts_match(TOK_CATCH)) error(t.line, "Se esperaba 'catch' para cerrar el bloque 'try'");
             NodeList catch_block = parse_block("fi");
             if (!ts_match(TOK_FI)) error(t.line, "Se esperaba 'fi'");
+            fi_block_nesting--;
             stmt = node_create(NODE_TRY, t.line);
             stmt->data.try_stmt.try_block = try_block;
             stmt->data.try_stmt.catch_block = catch_block;
