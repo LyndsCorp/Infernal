@@ -6,6 +6,8 @@
 
 Si necesitas documentación, entra a:
 https://github.com/LyndsCorp/Infernal-Documentation
+O también a:
+https://lyndscorp.com/infernal
 
 Para compilar el intérprete, solo tienes que poner en la terminal:
 ``` Shell
