@@ -22,7 +22,13 @@ Value eval_slice(ASTNode *node) {
     if (node->kind != NODE_SLICE) error(node->line, "eval_slice: nodo no es NODE_SLICE");
 
     if (node->data.slice.list == NULL) {
-        error(current_eval_line, "eval_slice: el campo 'list' del nodo slice es NULL");
+        error(current_eval_line,
+              "Un slice como '[2:4]' no es un valor por sí solo.\n"
+              "    Solo tiene sentido dentro de una operación con una lista:\n"
+              "        · eliminar un rango:   $lista - [2:4]\n"
+              "        · eliminar un índice:  $lista - [3]\n"
+              "        · añadir al final:     $lista + [elemento]\n"
+              "    Si querías crear una lista con esos números, usa '[2, 4]'.");
     }
 
     DEBUG_INFO("eval_slice: mode=%d, start=%d, end=%d, list node kind=%d",

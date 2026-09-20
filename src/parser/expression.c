@@ -503,6 +503,35 @@ ASTNode *parse_primary() {
         }
     }
     if (t.type == TOK_LBRACKET) {
+        /* Antes de tratar '[...]' como lista o mapa, comprobar si es un
+         * slice standalone: [*], [2:4], [2*], [*2].
+         *
+         * Un slice aislado no es un valor por sí solo; solo tiene sentido
+         * como operando derecho de 'lista - [slice]' o 'lista + [slice]'.
+         * Devolver el NODE_SLICE aquí permite que 'x -= [2:4]' funcione
+         * igual que 'x = $x - [2:4]': el parser construye un NODE_BINOP
+         * con TOK_MINUS y el slice como operando derecho, y eval_binop
+         * lo trata como eliminación de rango. */
+        {
+            int look = ts.pos + 1;
+            if (look < ts.count) {
+                TokenType inner = ts.tokens[look].type;
+                bool is_slice = false;
+                if (inner == TOK_STAR) {
+                    is_slice = true;
+                } else if (inner == TOK_NUMBER && look + 1 < ts.count) {
+                    TokenType after = ts.tokens[look + 1].type;
+                    if (after == TOK_COLON || after == TOK_STAR) {
+                        is_slice = true;
+                    }
+                }
+                if (is_slice) {
+                    ts_advance(); /* consumir '[' */
+                    return parse_slice_content(t.line);
+                }
+            }
+        }
+
         ts_advance();
         ts_skip_newlines();
 
