@@ -4,7 +4,7 @@ a += 3
 print(a)          # 8
 
 b = 2
-c = b ** 3
+c = $b ** 3
 print(c)          # 8
 
 x = 10
