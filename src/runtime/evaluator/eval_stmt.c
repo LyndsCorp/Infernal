@@ -354,12 +354,15 @@ void exec_stmt(ASTNode *stmt) {
                                 VarEntry *same_name = scope_find(current_scope, first_token);
                                 if (same_name) {
                                     error(stmt->line,
-                                          "Se ejecutó un comando que no existe y que tiene el mismo nombre que una variable. "
-                                          "Quizás querías obtener su valor. Usa '$%s' para clonar su valor. "
-                                          "El '$' también representa que vas a trabajar con variables en lugar de comandos.",
-                                          first_token);
+                                          "El comando '%s' falló: comando no encontrado.\n"
+                                          " Se ejecutó un comando que no existe y que tiene el mismo nombre que una variable.\n"
+                                          " Quizás querías obtener su valor. Usa '$%s' para clonar su valor.\n"
+                                          " El '$' también representa que vas a trabajar con variables en lugar de comandos.",
+                                          cmd, first_token);
                                 } else {
-                                    error(stmt->line, "Comando no encontrado: '%s'", first_token);
+                                    error(stmt->line,
+                                          "El comando '%s' falló: comando no encontrado ('%s').",
+                                          cmd, first_token);
                                 }
                             }
 
