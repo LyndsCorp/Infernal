@@ -20,6 +20,67 @@
 #include "vm/vm.h"
 #include "stdlib/output.h"
 
+/* --- Impresión "de inspección" --------------------------------
+ *
+ * Igual que print_value(), pero entrecomilla los strings, tanto en el
+ * nivel superior como dentro de listas y mapas. Se usa en printAllVars()
+ * para que al inspeccionar variables quede claro qué valores son texto:
+ *   variable: "Hola"   (string)
+ *   n: 42              (int)
+ *   lista: [1, "dos", ["k" = "v"]]
+ *
+ * print() sigue usando print_value(), que imprime strings sin comillas,
+ * porque ahí el usuario está presentando datos, no depurándolos.
+ */
+static void print_value_for_inspection(Value v) {
+    switch (v.type) {
+        case VAL_STRING:
+            putchar('"');
+            if (v.data.sval) {
+                for (const unsigned char *p = (const unsigned char *)v.data.sval; *p; ++p) {
+                    switch (*p) {
+                        case '\\': printf("\\\\"); break;
+                        case '"':  printf("\\\""); break;
+                        case '\n': printf("\\n");  break;
+                        case '\r': printf("\\r");  break;
+                        case '\t': printf("\\t");  break;
+                        default:   putchar(*p);    break;
+                    }
+                }
+            }
+            putchar('"');
+            break;
+
+        case VAL_LIST:
+            printf("[");
+            for (int i = 0; i < v.data.list.count; i++) {
+                if (i > 0) printf(", ");
+                print_value_for_inspection(v.data.list.items[i]);
+            }
+            printf("]");
+            break;
+
+        case VAL_MAP: {
+            printf("[");
+            MapData *md = v.data.map;
+            if (md) {
+                for (int i = 0; i < md->count; i++) {
+                    if (i > 0) printf(", ");
+                    printf("%s = ", md->pairs[i].key ? md->pairs[i].key : "");
+                    print_value_for_inspection(md->pairs[i].value);
+                }
+            }
+            printf("]");
+            break;
+        }
+
+        default:
+            /* int, float, bool, null, reference, ptr */
+            print_value(v);
+            break;
+    }
+}
+
 static void print_var_entry(const VarEntry *entry, const char *indent, int line) {
     printf("%s%s", indent, entry->name);
     if (entry->value.type == VAL_REFERENCE) {
@@ -32,13 +93,13 @@ static void print_var_entry(const VarEntry *entry, const char *indent, int line)
         }
         Value ref = copy_value_secure(entry->value);
         Value resolved = resolve_reference(ref, line);
-        print_value(resolved);
+        print_value_for_inspection(resolved);
         printf(" (%s)", value_type_name(resolved.type));
         value_free(&resolved);
         return;
     }
     printf(": ");
-    print_value(entry->value);
+    print_value_for_inspection(entry->value);
     printf(" (%s)", value_type_name(entry->value.type));
 }
 
