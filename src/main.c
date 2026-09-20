@@ -217,38 +217,21 @@ int main(int argc, char **argv) {
         DEBUG_INFO("Shell ya configurado por --shell, no se cargan configuraciones");
     }
 
-    /* -------------------------------------------------------------------
-     * Leer y tokenizar el archivo del script ANTES de instalar el setjmp.
-     *
-     * tokenize_file() y fclose() NO llaman a error(), así que no hay
-     * longjmp posible en este tramo. De este modo el manejador de errores
-     * no tiene que recordar si el archivo estaba abierto ni cerrar nada:
-     * cuando longjmp nos devuelva el control, `fp` ya no existirá.
-     *
-     * (El bug original era guardar `file_open` en una variable local que
-     * se modificaba después del setjmp. Según C11 §7.13.2.1p3 ese valor
-     * es indeterminado tras el longjmp, y con -O2 el compilador lo dejaba
-     * en `true` → segundo fclose() → double free.)
-     * ----------------------------------------------------------------- */
-    FILE *fp = fopen(script_file, "r");
+    FILE *volatile fp = fopen(script_file, "r");
     if (!fp) {
         perror("Error al abrir script");
         free(script_dir);
         return 1;
     }
     ts_init();
-    tokenize_file(fp);
-    fclose(fp);
-    fp = NULL;
 
-    /* `program` se modifica después del setjmp, así que su valor es
-     * indeterminado si algo lanza longjmp. Por eso NO lo tocamos en la
-     * rama de error: parser_cleanup_on_error() (que es ast_free_all())
-     * libera todos los nodos AST registrados, estén o no colgando de
-     * `program`. */
     NodeList program = {NULL, 0, 0};
 
     if (!setjmp(exception_env)) {
+        tokenize_file(fp);
+        fclose(fp);
+        fp = NULL;
+
         program = parse_block(NULL);
 
         DEBUG_INFO("main: parse_block devolvió %d sentencias (stmts=%p)",
@@ -274,6 +257,11 @@ int main(int argc, char **argv) {
         free(script_dir);
         return 0;
     } else {
+        /* Cerrar el archivo si la tokenización no llegó a cerrarlo.
+         * `fp` es volatile precisamente para que este valor sea fiable
+         * después del longjmp. */
+        if (fp) { fclose(fp); fp = NULL; }
+
         /* No usamos `program` aquí: su valor es indeterminado tras el
          * longjmp. ast_free_all() ya se encarga de liberar todo el AST
          * registrado, así como los NodeList huérfanos. */
