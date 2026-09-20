@@ -341,11 +341,23 @@ void exec_stmt(ASTNode *stmt) {
                         if (status != 0 && status != -1) {
                             int code = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
 
-                            /* Código 127 = el shell no encontró el comando (ni siquiera
-                             * la primera palabra existe). Se comprueba ANTES que cualquier
-                             * otro caso porque da lugar al diagnóstico más útil: si la
-                             * primera palabra del comando coincide con una variable, es
-                             * casi seguro que el usuario quería usar su valor con '$'. */
+                            /* Copia local de la salida capturada (stdout+stderr
+                             * combinados). Se hace antes de liberar 'out' porque
+                             * error() hace longjmp y no podemos confiar en
+                             * punteros dinámicos después del salto. Se recortan
+                             * los saltos de línea finales para que el mensaje
+                             * quede compacto. */
+                            char err_output[1024] = "";
+                            if (out && out[0]) {
+                                size_t out_len = strlen(out);
+                                while (out_len > 0 &&
+                                       (out[out_len - 1] == '\n' || out[out_len - 1] == '\r')) {
+                                    out[out_len - 1] = '\0';
+                                    out_len--;
+                                }
+                                snprintf(err_output, sizeof(err_output), "%.900s", out);
+                            }
+
                             if (code == 127) {
                                 char first_token[256] = "";
                                 sscanf(cmd, "%255s", first_token);
@@ -355,9 +367,9 @@ void exec_stmt(ASTNode *stmt) {
                                 if (same_name) {
                                     error(stmt->line,
                                           "El comando '%s' falló: comando no encontrado.\n"
-                                          " Se ejecutó un comando que no existe y que tiene el mismo nombre que una variable.\n"
-                                          " Quizás querías obtener su valor. Usa '$%s' para clonar su valor.\n"
-                                          " El '$' también representa que vas a trabajar con variables en lugar de comandos.",
+                                          "    Se ejecutó un comando que no existe y que tiene el mismo nombre que una variable.\n"
+                                          "    Quizás querías obtener su valor. Usa '$%s' para clonar su valor.\n"
+                                          "    El '$' también representa que vas a trabajar con variables en lugar de comandos.",
                                           cmd, first_token);
                                 } else {
                                     error(stmt->line,
@@ -366,13 +378,18 @@ void exec_stmt(ASTNode *stmt) {
                                 }
                             }
 
-                            /* Cualquier otro fallo del comando, tenga o no argumentos,
-                             * aborta la ejecución. Un comando que devuelve un código
-                             * de salida distinto de cero es un error del script y no
-                             * debe propagarse como valor capturado. */
                             free(out);
                             if (temp_path) { unlink(temp_path); free(temp_path); }
-                            error(stmt->line, "El comando '%s' falló (código de salida %d)", cmd, code);
+                            if (err_output[0]) {
+                                error(stmt->line,
+                                      "El comando '%s' falló (código de salida %d).\n"
+                                      "    Salida del comando:\n        %s",
+                                      cmd, code, err_output);
+                            } else {
+                                error(stmt->line,
+                                      "El comando '%s' falló (código de salida %d)",
+                                      cmd, code);
+                            }
                         }
 
                         if (temp_path) {
