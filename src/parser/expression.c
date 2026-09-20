@@ -35,6 +35,7 @@ static ASTNode *parse_expr(void);
 static ASTNode *parse_comparison(void);
 static ASTNode *parse_logic_and(void);
 static ASTNode *parse_logic_or(void);
+static void expect_index_close_bracket(int line);
 
 static bool token_starts_expression(TokenType type) {
     switch (type) {
@@ -176,12 +177,7 @@ ASTNode *parse_index_or_slice(int line) {
         node = parse_slice_content(line);
     } else {
         ASTNode *idx = parse_expression(0);
-        if (!ts_match(TOK_RBRACKET)) {
-            Token at = ts_peek();
-            if (at.type == TOK_EOF)
-                error_at(line, 1, "El list o map empieza aquí, pero nunca se cerró; falta ']' antes del final del archivo");
-            error_at(at.line, at.start_col > 0 ? at.start_col : 1, "Se esperaba ']' para cerrar el acceso");
-        }
+        expect_index_close_bracket(line);
         node = node_create(NODE_INDEX, line);
         node->data.idx.index = idx;
     }
@@ -292,6 +288,43 @@ static ASTNode *parse_map_literal(int line) {
     return node;
 }
 
+/* --- Cerrar un índice '[...]' con mensajes específicos ---
+ *
+ * El caso habitual es olvidar que los corchetes de Infernal solo admiten
+ * UN índice o UN slice. Una coma dentro de `[...]` no es válida, y en vez
+ * de un escueto "Se esperaba ']'" damos una explicación accionable. */
+static void expect_index_close_bracket(int line) {
+    if (ts_match(TOK_RBRACKET)) return;
+
+    Token at = ts_peek();
+
+    if (at.type == TOK_COMMA) {
+        error_at(at.line, at.start_col > 0 ? at.start_col : 1,
+                 "El índice de una lista o mapa no puede contener una coma.\n"
+                 "    Los corchetes '[...]' solo admiten un índice o un slice:\n"
+                 "        · un índice:   lista[3]\n"
+                 "        · un rango:    lista[3:32]   (del 3 al 32, ambos incluidos)\n"
+                 "        · desde/hasta: lista[3*] o lista[*32] (no incluye 3 o 32)\n"
+                 "    Si querías acceder a varios elementos por separado,\n"
+                 "    usa una expresión para cada uno: lista[3] + lista[32].\n"
+                 "    Recuerda que los índices de list en Infernal empiezan en 1.");
+    }
+
+    if (at.type == TOK_EOF) {
+        error_at(line, 1,
+                 "El acceso '[' nunca se cerró: falta ']' antes del final del archivo.");
+    }
+
+    if (at.type == TOK_NEWLINE) {
+        error_at(at.line, 1,
+                 "El acceso '[' nunca se cerró en esta línea: falta ']'.");
+    }
+
+    error_at(at.line, at.start_col > 0 ? at.start_col : 1,
+             "Se esperaba ']' para cerrar el índice, pero apareció '%s'.",
+             at.lexeme);
+}
+
 /* --- parse_primary (declarada en .h) --- */
 ASTNode *parse_primary() {
     Token t = ts_peek();
@@ -330,7 +363,7 @@ ASTNode *parse_primary() {
             n = slice;
                 } else {
                     ASTNode *idx = parse_expression(0);
-                    if (!ts_match(TOK_RBRACKET)) error(lb.line, "Se esperaba ']'");
+                    expect_index_close_bracket(lb.line);
                     ASTNode *ni = node_create(NODE_INDEX, lb.line);
                     ni->data.idx.list = n;
                     ni->data.idx.index = idx;
@@ -353,7 +386,7 @@ ASTNode *parse_primary() {
                 n = slice;
             } else {
                 ASTNode *idx = parse_expression(0);
-                if (!ts_match(TOK_RBRACKET)) error(lb.line, "Se esperaba ']'");
+                expect_index_close_bracket(lb.line);
                 ASTNode *ni = node_create(NODE_INDEX, lb.line);
                 ni->data.idx.list = n;
                 ni->data.idx.index = idx;
@@ -459,7 +492,7 @@ ASTNode *parse_primary() {
                     n = slice;
                 } else {
                     ASTNode *idx = parse_expression(0);
-                    if (!ts_match(TOK_RBRACKET)) error(lb.line, "Se esperaba ']'");
+                    expect_index_close_bracket(lb.line);
                     ASTNode *ni = node_create(NODE_INDEX, lb.line);
                     ni->data.idx.list = n;
                     ni->data.idx.index = idx;
