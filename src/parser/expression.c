@@ -89,7 +89,8 @@ ASTNode *parse_slice_content(int line) {
     if (t.type == TOK_STAR) {
         ts_advance();
         if (ts_peek().type == TOK_RBRACKET) {
-            mode = 5; start = 0; end = 0;
+            /* [*] – todos los elementos */
+            mode = 6; start = 0; end = 0;
         } else if (ts_peek().type == TOK_NUMBER) {
             Token num = ts_advance();
             if (strchr(num.lexeme, '.') != NULL) {
@@ -97,18 +98,35 @@ ASTNode *parse_slice_content(int line) {
             }
             int val = atoi(num.lexeme);
             if (val < 1) error(line, "Índice inválido: debe ser positivo");
-            if (ts_peek().type == TOK_STAR) {
+
+            TokenType after = ts_peek().type;
+            if (after == TOK_STAR || after == TOK_POW) {
+                /* [*N*] o [*N**] – forma larga de [**N] */
                 ts_advance();
-                mode = 4;
-                start = val;
-                end = val;
+                mode = 5; start = -1; end = val;
             } else {
-                mode = 3;
-                start = -1;
-                end = val;
+                /* [*N] – todo lo que está ANTES de N, sin contar N */
+                mode = 3; start = -1; end = val;
             }
         } else {
             error(line, "Se esperaba número o ']' después de '*'");
+        }
+    } else if (t.type == TOK_POW) {
+        /* [**M] o [**] */
+        ts_advance();
+        if (ts_peek().type == TOK_RBRACKET) {
+            mode = 6; start = 0; end = 0;
+        } else if (ts_peek().type == TOK_NUMBER) {
+            Token num = ts_advance();
+            if (strchr(num.lexeme, '.') != NULL) {
+                error(line, "Índice inválido: no se permiten números decimales");
+            }
+            int val = atoi(num.lexeme);
+            if (val < 1) error(line, "Índice inválido: debe ser positivo");
+            /* [**N] – todo lo que está ANTES de N, incluyendo N */
+            mode = 5; start = -1; end = val;
+        } else {
+            error(line, "Se esperaba número o ']' después de '**'");
         }
     } else if (t.type == TOK_NUMBER) {
         Token num = ts_advance();
@@ -120,9 +138,8 @@ ASTNode *parse_slice_content(int line) {
 
         Token next = ts_peek();
         if (next.type == TOK_RBRACKET) {
-            mode = 0;
-            start = val;
-            end = val;
+            /* [N] – índice único */
+            mode = 0; start = val; end = val;
         } else if (next.type == TOK_COLON) {
             ts_advance();
             Token next2 = ts_peek();
@@ -133,9 +150,7 @@ ASTNode *parse_slice_content(int line) {
                 }
                 int val2 = atoi(num2.lexeme);
                 if (val2 < 1) error(line, "Índice inválido: debe ser positivo");
-                mode = 1;
-                start = val;
-                end = val2;
+                mode = 1; start = val; end = val2;
                 if (start > end) {
                     error(line, "Rango invertido: [%d:%d] – quizás te referías a [%d:%d]?",
                           start, end, end, start);
@@ -145,14 +160,17 @@ ASTNode *parse_slice_content(int line) {
             }
         } else if (next.type == TOK_STAR) {
             ts_advance();
-            mode = 2;
-            start = val;
-            end = -1;
+            /* [N*] – todo lo que está DESPUÉS de N, sin contar N */
+            mode = 2; start = val; end = -1;
+        } else if (next.type == TOK_POW) {
+            ts_advance();
+            /* [N**] – todo desde N en adelante, incluyendo N */
+            mode = 4; start = val; end = -1;
         } else {
             error(line, "Token inesperado '%s' en slice", next.lexeme);
         }
     } else {
-        error(line, "Se esperaba '*' o un número en el slice");
+        error(line, "Se esperaba '*', '**' o un número en el slice");
     }
 
     if (!ts_match(TOK_RBRACKET)) {
@@ -517,11 +535,11 @@ ASTNode *parse_primary() {
             if (look < ts.count) {
                 TokenType inner = ts.tokens[look].type;
                 bool is_slice = false;
-                if (inner == TOK_STAR) {
+                if (inner == TOK_STAR || inner == TOK_POW) {
                     is_slice = true;
                 } else if (inner == TOK_NUMBER && look + 1 < ts.count) {
                     TokenType after = ts.tokens[look + 1].type;
-                    if (after == TOK_COLON || after == TOK_STAR) {
+                    if (after == TOK_COLON || after == TOK_STAR || after == TOK_POW) {
                         is_slice = true;
                     }
                 }
@@ -744,7 +762,7 @@ static ASTNode *parse_expr() {
             bool is_slice = false;
             if (look < ts.count) {
                 TokenType inner = ts.tokens[look].type;
-                if (inner == TOK_STAR || inner == TOK_NUMBER) {
+                if (inner == TOK_STAR || inner == TOK_NUMBER || inner == TOK_POW) {
                     is_slice = true;
                 }
             }

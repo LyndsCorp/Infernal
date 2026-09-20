@@ -63,25 +63,23 @@ Value eval_slice(ASTNode *node) {
     if (line == 0) line = current_eval_line;
 
     switch (mode) {
-        case 0: {
+        case 0: {  /* [N] – índice único */
             if (start < 1 || start > len)
                 error(line, "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
             val_list_append(&result, copy_value_secure(list.data.list.items[start - 1]));
             break;
         }
-        case 1: {
+        case 1: {  /* [N:M] – rango inclusivo */
             if (start < 1 || start > len)
                 error(line, "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
             int real_end = (end > len) ? len : end;
-            if (start > real_end) {
-                break;
-            }
+            if (start > real_end) break;
             for (int i = start - 1; i < real_end; i++) {
                 val_list_append(&result, copy_value_secure(list.data.list.items[i]));
             }
             break;
         }
-        case 2: {
+        case 2: {  /* [N*] – DESPUÉS de N (posiciones N+1..len) */
             if (start < 1 || start > len)
                 error(line, "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
             for (int i = start; i < len; i++) {
@@ -89,10 +87,7 @@ Value eval_slice(ASTNode *node) {
             }
             break;
         }
-        case 3: {
-            if (start != -1) {
-                error(line, "Modo *start no implementado correctamente");
-            }
+        case 3: {  /* [*M] – ANTES de M (posiciones 1..M-1) */
             if (end < 1 || end > len)
                 error(line, "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
             for (int i = 0; i < end - 1; i++) {
@@ -100,16 +95,26 @@ Value eval_slice(ASTNode *node) {
             }
             break;
         }
-        case 4: {
+        case 4: {  /* [N**] – DESDE N en adelante (posiciones N..len) */
             if (start < 1 || start > len)
                 error(line, "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
-            for (int i = 0; i < len; i++) {
-                if (i != start - 1)
-                    val_list_append(&result, copy_value_secure(list.data.list.items[i]));
+            for (int i = start - 1; i < len; i++) {
+                val_list_append(&result, copy_value_secure(list.data.list.items[i]));
             }
             break;
         }
-        case 5: {
+        case 5: {  /* [**M] – HASTA M inclusive (posiciones 1..M) */
+            if (end < 1 || end > len)
+                error(line, "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
+            for (int i = 0; i < end; i++) {
+                val_list_append(&result, copy_value_secure(list.data.list.items[i]));
+            }
+            break;
+        }
+        case 6: {  /* [*] – todos */
+            for (int i = 0; i < len; i++) {
+                val_list_append(&result, copy_value_secure(list.data.list.items[i]));
+            }
             break;
         }
         default:
@@ -148,7 +153,7 @@ Value remove_slice(Value list, ASTNode *slice_node) {
     Value new_list = val_list_empty();
 
     switch (mode) {
-        case 0: {
+        case 0: {  /* [N] – quitar posición N */
             if (start < 1 || start > len)
                 error(line, "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
             for (int i = 0; i < len; i++) {
@@ -157,7 +162,7 @@ Value remove_slice(Value list, ASTNode *slice_node) {
             }
             break;
         }
-        case 1: {
+        case 1: {  /* [N:M] – quitar posiciones N..M */
             if (start < 1 || start > len)
                 error(line, "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
             int real_end = (end > len) ? len : end;
@@ -172,18 +177,15 @@ Value remove_slice(Value list, ASTNode *slice_node) {
             }
             break;
         }
-        case 2: {
+        case 2: {  /* [N*] – quitar lo que está DESPUÉS de N (conservar 1..N) */
             if (start < 1 || start > len)
                 error(line, "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
-            for (int i = 0; i < start - 1; i++) {
+            for (int i = 0; i < start; i++) {
                 val_list_append(&new_list, copy_value_secure(list.data.list.items[i]));
             }
             break;
         }
-        case 3: {
-            if (start != -1) {
-                error(line, "Modo *start no implementado correctamente para eliminación");
-            }
+        case 3: {  /* [*M] – quitar lo que está ANTES de M (conservar M..len) */
             if (end < 1 || end > len)
                 error(line, "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
             for (int i = end - 1; i < len; i++) {
@@ -191,13 +193,23 @@ Value remove_slice(Value list, ASTNode *slice_node) {
             }
             break;
         }
-        case 4: {
+        case 4: {  /* [N**] – quitar DESDE N en adelante (conservar 1..N-1) */
             if (start < 1 || start > len)
                 error(line, "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
-            val_list_append(&new_list, copy_value_secure(list.data.list.items[start - 1]));
+            for (int i = 0; i < start - 1; i++) {
+                val_list_append(&new_list, copy_value_secure(list.data.list.items[i]));
+            }
             break;
         }
-        case 5: {
+        case 5: {  /* [**M] – quitar HASTA M inclusive (conservar M+1..len) */
+            if (end < 1 || end > len)
+                error(line, "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
+            for (int i = end; i < len; i++) {
+                val_list_append(&new_list, copy_value_secure(list.data.list.items[i]));
+            }
+            break;
+        }
+        case 6: {  /* [*] – quitar todo */
             break;
         }
         default:
