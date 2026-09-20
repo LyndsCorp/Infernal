@@ -760,27 +760,29 @@ NodeList parse_block(const char *terminator) {
 
             /* FOR-IN con índice: for i, elemento in lista then
              *
-             * Las variables del for-in son SIEMPRE locales al bucle, por
-             * lo que aquí no se admite 'local'/'global' ni tipo explícito.
+             * Las variables del for-in son SIEMPRE locales al bucle, por lo
+             * que aquí no se admite 'local'/'global' ni tipo explícito.
              * El primer identificador actúa como índice (base 1) y el
-             * segundo recibe el valor de cada elemento. */
-            if (ts_peek().type == TOK_COMMA) {
-                ts_advance();
+             * segundo recibe el valor de cada elemento.
+             *
+             * Solo tratamos la coma como separador de for-in con índice si
+             * el patrón es exactamente IDENT ',' IDENT 'in'. Si no, dejamos
+             * caer el flujo al parseo de for tradicional, que dará el error
+             * correcto ('=' faltante tras el nombre, etc.). Así no
+             * confundimos un for tradicional mal escrito con un for-in al
+             * que le falta el 'in'. */
+            if (ts_peek().type == TOK_COMMA &&
+                ts.pos + 2 < ts.count &&
+                ts.tokens[ts.pos + 1].type == TOK_IDENT &&
+                ts.tokens[ts.pos + 2].type == TOK_IN) {
+                ts_advance();  /* consumir ',' */
                 if (ts_peek().type != TOK_IDENT) {
-                    free(varname);
                     error(t.line, "Se esperaba nombre de variable después de ',' en for-in");
                 }
                 char *second = clean_var_name(ts_advance().lexeme);
                 validate_var_name(second, t.line);
-                if (ts_peek().type != TOK_IN) {
-                    free(varname);
-                    free(second);
-                    error(t.line, "Se esperaba 'in' después de las variables del for-in");
-                }
-                ts_advance();
+                ts_advance();  /* consumir 'in' */
                 if (!is_expression_start(ts_peek().type)) {
-                    free(varname);
-                    free(second);
                     error_at(ts_peek().line, ts_peek().start_col > 0 ? ts_peek().start_col : 1,
                              "Se esperaba una expresión después de 'in'");
                 }
@@ -822,16 +824,54 @@ NodeList parse_block(const char *terminator) {
             }
 
             // FOR tradicional
-            if (!ts_match(TOK_EQ)) {
+            //
+            // Formas válidas:
+            //   for i = 0, cond, incr then              → init explícito
+            //   for local int i, cond, incr then        → init = valor por defecto de int (0)
+            //   for float f, cond, incr then            → init = 0.0
+            //   for string s, cond, incr then           → init = ""
+            //   etc.
+            //
+            // El valor por defecto solo se aplica si hay un tipo declarado
+            // (vtype != 0). Sin tipo, el valor inicial es obligatorio, porque
+            // no hay forma de saber qué tipo de valor por defecto usar.
+            ASTNode *init_expr = NULL;
+            if (ts_match(TOK_EQ)) {
+                if (!is_expression_start(ts_peek().type)) {
+                    error_at(ts_peek().line, ts_peek().start_col > 0 ? ts_peek().start_col : 1,
+                             "Se esperaba el valor inicial del for después de '='");
+                }
+                init_expr = parse_expression(0);
+            } else if (vtype != 0 && ts_peek().type == TOK_COMMA) {
+                /* El tipo ya determina el valor inicial. init_expr queda NULL
+                 * y eval_stmt usará el valor por defecto del tipo. */
+                init_expr = NULL;
+            } else if (is_local || is_global) {
+                /* 'for local i, ...' sin tipo y sin '=' es ambiguo:
+                 * no se puede decidir el tipo de la variable. */
                 error_at(ts_peek().line, ts_peek().start_col > 0 ? ts_peek().start_col : 1,
-                         "Se esperaba '=' después de la variable del for");
-            }
-
-            if (!is_expression_start(ts_peek().type)) {
+                         "La declaración 'for %s %s' es ambigua.\n"
+                         "    No se indicó ni un tipo ni un valor inicial, así que no se puede\n"
+                         "    determinar el tipo de '%s'.\n"
+                         "    Especifica un tipo o asígnale un valor:\n"
+                         "        for %s int %s, condición, incremento then      (usa el valor por defecto de int)\n"
+                         "        for %s %s = 0, condición, incremento then      (infiere el tipo del valor)",
+                         is_local ? "local" : "global", varname,
+                         varname,
+                         is_local ? "local" : "global", varname,
+                         is_local ? "local" : "global", varname);
+            } else {
                 error_at(ts_peek().line, ts_peek().start_col > 0 ? ts_peek().start_col : 1,
-                         "Se esperaba el valor inicial del for después de '='");
+                         "Se esperaba '=' después de la variable del for.\n"
+                         "    La sintaxis del for tradicional es:\n"
+                         "        for variable = inicio, condición, incremento then\n"
+                         "        for tipo variable, condición, incremento then   (usa el valor por defecto del tipo)\n"
+                         "    Por ejemplo:  for i = 0, i <= 3, i++ then\n"
+                         "                  for local int i, i <= 3, i++ then\n"
+                         "    Para recorrer una lista usa for-in:\n"
+                         "        for elemento in lista then\n"
+                         "        for i, elemento in lista then");
             }
-            ASTNode *init_expr = parse_expression(0);
 
             ASTNode *init = node_create(NODE_ASSIGN, t.line);
             init->data.assign.name = varname;
@@ -1343,6 +1383,23 @@ NodeList parse_block(const char *terminator) {
                         }
                     }
 
+                    /* Una declaración sin tipo ni valor inicial es ambigua:
+                     * no hay forma de saber qué tipo debe tener la variable.
+                     * Especificar el tipo (int, float, ...) o darle un valor
+                     * resuelve la ambigüedad. */
+                    if (!is_cmd && value == NULL && vtype == 0) {
+                        error(t.line,
+                              "Declaración '%s %s' sin tipo ni valor inicial.\n"
+                              "    La variable '%s' es ambigua: no se puede determinar su tipo.\n"
+                              "    Especifica un tipo o asígnale un valor:\n"
+                              "        %s int %s           (usa el valor por defecto de int, 0)\n"
+                              "        %s %s = 0           (tipado automático del valor dado)",
+                              is_local ? "local" : "global", vname,
+                              vname,
+                              is_local ? "local" : "global", vname,
+                              is_local ? "local" : "global", vname);
+                    }
+
                     stmt = node_create(NODE_ASSIGN, t.line);
                     stmt->data.assign.name = vname;
                     stmt->data.assign.is_cmd = is_cmd;
@@ -1616,6 +1673,15 @@ NodeList parse_block(const char *terminator) {
                         if (post_op_only) {
                             ts.pos--;
                             ASTNode *expr = parse_expression(0);
+                            /* Marcar como sentencia suelta: SOLO en este
+                             * contexto el runtime puede interpretar `g++`
+                             * como un comando si la variable no existe.
+                             * Un `j++` dentro de un for o de una expresión
+                             * NO es candidato a comando: es una variable
+                             * que debe existir. */
+                            if (expr->kind == NODE_POST_INC || expr->kind == NODE_POST_DEC) {
+                                expr->data.post_op.statement_context = true;
+                            }
                             stmt = node_create(NODE_EXPR_STMT, saved_t.line);
                             stmt->data.expr_stmt.expr = expr;
                             nodelist_add(&block, stmt);
