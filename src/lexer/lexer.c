@@ -148,6 +148,10 @@ void tokenize_file(FILE *fp) {
                 Token t = {TOK_SLASH_EQ, strdup("/="), lineno, start_col, start_col + 2};
                 ts_add(t); p += 2; continue;
             }
+            if (*p == '%' && *(p+1) == '=') {
+                Token t = {TOK_PERCENT_EQ, strdup("%="), lineno, start_col, start_col + 2};
+                ts_add(t); p += 2; continue;
+            }
             if (*p == '*' && *(p+1) == '*') {
                 Token t = {TOK_POW, strdup("**"), lineno, start_col, start_col + 2};
                 ts_add(t); p += 2; continue;

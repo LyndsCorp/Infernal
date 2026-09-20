@@ -41,6 +41,7 @@ typedef enum {
     TOK_MINUS_EQ,
     TOK_STAR_EQ,
     TOK_SLASH_EQ,
+    TOK_PERCENT_EQ,
     TOK_POW,
     TOK_INC,
     TOK_DEC

@@ -430,9 +430,9 @@ ASTNode *parse_assignment_expr(int line) {
 
     int op = ts_peek().type;
     if (op != TOK_EQ && op != TOK_PLUS_EQ && op != TOK_MINUS_EQ &&
-        op != TOK_STAR_EQ && op != TOK_SLASH_EQ) {
+        op != TOK_STAR_EQ && op != TOK_SLASH_EQ && op != TOK_PERCENT_EQ) {
         error_at(ts_peek().line, ts_peek().start_col > 0 ? ts_peek().start_col : 1,
-                 "Se esperaba '=', '+=', '-=', '*=' o '/=' después de '%s'",
+                 "Se esperaba '=', '+=', '-=', '*=', '/=' o '%=' después de '%s'",
                  varname);
         }
         Token op_tok = ts_advance();
@@ -504,10 +504,11 @@ ASTNode *parse_assignment_expr(int line) {
     binop->data.binop.left = var_node;
     binop->data.binop.right = value;
     switch (op) {
-        case TOK_PLUS_EQ:  binop->data.binop.op = TOK_PLUS;  break;
-        case TOK_MINUS_EQ: binop->data.binop.op = TOK_MINUS; break;
-        case TOK_STAR_EQ:  binop->data.binop.op = TOK_STAR;  break;
-        case TOK_SLASH_EQ: binop->data.binop.op = TOK_SLASH; break;
+        case TOK_PLUS_EQ:    binop->data.binop.op = TOK_PLUS;    break;
+        case TOK_MINUS_EQ:   binop->data.binop.op = TOK_MINUS;   break;
+        case TOK_STAR_EQ:    binop->data.binop.op = TOK_STAR;    break;
+        case TOK_SLASH_EQ:   binop->data.binop.op = TOK_SLASH;   break;
+        case TOK_PERCENT_EQ: binop->data.binop.op = TOK_PERCENT; break;
         default: break;
     }
     assign->data.assign.value = binop;
@@ -868,7 +869,7 @@ NodeList parse_block(const char *terminator) {
                     Token next_next = ts.tokens[pos];
                     if (next_next.type == TOK_PLUS_EQ || next_next.type == TOK_MINUS_EQ ||
                         next_next.type == TOK_STAR_EQ || next_next.type == TOK_SLASH_EQ ||
-                        next_next.type == TOK_EQ) {
+                        next_next.type == TOK_PERCENT_EQ || next_next.type == TOK_EQ) {
                         incr = parse_assignment_expr(t.line);
                         }
                 }
@@ -1525,7 +1526,7 @@ NodeList parse_block(const char *terminator) {
                 /* ASIGNACIÓN (x = 0, x += 2, etc.) */
                 if (next_tok.type == TOK_EQ || next_tok.type == TOK_PLUS_EQ ||
                     next_tok.type == TOK_MINUS_EQ || next_tok.type == TOK_STAR_EQ ||
-                    next_tok.type == TOK_SLASH_EQ) {
+                    next_tok.type == TOK_SLASH_EQ || next_tok.type == TOK_PERCENT_EQ) {
                     DEBUG_INFO("parse_block: DETECTADA ASIGNACIÓN para '%s'", saved_t.lexeme);
                 ts.pos--;
                 stmt = parse_assignment_expr(saved_t.line);
