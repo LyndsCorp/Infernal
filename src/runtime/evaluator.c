@@ -44,15 +44,19 @@ Value eval_expr(ASTNode *expr) {
             const char *raw_name = var_node->data.var.name;
             const char *name = raw_name;
             if (name[0] == '$' || name[0] == '?') name++;
+
             VarEntry *e = scope_find(current_scope, name);
             if (!e) {
-                if (var_node->data.var.clone) {
+                /* Un post-op que NO está en contexto de sentencia (por
+                 * ejemplo el incremento de un for, o dentro de una
+                 * expresión) nunca puede ser un comando. Es simplemente
+                 * una variable que no existe. */
+                if (var_node->data.var.clone || !expr->data.post_op.statement_context) {
                     error(expr->line, "Variable '%s' no definida", name);
                 }
 
-                /* Un identificador seguido de ++ también puede ser un comando
-                 * cuyo nombre contiene '+'. Solo si ese comando no existe,
-                 * informamos de que no hay variable. */
+                /* Solo cuando el post-op aparece como sentencia suelta
+                 * (g++) permitimos interpretarlo como comando. */
                 char *command = NULL;
                 if (asprintf(&command, "%s%s", name,
                              expr->kind == NODE_POST_INC ? "++" : "--") < 0 || !command) {
@@ -63,7 +67,7 @@ Value eval_expr(ASTNode *expr) {
                 if (status == 0) {
                     return val_make_null();
                 }
-                error(expr->line, "Variable '%s' no existe y tampoco existe el comando asociado", name);
+                error(expr->line, "Variable '%s' no definida", name);
             }
 
             Value base = copy_value_secure(e->value);

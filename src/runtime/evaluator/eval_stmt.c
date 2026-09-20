@@ -741,25 +741,38 @@ void exec_stmt(ASTNode *stmt) {
              *
              * NO ejecutamos el NODE_ASSIGN completo porque eso podría
              * crear la variable en el scope incorrecto.
+             *
+             * Si el parser no encontró un valor explícito (init.value == NULL)
+             * pero sí hay un tipo declarado (for local int i, cond, incr then),
+             * usamos el valor por defecto de ese tipo. Así 'for local int i, ...'
+             * equivale a 'for local int i = 0, ...'.
              */
-            Value init_val = val_make_null();
 
+            Value init_val;
+
+            ASTNode *init_expr = NULL;
             if (stmt->data.for_stmt.init &&
                 stmt->data.for_stmt.init->kind == NODE_ASSIGN) {
-
-                ASTNode *init_expr =
-                stmt->data.for_stmt.init->data.assign.value;
+                init_expr = stmt->data.for_stmt.init->data.assign.value;
+            }
 
             if (init_expr) {
                 current_scope = old_scope;
                 init_val = eval_expr(init_expr);
-
-                DEBUG_INFO(
-                    "NODE_FOR: init_val = %d",
-                    init_val.data.ival
-                );
-            }
+                DEBUG_INFO("NODE_FOR: init_val desde expresión");
+            } else {
+                int vtype = stmt->data.for_stmt.vtype;
+                switch (vtype) {
+                    case TOK_INT:    init_val = val_int(0);       break;
+                    case TOK_FLOAT:  init_val = val_float(0.0);   break;
+                    case TOK_BOOL:   init_val = val_bool(false);  break;
+                    case TOK_STRING: init_val = val_string("");   break;
+                    case TOK_LIST:   init_val = val_list_empty(); break;
+                    case TOK_MAP:    init_val = val_map_empty();  break;
+                    default:         init_val = val_make_null();  break;
                 }
+                DEBUG_INFO("NODE_FOR: init_val por defecto del tipo %d", vtype);
+            }
 
                 /*
                  * 2) Elegir el scope.
