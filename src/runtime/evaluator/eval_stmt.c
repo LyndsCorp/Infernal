@@ -335,44 +335,41 @@ void exec_stmt(ASTNode *stmt) {
                             out = tmp_out;
                             memcpy(out + old_len, buf, add_len + 1);
                         }
+
                         int status = pclose(fp);
 
                         if (status != 0 && status != -1) {
                             int code = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
-                            bool simple_name = (strpbrk(cmd, " \t\r\n") == NULL);
 
-                            if (simple_name) {
-                                /* Si el comando tiene el mismo nombre que una variable accesible,
-                                 * casi seguro que el usuario quería usar su valor. */
-                                VarEntry *same_name = scope_find(current_scope, cmd);
-                                if (same_name) {
-                                    free(out);
-                                    if (temp_path) { unlink(temp_path); free(temp_path); }
-                                    error(stmt->line,
-                                          "Se ejecutó un comando que falló y que tiene el mismo nombre que una variable. "
-                                          "Quizás querías obtener su valor. Usa '$%s' para clonar su valor. "
-                                          "El '$' también representa que vas a trabajar con variables en lugar de comandos.",
-                                          cmd);
-                                }
-
-                                /* Comando simple que no existe: error de comando no encontrado.
-                                 * Esto hace que el intérprete salga con código 1 en lugar de
-                                 * asignar el mensaje de error del shell a la variable. */
-                                if (code == 127) {
-                                    free(out);
-                                    if (temp_path) { unlink(temp_path); free(temp_path); }
-                                    error(stmt->line, "Comando no encontrado: '%s'", cmd);
-                                }
-
-                                /* Cualquier otro fallo de un comando simple también es error. */
+                            /* Código 127 = el shell no encontró el comando (ni siquiera
+                             * la primera palabra existe). Se comprueba ANTES que cualquier
+                             * otro caso porque da lugar al diagnóstico más útil: si la
+                             * primera palabra del comando coincide con una variable, es
+                             * casi seguro que el usuario quería usar su valor con '$'. */
+                            if (code == 127) {
+                                char first_token[256] = "";
+                                sscanf(cmd, "%255s", first_token);
                                 free(out);
                                 if (temp_path) { unlink(temp_path); free(temp_path); }
-                                error(stmt->line, "El comando '%s' falló (código de salida %d)", cmd, code);
+                                VarEntry *same_name = scope_find(current_scope, first_token);
+                                if (same_name) {
+                                    error(stmt->line,
+                                          "Se ejecutó un comando que no existe y que tiene el mismo nombre que una variable. "
+                                          "Quizás querías obtener su valor. Usa '$%s' para clonar su valor. "
+                                          "El '$' también representa que vas a trabajar con variables en lugar de comandos.",
+                                          first_token);
+                                } else {
+                                    error(stmt->line, "Comando no encontrado: '%s'", first_token);
+                                }
                             }
 
-                            /* Los comandos con argumentos (por ejemplo 'ls archivo_inexistente')
-                             * pueden fallar sin abortar el script; su salida y código de salida
-                             * quedan reflejados en el valor capturado, como antes. */
+                            /* Cualquier otro fallo del comando, tenga o no argumentos,
+                             * aborta la ejecución. Un comando que devuelve un código
+                             * de salida distinto de cero es un error del script y no
+                             * debe propagarse como valor capturado. */
+                            free(out);
+                            if (temp_path) { unlink(temp_path); free(temp_path); }
+                            error(stmt->line, "El comando '%s' falló (código de salida %d)", cmd, code);
                         }
 
                         if (temp_path) {
