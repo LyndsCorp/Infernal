@@ -464,6 +464,44 @@ ASTNode *parse_primary() {
                         error_at(ts_peek().line, ts_peek().start_col,
                                  "Se esperaba ')' para cerrar la llamada a '%s'", func_name);
             }
+
+            /* --- Indexación / slice sobre el resultado de la llamada ---
+             *
+             * Permite escribir:
+             *
+             *     fromfile("datos.txt")[1]        → primer elemento de la lista
+             *     fromfile("config.txt")["clave"] → valor de la clave del mapa
+             *     keys(mi_mapa)[1]                → primera clave
+             *     obtener_lista()[1:3]            → slice de lista
+             *     construir_matriz()[2][3]        → acceso encadenado
+             *
+             * El parser no distingue aquí entre lista, mapa o string: el
+             * runtime (eval_index.c) decide según el tipo REAL que devuelva
+             * la función. Por eso el mismo código sirve para list, map y
+             * string sin cambios adicionales. */
+            while (ts_peek().type == TOK_LBRACKET) {
+                Token lb = ts_advance();
+                Token next = ts_peek();
+                if (next.type == TOK_STAR ||
+                    (next.type == TOK_NUMBER &&
+                    (ts.tokens[ts.pos + 1].type == TOK_COLON ||
+                     ts.tokens[ts.pos + 1].type == TOK_STAR))) {
+                    /* Slice sobre el resultado de la función. */
+                    ASTNode *slice = parse_slice_content(lb.line);
+                    slice->data.slice.list = n;
+                    n = slice;
+                } else {
+                    /* Índice normal: puede ser número (lista) o string
+                     * (mapa). El runtime valida el tipo real. */
+                    ASTNode *idx = parse_expression(0);
+                    expect_index_close_bracket(lb.line);
+                    ASTNode *ni = node_create(NODE_INDEX, lb.line);
+                    ni->data.idx.list = n;
+                    ni->data.idx.index = idx;
+                    n = ni;
+                }
+            }
+
             return n;
         } else {
             ts_advance();
