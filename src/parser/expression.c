@@ -426,28 +426,6 @@ ASTNode *parse_primary() {
             ts_advance();
             char *func_name = strdup(t.lexeme);
 
-            if (strcmp(func_name, "exited") == 0) {
-                ts_advance();
-                int start_pos = ts.pos;
-                int depth = 1;
-                while (depth > 0 && ts.pos < ts.count) {
-                    Token tok = ts_advance();
-                    if (tok.type == TOK_LPAREN) depth++;
-                    else if (tok.type == TOK_RPAREN) depth--;
-                }
-                int end_pos = ts.pos - 1;
-                char *cmd = build_command_from_tokens(start_pos, end_pos);
-                ASTNode *n = node_create(NODE_CALL, t.line);
-                n->data.call.name = func_name;
-                n->data.call.argc = 1;
-                n->data.call.args = malloc(sizeof(ASTNode*));
-                ASTNode *lit = node_create(NODE_LITERAL, t.line);
-                lit->data.lit.type = TOK_STRING;
-                lit->data.lit.sval = cmd;
-                n->data.call.args[0] = lit;
-                return n;
-            }
-
             ASTNode *n = node_create(NODE_CALL, t.line);
             n->data.call.name = func_name;
             n->data.call.argc = 0;
