@@ -26,12 +26,6 @@
  *  Helpers internos
  * ============================================================ */
 
-/* --- Validación del nombre de variable ---
- *
- * Debe ser un identificador de Infernal: empieza por letra o '_' y
- * continúa con letras, dígitos o '_'. Así una librería no puede crear
- * variables con nombres raros ("3x", "mi var", "a-b") que después no
- * se podrían usar desde el lenguaje. */
 static bool is_valid_var_name(const char *name) {
     if (!name || !*name) return false;
     unsigned char c0 = (unsigned char)name[0];
@@ -43,10 +37,6 @@ static bool is_valid_var_name(const char *name) {
     return true;
 }
 
-/* --- Parseo del string de tipo ---
- *
- * Devuelve el TOK_* correspondiente, o -1 si el string no es un tipo
- * reconocido. La comparación es case-insensitive. */
 static int parse_type_name(const char *s) {
     if (!s || !*s) return -1;
     if (strcasecmp(s, "int")    == 0) return TOK_INT;
@@ -58,12 +48,36 @@ static int parse_type_name(const char *s) {
     return -1;
 }
 
-/* --- Conversión de string al tipo indicado ---
+/*
+ * Parseo del string de scope. Solo se aceptan tres valores:
  *
- * Lanza error() si el string no se puede interpretar como el tipo pedido.
- * Para list y map solo se acepta el contenedor vacío ("" o "[]"), porque
- * mkvar está pensado para crear contenedores que luego se rellenan desde
- * el lenguaje. */
+ *   "local"  / ""  → 0  (current_scope)
+ *   "script"       → 1  (global_scope, el scope del script actual)
+ *   "global"       → 2  (super_global_scope, compartido entre scripts)
+ *   otro           → -1
+ *
+ * IMPORTANTE: en Infernal, el keyword `global` del lenguaje pone las
+ * variables en super_global_scope, NO en global_scope. Aquí replicamos
+ * exactamente esa semántica para que mkvar(..., "global") se comporte
+ * igual que `global x = ...` en el código.
+ */
+static int parse_scope_name(const char *s) {
+    if (!s || !*s) return 0;
+    if (strcasecmp(s, "local")  == 0) return 0;
+    if (strcasecmp(s, "script") == 0) return 1;
+    if (strcasecmp(s, "global") == 0) return 2;
+    return -1;
+}
+
+static const char *scope_name_str(int scope_type) {
+    switch (scope_type) {
+        case 0: return "local";
+        case 1: return "script";
+        case 2: return "global";
+        default: return "?";
+    }
+}
+
 static Value convert_string_to_type(const char *s, int tok_type) {
     if (!s) s = "";
 
@@ -78,7 +92,6 @@ static Value convert_string_to_type(const char *s, int tok_type) {
             }
             return val_int((int)n);
         }
-
         case TOK_FLOAT: {
             char *normalized = strdup(s);
             if (!normalized)
@@ -94,7 +107,6 @@ static Value convert_string_to_type(const char *s, int tok_type) {
             }
             return val_float(f);
         }
-
         case TOK_BOOL:
             if (strcasecmp(s, "true") == 0 || strcmp(s, "1") == 0)
                 return val_bool(true);
@@ -127,11 +139,6 @@ static Value convert_string_to_type(const char *s, int tok_type) {
     }
 }
 
-/* --- Búsqueda del scope que contiene la variable ---
- *
- * Reproduce el mismo orden que scope_find (cadena de padres, luego
- * global_scope, luego super_global_scope) pero además devuelve el Scope*
- * dueño, que scope_find no expone. Se usa solo desde delvar(). */
 static Scope *find_scope_owner(Scope *start, const char *name, VarEntry **out_entry) {
     for (Scope *s = start; s; s = s->parent) {
         for (VarEntry *e = s->vars; e; e = e->next) {
@@ -161,7 +168,6 @@ static Scope *find_scope_owner(Scope *start, const char *name, VarEntry **out_en
     return NULL;
 }
 
-/* --- Desenlaza y libera un VarEntry concreto de un scope --- */
 static void scope_remove_entry(Scope *scope, VarEntry *target) {
     VarEntry **link = &scope->vars;
     while (*link) {
@@ -205,9 +211,6 @@ static Value builtin_delvar(int argc, Value *args) {
 
     scope_remove_entry(owner, entry);
 
-    /* Si la variable era global (script o superglobal), reflejamos el
-     * borrado en el estado de la VM para que las lecturas posteriores
-     * desde bytecode no vean valores huérfanos. */
     if (owner == global_scope || owner == super_global_scope) {
         int gidx = vm_find_global_index(name);
         if (gidx >= 0) {
@@ -226,10 +229,10 @@ static Value builtin_delvar(int argc, Value *args) {
  * ============================================================ */
 
 static Value builtin_mkvar(int argc, Value *args) {
-    if (argc != 3)
+    if (argc < 3 || argc > 4)
         error(current_eval_line,
-              "mkvar() espera exactamente 3 argumentos: "
-              "mkvar(tipo, nombre, valor)");
+              "mkvar() espera 3 o 4 argumentos: "
+              "mkvar(tipo, nombre, valor[, scope])");
 
     if (args[0].type != VAL_STRING)
         error(current_eval_line, "mkvar(): el tipo debe ser un string");
@@ -242,7 +245,6 @@ static Value builtin_mkvar(int argc, Value *args) {
     const char *name      = args[1].data.sval;
     const char *value_str = args[2].data.sval;
 
-    /* --- Validar tipo --- */
     int tok_type = parse_type_name(type_str);
     if (tok_type == -1) {
         error(current_eval_line,
@@ -251,25 +253,45 @@ static Value builtin_mkvar(int argc, Value *args) {
               type_str ? type_str : "");
     }
 
-    /* --- Validar nombre --- */
     if (!name || !*name)
         error(current_eval_line, "mkvar(): el nombre de la variable está vacío");
     if (!is_valid_var_name(name))
         error(current_eval_line,
               "mkvar(): \"%s\" no es un nombre de variable válido", name);
 
-    /* --- Convertir el valor --- */
+    /*
+     * Scope destino (4º argumento opcional). Solo se aceptan "local",
+     * "script" y "global". El valor "global" va a super_global_scope,
+     * igual que el keyword `global` del lenguaje.
+     */
+    int scope_type = 0;   /* 0 = local por defecto */
+    if (argc == 4) {
+        if (args[3].type != VAL_STRING)
+            error(current_eval_line, "mkvar(): el scope debe ser un string");
+        int parsed = parse_scope_name(args[3].data.sval);
+        if (parsed == -1) {
+            error(current_eval_line,
+                  "mkvar(): scope \"%s\" no reconocido. "
+                  "Usa uno de: local, script, global",
+                  args[3].data.sval ? args[3].data.sval : "");
+        }
+        scope_type = parsed;
+    }
+
     Value val = convert_string_to_type(value_str, tok_type);
 
-    /* --- Crear o actualizar en el scope actual ---
-     *
-     * Si el script llama a mkvar desde el nivel superior, current_scope
-     * es global_scope; si es desde dentro de una función, es el scope
-     * local de esa función. El comportamiento es el mismo que asignar
-     * con `=` en ese punto del código. */
-    Scope *target = current_scope;
-    if (!target)
-        error(current_eval_line, "mkvar(): no hay scope activo");
+    Scope *target = NULL;
+    switch (scope_type) {
+        case 0: target = current_scope;      break;
+        case 1: target = global_scope;       break;
+        case 2: target = super_global_scope; break;
+    }
+    if (!target) {
+        value_free(&val);
+        error(current_eval_line,
+              "mkvar(): el scope \"%s\" no está disponible",
+              scope_name_str(scope_type));
+    }
 
     VarEntry *existing = scope_find_current(target, name);
     VarEntry *target_entry = NULL;
@@ -279,19 +301,24 @@ static Value builtin_mkvar(int argc, Value *args) {
         existing->value = val;
         existing->vtype = tok_type;
         target_entry = existing;
-        DEBUG_INFO("mkvar(): variable \"%s\" actualizada (tipo=%d)", name, tok_type);
+        DEBUG_INFO("mkvar(): variable \"%s\" actualizada en scope %s (tipo=%d)",
+                   name, scope_name_str(scope_type), tok_type);
     } else {
         scope_define(target, name, tok_type, val);
         target_entry = scope_find_current(target, name);
-        DEBUG_INFO("mkvar(): variable \"%s\" creada (tipo=%d)", name, tok_type);
+        DEBUG_INFO("mkvar(): variable \"%s\" creada en scope %s (tipo=%d)",
+                   name, scope_name_str(scope_type), tok_type);
     }
 
-    /* --- Sincronizar con la VM si estamos en un scope global ---
+    /*
+     * Sincronizar con la VM si el scope es global (script o superglobal).
+     * El bytecode lee las globales vía vm_globals[], no vía la cadena de
+     * scopes.
      *
-     * El bytecode accede a las variables globales vía vm_globals[], no
-     * vía la cadena de scopes. Si mkvar se llamó en el nivel superior
-     * (current_scope == global_scope) hay que reflejar el valor en la
-     * tabla de la VM para que el bytecode lo vea. */
+     * El flag de VM que toca usar depende del scope:
+     *   - global_scope       → GLOBAL_SCRIPT (variable del script actual)
+     *   - super_global_scope → GLOBAL_SUPER  (compartida entre scripts)
+     */
     if (target_entry && (target == global_scope || target == super_global_scope)) {
         int gidx = vm_find_global_index(name);
         if (gidx < 0) {
