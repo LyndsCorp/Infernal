@@ -18,6 +18,7 @@
 #include "neutral.h" //funciones polimorficas
 #include "database.h" //funciones de persistencia
 #include "list.h" //funciones de listas
+#include "variables.h" //funciones de variables
 
 // AQUI SE AÑADEN LOS STDLIB
 void register_all_builtins(void) {
@@ -31,4 +32,5 @@ void register_all_builtins(void) {
     register_database_builtins();
     register_list_builtins();
     register_cut_builtins();
+    register_variables_builtins();
 }
