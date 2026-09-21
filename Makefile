@@ -326,7 +326,7 @@ sanitize:
 	        LDFLAGS='$(LDFLAGS) -fsanitize=address,undefined' all
 	$(MAKE) test
 
-install: $(TARGET)
+install:
 	$(MAKE) release
 	@if [ "$$(id -u)" -eq 0 ]; then \
 		echo " [INSTALL ROOT] $(BINDIR)/$(TARGET)"; \
@@ -340,6 +340,6 @@ install: $(TARGET)
 		echo "Asegúrate de que $$HOME/.local/bin está en tu PATH."; \
 	fi
 
-re: $(TARGET)
+re:
 	$(MAKE) clean
 	$(MAKE)
