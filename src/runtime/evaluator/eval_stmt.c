@@ -40,11 +40,6 @@ void exec_block_from_impl(NodeList *block, int start_index) {
 
     while (i < block->count) {
         if (control_flow == CF_REPEAT_LINE) {
-            /* repeat <portal> solicita volver al primer statement que sigue
-             * al portal. El salto puede haberse producido dentro de un
-             * bloque anidado, por lo que solo lo consumimos aquí si el
-             * destino pertenece a este bloque; en caso contrario lo
-             * propagamos al bloque padre. */
             int target_line = repeat_line_target;
             int target_index = -1;
             for (int j = 0; j < block->count; j++) {
@@ -56,7 +51,6 @@ void exec_block_from_impl(NodeList *block, int start_index) {
             }
 
             if (target_index < 0) {
-                /* El portal pertenece a otro ámbito de bloque. */
                 return;
             }
 
@@ -73,10 +67,6 @@ void exec_block_from_impl(NodeList *block, int start_index) {
         DEBUG_INFO("exec_block: ejecutando sentencia tipo %d en línea %d", stmt->kind, stmt->line);
         exec_stmt(stmt);
 
-        /* repeat necesita ser procesado por el orquestador del bloque
-         * antes de avanzar al siguiente statement. Si incrementamos i aquí,
-         * un repeat que sea la última sentencia del bloque se perdería y el
-         * bloque terminaría inmediatamente. */
         if (control_flow == CF_REPEAT_LINE) {
             continue;
         }
@@ -84,7 +74,6 @@ void exec_block_from_impl(NodeList *block, int start_index) {
         ++i;
     }
 }
-
 
 static bool switch_values_equal(Value left, Value right) {
     if (left.type != right.type) return false;
@@ -99,6 +88,67 @@ static bool switch_values_equal(Value left, Value right) {
     }
 }
 
+/* ====================================================================
+ *  Helpers UTF-8 para manipulación cruda de strings
+ * ====================================================================
+ *
+ * Infernal cuenta caracteres UTF-8, no bytes. Estas funciones se usan
+ * en assign_nested_index cuando el contenedor es un string. Son
+ * homólogas a las de eval_binop.c, pero con sufijo _stmt para evitar
+ * colisiones de símbolos si algún día se unifican los translation units.
+ */
+
+static size_t utf8_char_count_stmt(const char *s) {
+    size_t n = 0;
+    while (*s) {
+        unsigned char c = (unsigned char)*s;
+        if (c < 0x80) s += 1;
+        else if ((c & 0xE0) == 0xC0) s += 2;
+        else if ((c & 0xF0) == 0xE0) s += 3;
+        else if ((c & 0xF8) == 0xF0) s += 4;
+        else s += 1;
+        n++;
+    }
+    return n;
+}
+
+static const char *utf8_advance_stmt(const char *s, size_t n) {
+    while (*s && n > 0) {
+        unsigned char c = (unsigned char)*s;
+        if (c < 0x80) s += 1;
+        else if ((c & 0xE0) == 0xC0) s += 2;
+        else if ((c & 0xF0) == 0xE0) s += 3;
+        else if ((c & 0xF8) == 0xF0) s += 4;
+        else s += 1;
+        n--;
+    }
+    return s;
+}
+
+/* Sustituye el carácter en la posición `pos` (1-based) por `new_char`
+ * (que debe tener exactamente 1 carácter UTF-8). Devuelve un buffer
+ * malloc'd con el resultado. */
+static char *utf8_replace_char(const char *s, int pos,
+                               const char *new_char, int line) {
+    size_t total = utf8_char_count_stmt(s);
+    if (pos < 1 || pos > (int)total) {
+        error(line, "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
+    }
+    const char *start_ptr = utf8_advance_stmt(s, (size_t)(pos - 1));
+    const char *end_ptr   = utf8_advance_stmt(s, (size_t)pos);
+    size_t prefix_len = (size_t)(start_ptr - s);
+    size_t new_len    = strlen(new_char);
+    size_t suffix_len = strlen(end_ptr);
+
+    char *out = malloc(prefix_len + new_len + suffix_len + 1);
+    if (!out) error(line, "Memoria insuficiente al reemplazar carácter");
+    memcpy(out, s, prefix_len);
+    memcpy(out + prefix_len, new_char, new_len);
+    memcpy(out + prefix_len + new_len, end_ptr, suffix_len);
+    out[prefix_len + new_len + suffix_len] = '\0';
+    return out;
+}
+
 /* --- Asignación con índice anidado ---
  *
  * Recorre la cadena de NODE_INDEX desde el nivel más interno (primera
@@ -106,8 +156,8 @@ static bool switch_values_equal(Value left, Value right) {
  * intermedio no existe, se crea como map vacío. El último nivel asigna
  * `new_val` en la clave/posición correspondiente.
  *
- * `var_value` debe ser un map o un list; `lhs_index` es el NODE_INDEX
- * más externo (aquel cuyo .index es la última clave). */
+ * `var_value` debe ser un map, un list o un string; `lhs_index` es el
+ * NODE_INDEX más externo (aquel cuyo .index es la última clave). */
 static void assign_nested_index(Value *var_value, ASTNode *lhs_index,
                                 Value new_val, int line) {
     ASTNode *stack[64];
@@ -171,6 +221,39 @@ static void assign_nested_index(Value *var_value, ASTNode *lhs_index,
             } else {
                 container = &container->data.list.items[k - 1];
             }
+        } else if (container->type == VAL_STRING) {
+            /* Los strings de Infernal son "listas de caracteres" pero
+             * almacenados como bytes UTF-8, no como array de Value. Solo
+             * podemos asignar en el último nivel del recorrido, y no
+             * podemos navegar "dentro" de un carácter. */
+            if (!is_last) {
+                value_free(&key);
+                error(line, "No se puede indexar un carácter de string como si fuera un contenedor");
+            }
+            if (key.type != VAL_INT) {
+                value_free(&key);
+                error(line, "Índice de string debe ser entero");
+            }
+            if (new_val.type != VAL_STRING) {
+                value_free(&key);
+                error(line,
+                      "Solo se puede asignar un string de 1 carácter a una posición de un string "
+                      "(se recibió un valor de tipo '%s')",
+                      value_type_name(new_val.type));
+            }
+            size_t ins_chars = utf8_char_count_stmt(new_val.data.sval);
+            if (ins_chars != 1) {
+                value_free(&key);
+                error(line,
+                      "Solo se puede asignar 1 carácter a la vez a un string "
+                      "(se recibió un string de %zu caracteres)",
+                      ins_chars);
+            }
+            int k = key.data.ival;
+            char *new_str = utf8_replace_char(container->data.sval, k,
+                                              new_val.data.sval, line);
+            free(container->data.sval);
+            container->data.sval = new_str;
         } else {
             value_free(&key);
             error(line, "No se puede indexar este tipo de valor");
@@ -213,9 +296,6 @@ void exec_stmt(ASTNode *stmt) {
             char *expanded = expand_command(stmt->data.shell_cmd.cmd);
             int ret = run_shell_command(expanded);
             if (ret != 0) {
-                /* Copiamos el comando expandido a un buffer local ANTES de liberar
-                 * 'expanded'. error() hace longjmp, así que no podemos confiar en
-                 * punteros dinámicos después de llamarlo. */
                 char msg[1024];
                 snprintf(msg, sizeof(msg), "falló: %s", expanded);
                 free(expanded);
@@ -234,202 +314,181 @@ void exec_stmt(ASTNode *stmt) {
                 char *cmd = stmt->data.assign.cmd_str;
                 int exit_code = 0;
 
-                // Expandir variables en el comando
                 char *expanded_cmd = expand_command(cmd);
                 if (!expanded_cmd) {
                     error(stmt->line, "Error al expandir comando: %s", cmd);
                 }
 
-                /* Un builtin sin argumentos también puede usarse directamente como comando
-                 * en una asignación, por ejemplo: user_input = input. */
                 FuncObject *bare_func = func_lookup(expanded_cmd);
                 if (bare_func && bare_func->kind == FUNC_BUILTIN &&
                     strpbrk(expanded_cmd, " \t\r\n") == NULL) {
                     val = bare_func->builtin(0, NULL);
-                free(expanded_cmd);
-                goto assign_value;
-                    }
+                    free(expanded_cmd);
+                    goto assign_value;
+                }
 
-                    // Determinar si es un comando embebido (entre !!)
-                    int is_embedded = (expanded_cmd[0] == '!' && expanded_cmd[strlen(expanded_cmd)-1] == '!');
+                int is_embedded = (expanded_cmd[0] == '!' && expanded_cmd[strlen(expanded_cmd)-1] == '!');
 
-                    char *cmd_with_redir = NULL;
-                    if (is_embedded) {
-                        // Los embebidos no se ejecutan a través del shell, no podemos redirigir con 2>&1
-                        cmd_with_redir = strdup(expanded_cmd);
-                    } else {
-                        // Redirigir stderr según el tipo de la variable
-                        if (stmt->data.assign.vtype == TOK_BOOL) {
-                            // Para booleanos: queremos silenciar completamente la salida
-                            asprintf(&cmd_with_redir, "%s 2>/dev/null", expanded_cmd);
-                        } else {
-                            // Para otros tipos: capturamos también stderr (2>&1) para que no llegue a la terminal
-                            asprintf(&cmd_with_redir, "%s 2>&1", expanded_cmd);
-                        }
-                    }
-                    free(expanded_cmd);  // ya no necesitamos el original
-
-                    if (!cmd_with_redir) {
-                        error(stmt->line, "Memoria insuficiente para redirigir comando");
-                    }
-
-                    FILE *fp = NULL;
-                    char *temp_path = NULL;
-
-                    if (is_embedded) {
-                        // Los embebidos se manejan con popen_embedded_with_path
-                        char *trimmed = strdup(cmd_with_redir + 1);
-                        trimmed[strlen(trimmed)-1] = '\0';
-                        fp = popen_embedded_with_path(trimmed, "r", &temp_path);
-                        free(trimmed);
-                    } else {
-                        fp = popen(cmd_with_redir, "r");
-                    }
-
-                    free(cmd_with_redir);  // ya podemos liberar la cadena con redirección
-
-                    if (!fp) {
-                        error(stmt->line, "Error al ejecutar comando: %s", cmd);
-                    }
-
-                    // Si es booleano, solo nos interesa el código de salida
+                char *cmd_with_redir = NULL;
+                if (is_embedded) {
+                    cmd_with_redir = strdup(expanded_cmd);
+                } else {
                     if (stmt->data.assign.vtype == TOK_BOOL) {
-                        char buf[1024];
-                        while (fgets(buf, sizeof(buf), fp) != NULL) {} // descartar salida
-                        int status = pclose(fp);
-                        if (WIFEXITED(status)) {
-                            exit_code = WEXITSTATUS(status);
-                        } else {
-                            exit_code = -1;
-                        }
-                        if (temp_path) {
-                            unlink(temp_path);
-                            free(temp_path);
-                        }
-                        val = val_bool(exit_code == 0);
+                        asprintf(&cmd_with_redir, "%s 2>/dev/null", expanded_cmd);
                     } else {
-                        // Para otros tipos: capturar la salida (incluyendo stderr si se redirigió)
-                        char buf[4096];
-                        char *out = strdup("");
-                        if (!out) {
+                        asprintf(&cmd_with_redir, "%s 2>&1", expanded_cmd);
+                    }
+                }
+                free(expanded_cmd);
+
+                if (!cmd_with_redir) {
+                    error(stmt->line, "Memoria insuficiente para redirigir comando");
+                }
+
+                FILE *fp = NULL;
+                char *temp_path = NULL;
+
+                if (is_embedded) {
+                    char *trimmed = strdup(cmd_with_redir + 1);
+                    trimmed[strlen(trimmed)-1] = '\0';
+                    fp = popen_embedded_with_path(trimmed, "r", &temp_path);
+                    free(trimmed);
+                } else {
+                    fp = popen(cmd_with_redir, "r");
+                }
+
+                free(cmd_with_redir);
+
+                if (!fp) {
+                    error(stmt->line, "Error al ejecutar comando: %s", cmd);
+                }
+
+                if (stmt->data.assign.vtype == TOK_BOOL) {
+                    char buf[1024];
+                    while (fgets(buf, sizeof(buf), fp) != NULL) {}
+                    int status = pclose(fp);
+                    if (WIFEXITED(status)) {
+                        exit_code = WEXITSTATUS(status);
+                    } else {
+                        exit_code = -1;
+                    }
+                    if (temp_path) {
+                        unlink(temp_path);
+                        free(temp_path);
+                    }
+                    val = val_bool(exit_code == 0);
+                } else {
+                    char buf[4096];
+                    char *out = strdup("");
+                    if (!out) {
+                        pclose(fp);
+                        if (temp_path) { unlink(temp_path); free(temp_path); }
+                        error(stmt->line, "Memoria insuficiente para capturar salida");
+                    }
+                    while (fgets(buf, sizeof(buf), fp)) {
+                        size_t old_len = strlen(out);
+                        size_t add_len = strlen(buf);
+                        if (old_len > MAX_COMMAND_OUTPUT || add_len > MAX_COMMAND_OUTPUT - old_len - 1) {
+                            free(out);
                             pclose(fp);
                             if (temp_path) { unlink(temp_path); free(temp_path); }
-                            error(stmt->line, "Memoria insuficiente para capturar salida");
+                            error(stmt->line, "Salida de comando demasiado grande");
                         }
-                        while (fgets(buf, sizeof(buf), fp)) {
-                            size_t old_len = strlen(out);
-                            size_t add_len = strlen(buf);
-                            if (old_len > MAX_COMMAND_OUTPUT || add_len > MAX_COMMAND_OUTPUT - old_len - 1) {
-                                free(out);
-                                pclose(fp);
-                                if (temp_path) { unlink(temp_path); free(temp_path); }
-                                error(stmt->line, "Salida de comando demasiado grande");
+                        char *tmp_out = realloc(out, old_len + add_len + 1);
+                        if (!tmp_out) {
+                            free(out);
+                            pclose(fp);
+                            if (temp_path) { unlink(temp_path); free(temp_path); }
+                            error(stmt->line, "Memoria insuficiente para salida de comando");
+                        }
+                        out = tmp_out;
+                        memcpy(out + old_len, buf, add_len + 1);
+                    }
+
+                    int status = pclose(fp);
+
+                    if (status != 0 && status != -1) {
+                        int code = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+
+                        char err_output[1024] = "";
+                        if (out && out[0]) {
+                            size_t out_len = strlen(out);
+                            while (out_len > 0 &&
+                                   (out[out_len - 1] == '\n' || out[out_len - 1] == '\r')) {
+                                out[out_len - 1] = '\0';
+                                out_len--;
                             }
-                            char *tmp_out = realloc(out, old_len + add_len + 1);
-                            if (!tmp_out) {
-                                free(out);
-                                pclose(fp);
-                                if (temp_path) { unlink(temp_path); free(temp_path); }
-                                error(stmt->line, "Memoria insuficiente para salida de comando");
-                            }
-                            out = tmp_out;
-                            memcpy(out + old_len, buf, add_len + 1);
+                            snprintf(err_output, sizeof(err_output), "%.900s", out);
                         }
 
-                        int status = pclose(fp);
-
-                        if (status != 0 && status != -1) {
-                            int code = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
-
-                            /* Copia local de la salida capturada (stdout+stderr
-                             * combinados). Se hace antes de liberar 'out' porque
-                             * error() hace longjmp y no podemos confiar en
-                             * punteros dinámicos después del salto. Se recortan
-                             * los saltos de línea finales para que el mensaje
-                             * quede compacto. */
-                            char err_output[1024] = "";
-                            if (out && out[0]) {
-                                size_t out_len = strlen(out);
-                                while (out_len > 0 &&
-                                       (out[out_len - 1] == '\n' || out[out_len - 1] == '\r')) {
-                                    out[out_len - 1] = '\0';
-                                    out_len--;
-                                }
-                                snprintf(err_output, sizeof(err_output), "%.900s", out);
-                            }
-
-                            if (code == 127) {
-                                char first_token[256] = "";
-                                sscanf(cmd, "%255s", first_token);
-                                free(out);
-                                if (temp_path) { unlink(temp_path); free(temp_path); }
-                                VarEntry *same_name = scope_find(current_scope, first_token);
-                                if (same_name) {
-                                    error(stmt->line,
-                                          "El comando '%s' falló: comando no encontrado.\n"
-                                          "    Se ejecutó un comando que no existe y que tiene el mismo nombre que una variable.\n"
-                                          "    Quizás querías obtener su valor. Usa '$%s' para clonar su valor.\n"
-                                          "    El '$' también representa que vas a trabajar con variables en lugar de comandos.",
-                                          cmd, first_token);
-                                } else {
-                                    error(stmt->line,
-                                          "El comando '%s' falló: comando no encontrado ('%s').",
-                                          cmd, first_token);
-                                }
-                            }
-
+                        if (code == 127) {
+                            char first_token[256] = "";
+                            sscanf(cmd, "%255s", first_token);
                             free(out);
                             if (temp_path) { unlink(temp_path); free(temp_path); }
-                            if (err_output[0]) {
+                            VarEntry *same_name = scope_find(current_scope, first_token);
+                            if (same_name) {
                                 error(stmt->line,
-                                      "El comando '%s' falló (código de salida %d).\n"
-                                      "    Salida del comando:\n        %s",
-                                      cmd, code, err_output);
+                                      "El comando '%s' falló: comando no encontrado.\n"
+                                      "    Se ejecutó un comando que no existe y que tiene el mismo nombre que una variable.\n"
+                                      "    Quizás querías obtener su valor. Usa '$%s' para clonar su valor.\n"
+                                      "    El '$' también representa que vas a trabajar con variables en lugar de comandos.",
+                                      cmd, first_token);
                             } else {
                                 error(stmt->line,
-                                      "El comando '%s' falló (código de salida %d)",
-                                      cmd, code);
+                                      "El comando '%s' falló: comando no encontrado ('%s').",
+                                      cmd, first_token);
                             }
                         }
 
-                        if (temp_path) {
-                            unlink(temp_path);
-                            free(temp_path);
-                        }
-                        // Quitar salto de línea final
-                        size_t len = strlen(out);
-                        if (len > 0 && out[len-1] == '\n') out[len-1] = '\0';
-
-                        // Asignar según el tipo esperado
-                        if (stmt->data.assign.vtype == TOK_LIST) {
-                            Value list = val_list_empty();
-                            char *dup = strdup(out);
-                            char *saveptr;
-                            char *line = strtok_r(dup, "\n", &saveptr);
-                            while (line) {
-                                val_list_append(&list, val_string(line));
-                                line = strtok_r(NULL, "\n", &saveptr);
-                            }
-                            free(dup);
-                            free(out);
-                            val = list;
+                        free(out);
+                        if (temp_path) { unlink(temp_path); free(temp_path); }
+                        if (err_output[0]) {
+                            error(stmt->line,
+                                  "El comando '%s' falló (código de salida %d).\n"
+                                  "    Salida del comando:\n        %s",
+                                  cmd, code, err_output);
                         } else {
-                            // Para int, float, string, etc. se asigna como string (luego se convertirá)
-                            val = val_string(out);
-                            free(out);
+                            error(stmt->line,
+                                  "El comando '%s' falló (código de salida %d)",
+                                  cmd, code);
                         }
                     }
+
+                    if (temp_path) {
+                        unlink(temp_path);
+                        free(temp_path);
+                    }
+                    size_t len = strlen(out);
+                    if (len > 0 && out[len-1] == '\n') out[len-1] = '\0';
+
+                    if (stmt->data.assign.vtype == TOK_LIST) {
+                        Value list = val_list_empty();
+                        char *dup = strdup(out);
+                        char *saveptr;
+                        char *line = strtok_r(dup, "\n", &saveptr);
+                        while (line) {
+                            val_list_append(&list, val_string(line));
+                            line = strtok_r(NULL, "\n", &saveptr);
+                        }
+                        free(dup);
+                        free(out);
+                        val = list;
+                    } else {
+                        val = val_string(out);
+                        free(out);
+                    }
+                }
             } else {
                 // Asignación normal (no comando)
                 if (stmt->data.assign.value != NULL && stmt->data.assign.lhs_index) {
                     /* Asignación con índice, potencialmente anidado:
                      *   lista[2] = 5
                      *   stats["vida"] = 1000
+                     *   texto[1] = "X"            (string)
                      *   pages[web][pagina] = []   (declaración con tipo) */
                     VarEntry *var = scope_find(current_scope, stmt->data.assign.name);
                     if (!var) {
-                        /* Si la declaración trae tipo map/list, crear el
-                         * contenedor en el scope global del script. */
                         int vtype = stmt->data.assign.vtype;
                         if (vtype == TOK_MAP || vtype == TOK_LIST) {
                             Value init = (vtype == TOK_MAP)
@@ -455,10 +514,6 @@ void exec_stmt(ASTNode *stmt) {
                 // Asignación sin índice
                 if (stmt->data.assign.value != NULL) {
                     if (stmt->data.assign.value->kind == NODE_EMPTY_AMBIGUOUS) {
-                        /* '[]' sin tipo explícito. Es válido SOLO si:
-                         *   - el destino tiene tipo explícito (vtype), o
-                         *   - la variable ya existe y su tipo es list/map.
-                         * En cualquier otro caso se mantiene la ambigüedad. */
                         int vtype = stmt->data.assign.vtype;
                         if (vtype == TOK_LIST) {
                             val = val_list_empty();
@@ -507,9 +562,7 @@ void exec_stmt(ASTNode *stmt) {
             }
 
             assign_value:
-            // --- Conversión de tipos (si hay tipo fijo) ---
             int vtype = stmt->data.assign.vtype;
-
 
             if (vtype == TOK_STRING && val.type == VAL_LIST) {
                 if (!try_convert_value(&val, TOK_STRING)) {
@@ -531,12 +584,10 @@ void exec_stmt(ASTNode *stmt) {
             DEBUG_INFO("NODE_ASSIGN: is_global=%d, is_local=%d, nombre='%s'",
                        stmt->data.assign.is_global, stmt->data.assign.is_local, stmt->data.assign.name);
 
-            // --- Almacenar la variable en el ámbito correspondiente ---
             if (stmt->data.assign.is_global) {
                 DEBUG_INFO("Definiendo global '%s' en super_global_scope", stmt->data.assign.name);
                 scope_define(super_global_scope, stmt->data.assign.name, vtype, val);
 
-                // Sincronizar con la VM para que las lecturas posteriores vean el valor
                 int gidx = vm_find_global_index(stmt->data.assign.name);
                 if (gidx < 0) {
                     gidx = vm_register_global(stmt->data.assign.name, GLOBAL_SUPER, vtype);
@@ -550,7 +601,6 @@ void exec_stmt(ASTNode *stmt) {
                 DEBUG_INFO("Definiendo local '%s' en current_scope", stmt->data.assign.name);
                 scope_define(current_scope, stmt->data.assign.name, vtype, val);
             } else {
-                // Asignación sin calificador: buscar la variable en la cadena de ámbitos
                 VarEntry *var = scope_find(current_scope, stmt->data.assign.name);
                 if (var) {
                     DEBUG_INFO("Variable '%s' encontrada en ámbito %p, actualizando", stmt->data.assign.name, (void*)var);
@@ -558,7 +608,6 @@ void exec_stmt(ASTNode *stmt) {
                     value_free(&val);
                     if (vtype != 0) var->vtype = vtype;
                 } else {
-                    // Si no existe, definir en global_scope (ámbito del script)
                     DEBUG_INFO("Variable '%s' no encontrada, definiendo en global_scope", stmt->data.assign.name);
                     scope_define(global_scope, stmt->data.assign.name, vtype, val);
                 }
@@ -570,83 +619,51 @@ void exec_stmt(ASTNode *stmt) {
             ASTNode *cond_node = stmt->data.if_stmt.cond;
             bool truthy = false;
 
-            /*
-             * En una condición, un identificador desnudo representa también
-             * una comprobación de existencia:
-             *
-             *   if a then
-             *
-             * - si a no existe -> false
-             * - si a existe y es bool -> su valor
-             * - si a existe y no es bool -> true
-             *
-             * Esto es intencionadamente distinto de evaluar una variable en
-             * una expresión normal, donde una variable inexistente sigue
-             * siendo un error.
-             *
-             * También se aplica a `if not a then`: una variable inexistente
-             * se considera false antes de aplicar NOT, por lo que la
-             * condición resulta true.
-             */
             ASTNode *value_node = cond_node;
             bool negate = false;
             if (value_node && value_node->kind == NODE_UNARY &&
                 value_node->data.unary.op == TOK_NOT) {
                 negate = true;
-            value_node = value_node->data.unary.operand;
-                }
+                value_node = value_node->data.unary.operand;
+            }
 
-                if (value_node && value_node->kind == NODE_VAR) {
-                    const char *name = value_node->data.var.name;
-                    if (name[0] == '$' || name[0] == '?') name++;
+            if (value_node && value_node->kind == NODE_VAR) {
+                const char *name = value_node->data.var.name;
+                if (name[0] == '$' || name[0] == '?') name++;
 
-                    VarEntry *entry = scope_find(current_scope, name);
-                    if (!entry) {
-                        /* Una variable inexistente es false en una condición. */
-                        truthy = false;
-                    } else if (entry->value.type == VAL_BOOL) {
-                        /* Los bool conservan su valor real. */
-                        truthy = entry->value.data.bval;
-                    } else {
-                        /* Para cualquier otro tipo, existir ya implica true. */
-                        truthy = true;
-                    }
-
-                    if (negate) truthy = !truthy;
+                VarEntry *entry = scope_find(current_scope, name);
+                if (!entry) {
+                    truthy = false;
+                } else if (entry->value.type == VAL_BOOL) {
+                    truthy = entry->value.data.bval;
                 } else {
-                    Value cond = eval_expr(cond_node);
-                    truthy = val_is_truthy(cond);
-                    value_free(&cond);
+                    truthy = true;
                 }
 
-                if (truthy) {
-                    exec_block_impl(&stmt->data.if_stmt.then_block);
-                } else {
-                    exec_block_impl(&stmt->data.if_stmt.else_block);
-                }
-                break;
+                if (negate) truthy = !truthy;
+            } else {
+                Value cond = eval_expr(cond_node);
+                truthy = val_is_truthy(cond);
+                value_free(&cond);
+            }
+
+            if (truthy) {
+                exec_block_impl(&stmt->data.if_stmt.then_block);
+            } else {
+                exec_block_impl(&stmt->data.if_stmt.else_block);
+            }
+            break;
         }
 
         case NODE_SWITCH: {
             Value selector = eval_expr(stmt->data.switch_stmt.expr);
 
-            /*
-             * Buscar el primer 'case' cuyo valor sea igual al selector.
-             * Nota: aunque el parser exige que cada case termine en
-             * 'break', aquí igualmente implementamos fallthrough estilo C
-             * por robustez; si algún día se relaja la validación, el
-             * runtime ya lo soporta sin cambios.
-             *
-             * Los 'case' con cuerpo vacío no consumen la coincidencia:
-             * siguen buscando hasta encontrar uno con cuerpo, igual que
-             * en C.
-             */
             int start_idx = -1;
             for (int i = 0; i < stmt->data.switch_stmt.case_count; i++) {
                 SwitchCase *swcase = &stmt->data.switch_stmt.cases[i];
                 Value case_value = eval_expr(swcase->value);
                 bool equal = switch_values_equal(selector, case_value);
-                value_free(&case_value);   /* liberar el valor del caso */
+                value_free(&case_value);
                 if (equal) {
                     start_idx = i;
                     break;
@@ -654,13 +671,6 @@ void exec_stmt(ASTNode *stmt) {
             }
 
             if (start_idx >= 0) {
-                /*
-                 * Ejecutar desde el case que coincidió hacia adelante.
-                 * Cada case termina en 'break' por validación del parser,
-                 * así que en la práctica solo se ejecuta un bloque; pero
-                 * si no hubiera 'break', el siguiente case también se
-                 * ejecutaría (fallthrough).
-                 */
                 bool broke = false;
                 for (int i = start_idx; i < stmt->data.switch_stmt.case_count; i++) {
                     SwitchCase *swcase = &stmt->data.switch_stmt.cases[i];
@@ -678,7 +688,6 @@ void exec_stmt(ASTNode *stmt) {
                     }
                 }
 
-                /* Si no hubo break, caer en default (que es el último bloque). */
                 if (!broke && stmt->data.switch_stmt.has_default) {
                     exec_block_impl(&stmt->data.switch_stmt.default_block);
                     if (control_flow == CF_BREAK) {
@@ -690,7 +699,6 @@ void exec_stmt(ASTNode *stmt) {
                     }
                 }
             } else if (stmt->data.switch_stmt.has_default) {
-                /* Ningún case coincidió: ejecutar default. */
                 exec_block_impl(&stmt->data.switch_stmt.default_block);
                 if (control_flow == CF_BREAK) {
                     control_flow = CF_NONE;
@@ -701,7 +709,6 @@ void exec_stmt(ASTNode *stmt) {
                 }
             }
 
-            /* Liberar el selector una sola vez, al final. */
             value_free(&selector);
             break;
         }
@@ -736,18 +743,6 @@ void exec_stmt(ASTNode *stmt) {
             Scope *old_scope = current_scope;
             bool is_global_for = stmt->data.for_stmt.is_global;
 
-            /*
-             * 1) Evaluar la expresión inicial.
-             *
-             * NO ejecutamos el NODE_ASSIGN completo porque eso podría
-             * crear la variable en el scope incorrecto.
-             *
-             * Si el parser no encontró un valor explícito (init.value == NULL)
-             * pero sí hay un tipo declarado (for local int i, cond, incr then),
-             * usamos el valor por defecto de ese tipo. Así 'for local int i, ...'
-             * equivale a 'for local int i = 0, ...'.
-             */
-
             Value init_val;
 
             ASTNode *init_expr = NULL;
@@ -774,190 +769,106 @@ void exec_stmt(ASTNode *stmt) {
                 DEBUG_INFO("NODE_FOR: init_val por defecto del tipo %d", vtype);
             }
 
-                /*
-                 * 2) Elegir el scope.
-                 *
-                 * for global:
-                 *     usa directamente super_global_scope
-                 *
-                 * for local / normal:
-                 *     crea su propio scope temporal
-                 */
-                Scope *for_scope;
+            Scope *for_scope;
 
-                if (is_global_for) {
-                    for_scope = super_global_scope;
+            if (is_global_for) {
+                for_scope = super_global_scope;
+                DEBUG_INFO("NODE_FOR: usando super_global_scope");
+            } else {
+                for_scope = scope_new(old_scope, NULL);
+                DEBUG_INFO("NODE_FOR: creado for_scope");
+            }
 
-                    DEBUG_INFO(
-                        "NODE_FOR: usando super_global_scope"
-                    );
-                } else {
-                    for_scope = scope_new(old_scope, NULL);
+            const char *var_name = stmt->data.for_stmt.var;
+            int vtype = stmt->data.for_stmt.vtype;
 
-                    DEBUG_INFO(
-                        "NODE_FOR: creado for_scope"
-                    );
+            VarEntry *existing = scope_find_current(for_scope, var_name);
+
+            if (existing) {
+                Value copied = copy_value_secure(init_val);
+                value_free(&existing->value);
+                existing->value = copied;
+                value_free(&init_val);
+
+                if (vtype != 0) {
+                    existing->vtype = vtype;
                 }
 
-                /*
-                 * 3) Definir la variable del for.
-                 *
-                 * Usamos los datos del NODE_FOR, no los del NODE_ASSIGN.
-                 */
-                const char *var_name =
-                stmt->data.for_stmt.var;
+                DEBUG_INFO("NODE_FOR: variable '%s' ya existía; actualizada", var_name);
+            } else {
+                scope_define(for_scope, var_name, vtype, init_val);
+                DEBUG_INFO("NODE_FOR: variable '%s' definida en %s con valor %d",
+                           var_name,
+                           is_global_for ? "super_global_scope" : "for_scope",
+                           init_val.data.ival);
+            }
 
-                int vtype =
-                stmt->data.for_stmt.vtype;
+            current_scope = for_scope;
 
-                /*
-                 * Si ya existe una variable con ese nombre EN ESTE MISMO
-                 * scope, actualizarla en lugar de crear otra.
-                 *
-                 * Esto es importante cuando el archivo ya utilizó 'i'
-                 * anteriormente.
-                 */
-                VarEntry *existing =
-                scope_find_current(for_scope, var_name);
+            int iter_count = 0;
 
-                if (existing) {
-                    Value copied = copy_value_secure(init_val);
-                    value_free(&existing->value);
-                    existing->value = copied;
-                    value_free(&init_val);
-
-                    if (vtype != 0) {
-                        existing->vtype = vtype;
-                    }
-
-                    DEBUG_INFO(
-                        "NODE_FOR: variable '%s' ya existía; actualizada",
-                        var_name
-                    );
-                } else {
-                    scope_define(
-                        for_scope,
-                            var_name,
-                            vtype,
-                            init_val
-                    );
-
-                    DEBUG_INFO(
-                        "NODE_FOR: variable '%s' definida en %s con valor %d",
-                        var_name,
-                        is_global_for
-                        ? "super_global_scope"
-                        : "for_scope",
-                        init_val.data.ival
-                    );
+            while (1) {
+                if (iter_count >= max_loop_iterations) {
+                    error(stmt->line,
+                          "Límite de iteraciones (%d) alcanzado en bucle for",
+                          max_loop_iterations);
                 }
+
+                iter_count++;
 
                 current_scope = for_scope;
 
-                int iter_count = 0;
+                Value cond = eval_expr(stmt->data.for_stmt.cond);
 
-                while (1) {
-
-                    /*
-                     * 4) Límite de seguridad.
-                     */
-                    if (iter_count >= max_loop_iterations) {
-                        error(
-                            stmt->line,
-                            "Límite de iteraciones (%d) alcanzado en bucle for",
-                              max_loop_iterations
-                        );
-                    }
-
-                    iter_count++;
-
-                    /*
-                     * 5) Evaluar condición.
-                     */
-                    current_scope = for_scope;
-
-                    Value cond = eval_expr(stmt->data.for_stmt.cond);
-
-                    if (!val_is_truthy(cond)) {
-                        value_free(&cond);
-                        break;
-                    }
-
-                    /*
-                     * 6) Ejecutar cuerpo en un scope hijo.
-                     */
-                    Scope *body_scope =
-                    scope_new(for_scope, NULL);
-
-                    Scope *old_body =
-                    current_scope;
-
-                    current_scope =
-                    body_scope;
-
-                    exec_block_impl(
-                        &stmt->data.for_stmt.body
-                    );
-
-                    current_scope =
-                    old_body;
-
-                    scope_free(body_scope);
+                if (!val_is_truthy(cond)) {
                     value_free(&cond);
+                    break;
+                }
 
-                    /*
-                     * 7) Control de flujo.
-                     */
-                    if (control_flow == CF_BREAK) {
-                        control_flow = CF_NONE;
-                        break;
-                    }
+                Scope *body_scope = scope_new(for_scope, NULL);
+                Scope *old_body = current_scope;
+                current_scope = body_scope;
 
-                    if (control_flow == CF_CONTINUE) {
-                        control_flow = CF_NONE;
-                    }
+                exec_block_impl(&stmt->data.for_stmt.body);
 
-                    if (control_flow == CF_REPEAT_LINE ||
-                        control_flow == CF_RETURN) {
+                current_scope = old_body;
+                scope_free(body_scope);
+                value_free(&cond);
 
-                        current_scope = old_scope;
+                if (control_flow == CF_BREAK) {
+                    control_flow = CF_NONE;
+                    break;
+                }
 
-                    /*
-                     * Nunca liberar super_global_scope.
-                     */
+                if (control_flow == CF_CONTINUE) {
+                    control_flow = CF_NONE;
+                }
+
+                if (control_flow == CF_REPEAT_LINE ||
+                    control_flow == CF_RETURN) {
+
+                    current_scope = old_scope;
+
                     if (!is_global_for) {
                         scope_free(for_scope);
                     }
 
                     return;
-                        }
-
-                        /*
-                         * 8) Incremento.
-                         */
-                        if (stmt->data.for_stmt.incr) {
-                            current_scope = for_scope;
-
-                            exec_stmt(
-                                stmt->data.for_stmt.incr
-                            );
-                        }
                 }
 
-                /*
-                 * 9) Restaurar scope anterior.
-                 */
-                current_scope = old_scope;
-
-                /*
-                 * Un for global usa super_global_scope,
-                 * así que NO se libera.
-                 */
-                if (!is_global_for) {
-                    scope_free(for_scope);
+                if (stmt->data.for_stmt.incr) {
+                    current_scope = for_scope;
+                    exec_stmt(stmt->data.for_stmt.incr);
                 }
+            }
 
-                break;
+            current_scope = old_scope;
+
+            if (!is_global_for) {
+                scope_free(for_scope);
+            }
+
+            break;
         }
 
         case NODE_FOR_IN: {
@@ -1026,9 +937,6 @@ void exec_stmt(ASTNode *stmt) {
 
                 scope_define(iter_scope, stmt->data.for_in.var, 0, item);
 
-                /* Si el usuario escribió 'for i, elemento in ...', definimos
-                 * también la variable del índice en el scope local del bucle.
-                 * Las listas de Infernal son base 1, por lo que se usa i + 1. */
                 if (stmt->data.for_in.index_var) {
                     scope_define(iter_scope, stmt->data.for_in.index_var,
                                  TOK_INT, val_int(i + 1));
@@ -1102,13 +1010,6 @@ void exec_stmt(ASTNode *stmt) {
 
         case NODE_PORTAL: {
             const char *name = stmt->data.portal.name;
-
-            /* Los portales viven en el ámbito actual. Para el script principal
-             * current_scope == global_scope (comportamiento sin cambios). Para
-             * un script lanzado con 'execute', current_scope es el child_scope
-             * temporal que NODE_EXECUTE crea y libera al terminar, de modo que
-             * ejecutar el mismo script varias veces no reutiliza portales
-             * huérfanos de ejecuciones anteriores. */
             Scope *target_scope = current_scope;
 
             if (portal_find_in_scope(target_scope, name)) {
@@ -1148,9 +1049,6 @@ void exec_stmt(ASTNode *stmt) {
             int saved_raised = exception_raised;
             exception_raised = 0;
 
-            /* `caught` se modifica SOLO después de que setjmp retorne por
-             * longjmp, así que su valor es determinista; aun así lo marcamos
-             * volatile por claridad y para evitar optimizaciones agresivas. */
             volatile bool caught = false;
 
             if (!setjmp(exception_env)) {
@@ -1159,11 +1057,6 @@ void exec_stmt(ASTNode *stmt) {
                 caught = true;
             }
 
-            /* CLAVE: restaurar SIEMPRE el environment externo ANTES de ejecutar
-             * el catch. Si un error se produce dentro del catch (por ejemplo
-             * fromfile() sobre un archivo inexistente), el longjmp debe
-             * propagarse hacia fuera, no volver a este mismo setjmp — lo que
-             * produciría un bucle infinito re-ejecutando el catch. */
             memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
 
             if (caught) {
@@ -1180,9 +1073,6 @@ void exec_stmt(ASTNode *stmt) {
             ASTNode *path_node = stmt->data.execute.path_expr;
             Value path_val;
 
-            /* Un identificador desnudo que contiene '/' o '.' es una ruta
-             * literal, no una variable (el lexer permite esos caracteres
-             * en identificadores para escribir rutas sin comillas). */
             bool looks_like_path = false;
             if (path_node && path_node->kind == NODE_VAR) {
                 const char *n = path_node->data.var.name;
@@ -1207,15 +1097,6 @@ void exec_stmt(ASTNode *stmt) {
                 error(stmt->line, "Error al expandir la ruta del script");
             }
 
-            /*
-             * Resolver rutas relativas contra el directorio del script que
-             * se está ejecutando, no contra el CWD. Si main.inf (en motor/)
-             * hace execute updater/router.inf, entonces router.inf debe
-             * poder hacer execute verificar_existencia.inf y encontrar el
-             * archivo que está junto a él (motor/updater/).
-             *
-             * Los paths absolutos se usan tal cual.
-             */
             char *resolved_path = NULL;
             if (expanded_path[0] != '/') {
                 const char *base = current_source_file;
@@ -1270,15 +1151,11 @@ void exec_stmt(ASTNode *stmt) {
                 error(stmt->line, "No se pudo abrir el script '%s'", final_path);
             }
 
-            /* --- Guardar contexto completo del script padre --- */
             TokenStream saved_ts = ts;
             char **saved_source_lines = source_lines;
             int saved_source_line_count = source_line_count;
             char *saved_source_file = current_source_file;
 
-            /* --- Cambiar contexto al sub-script ---
-             * tokenize_file() libera y reemplaza source_lines, así que hay
-             * que haberlos salvado antes y no dejar que apunten al padre. */
             ts_init();
             source_lines = NULL;
             source_line_count = 0;
@@ -1289,11 +1166,6 @@ void exec_stmt(ASTNode *stmt) {
 
             NodeList script_block = parse_block(NULL);
 
-            /* Restaurar el stream de tokens del padre, pero mantener
-             * current_source_file y source_lines apuntando al sub-script
-             * mientras se ejecuta, para que cualquier error de runtime
-             * (incluidos los de un execute anidado) señale el archivo
-             * correcto. */
             ts = saved_ts;
 
             Scope *child_scope = scope_new(current_scope, NULL);
@@ -1305,7 +1177,6 @@ void exec_stmt(ASTNode *stmt) {
             current_scope = old_scope;
             scope_free(child_scope);
 
-            /* --- Restaurar contexto del padre --- */
             for (int i = 0; i < source_line_count; i++) free(source_lines[i]);
             free(source_lines);
             source_lines = saved_source_lines;
