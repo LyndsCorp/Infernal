@@ -1,0 +1,10 @@
+texto = "Hola"
+
+algo = texto[2]           # "o"
+texto -= [2]              # "Hla"
+texto += "c"[4]           # "Hcla"
+# texto += ""[2]        # ERROR: 2 caracteres
+
+texto[1] = "X"            # "Xcla"
+texto[4] = "Z"            # "XclZ"     ← NUEVO: asignación in-place
+print(texto)

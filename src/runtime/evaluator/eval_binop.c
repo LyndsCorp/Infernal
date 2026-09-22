@@ -224,18 +224,42 @@ Value eval_binop(ASTNode *expr) {
         Value index_val = eval_expr(idx_node->data.idx.index);
 
         int pos = -1;
+
         if (index_val.type == VAL_INT) {
             pos = index_val.data.ival;
         } else if (index_val.type == VAL_FLOAT) {
             double f = index_val.data.fval;
             if (f == (double)(int)f) {
                 pos = (int)f;
+            } else {
+                value_free(&base);
+                value_free(&index_val);
+                value_free(&left);
+                error(expr->line,
+                  "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
             }
+        } else {
+            value_free(&base);
+            value_free(&index_val);
+            value_free(&left);
+            error(expr->line,
+                "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
         }
-        int len = left.data.list.count;
-        if (pos < 1 || pos > len + 1) {
-            pos = len + 1;
-        }
+
+    /* Cero y negativos: error explícito. Los índices que exceden la
+     * longitud de la lista siguen acomodándose al final, como antes. */
+    if (pos < 1) {
+        value_free(&base);
+        value_free(&index_val);
+        value_free(&left);
+        error(expr->line,
+              "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
+    }
+
+    int len = left.data.list.count;
+    if (pos > len + 1) {
+        pos = len + 1;
+    }
 
         DEBUG_INFO("Insertando elemento en posición %d", pos);
         Value new_list = val_list_empty();
