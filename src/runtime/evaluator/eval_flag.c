@@ -17,6 +17,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <setjmp.h>
 
 static char *clean_flag_value(const char *val_str) {
     if (!val_str) return strdup("");
@@ -39,11 +40,40 @@ void exec_flag_spec_impl(FlagSpec *spec) {
     if (spec->body_count == 0) return;
     TokenStream saved_ts = ts;
     ts.tokens = spec->body_tokens;
-    ts.count = spec->body_count;
-    ts.pos = 0;
+    ts.count  = spec->body_count;
+    ts.pos    = 0;
+
+    /* --- Protección contra longjmp ------------------------------------
+     * El body del flag puede llamar a error() (variable no definida, comando
+     * de shell que falla, etc.). error() hace longjmp directo al manejador
+     * superior, saltándose el `ts = saved_ts` de abajo.
+     *
+     * Si eso ocurre, `ts` queda apuntando a spec->body_tokens. En el handler
+     * de error de main.c:
+     *
+     *     ast_free_all();       // libera body_tokens (free_flag_spec)
+     *     free(ts.tokens);      // ¡doble free!
+     *
+     * Interceptamos aquí el longjmp, restauramos `ts` y lo relanzamos.
+     * ------------------------------------------------------------------ */
+    jmp_buf saved_env;
+    memcpy(&saved_env, &exception_env, sizeof(jmp_buf));
+    int saved_raised = exception_raised;
+
+    if (setjmp(exception_env) != 0) {
+        ts = saved_ts;
+        memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
+        exception_raised = saved_raised;
+        longjmp(exception_env, 1);
+    }
+
     NodeList flag_body = parse_block(NULL);
     exec_block(&flag_body);
+
     ts = saved_ts;
+
+    memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
+    exception_raised = saved_raised;
 }
 
 /* --- Ejecutar un nodo flags completo (orquestador) --- */
@@ -69,7 +99,7 @@ void exec_flags(ASTNode *node) {
 
             /* El spec solo actúa si todavía queda un argumento posicional
              * sin consumir. Si no queda, no se asigna valor Y NO se ejecuta
-             * su body: un spec de modo 1 está atado a "su" argumento. */
+             * su body. */
             if (arg_idx < script_argc) {
                 char *val_str = script_argv[arg_idx];
                 if (spec->vtype && spec->var_name) {
@@ -196,6 +226,5 @@ void exec_flags(ASTNode *node) {
             free(arg_dup);
         }
     }
-    if (total_matched == 0 && catch_all != NULL) exec_flag_spec_impl(catch_all);
     free(handled);
 }
