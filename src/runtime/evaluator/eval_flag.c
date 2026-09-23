@@ -66,6 +66,10 @@ void exec_flags(ASTNode *node) {
         for (int s = 0; s < node->data.flags.spec_count; s++) {
             FlagSpec *spec = &node->data.flags.specs[s];
             if (spec->catch_all) continue;
+
+            /* El spec solo actúa si todavía queda un argumento posicional
+             * sin consumir. Si no queda, no se asigna valor Y NO se ejecuta
+             * su body: un spec de modo 1 está atado a "su" argumento. */
             if (arg_idx < script_argc) {
                 char *val_str = script_argv[arg_idx];
                 if (spec->vtype && spec->var_name) {
@@ -77,11 +81,11 @@ void exec_flags(ASTNode *node) {
                     }
                     Value v;
                     switch (spec->vtype) {
-                        case TOK_INT: v = val_int(atoi(cleaned)); break;
-                        case TOK_FLOAT: v = val_float(atof(cleaned)); break;
-                        case TOK_BOOL: v = val_bool(strcmp(cleaned,"0")!=0 && strlen(cleaned)>0); break;
+                        case TOK_INT:    v = val_int(atoi(cleaned)); break;
+                        case TOK_FLOAT:  v = val_float(atof(cleaned)); break;
+                        case TOK_BOOL:   v = val_bool(strcmp(cleaned,"0")!=0 && strlen(cleaned)>0); break;
                         case TOK_STRING: v = val_string(cleaned); break;
-                        default: v = val_string(cleaned);
+                        default:         v = val_string(cleaned);
                     }
                     free(cleaned);
                     if (spec->is_global) {
@@ -94,9 +98,10 @@ void exec_flags(ASTNode *node) {
                 total_matched++;
                 arg_idx++;
                 consumed++;
-            }
-            if (spec->body_count > 0) {
-                exec_flag_spec_impl(spec);
+
+                if (spec->body_count > 0) {
+                    exec_flag_spec_impl(spec);
+                }
             }
         }
         flags_arg_index = arg_idx;
