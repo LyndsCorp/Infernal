@@ -163,18 +163,24 @@ ASTNode *parse_flags() {
         FlagSpec spec;
         memset(&spec, 0, sizeof(spec));
 
-        /* --- empty --- */
-        if (ts.pos < ts.count && ts_peek().type == TOK_IDENT && strcmp(ts_peek().lexeme, "empty") == 0) {
+        /* --- empty/arg --- */
+        if (ts.pos < ts.count && ts_peek().type == TOK_IDENT &&
+            (strcmp(ts_peek().lexeme, "empty") == 0 ||
+            strcmp(ts_peek().lexeme, "arg") == 0)) {
+
+            const char *kw = ts_peek().lexeme;   /* "empty" o "arg" para los mensajes */
+
             if (node->data.flags.mode == 0) {
-                error(ts_peek().line, "'empty' solo se puede usar en modos > 0");
+                error(ts_peek().line, "'%s' solo se puede usar en modos > 0", kw);
             }
             if (++empty_count > 1) {
-                error(ts_peek().line, "No puede haber más de un 'empty'");
+                error(ts_peek().line,
+                      "No puede haber más de un 'empty'/'arg' (ya se declaró uno antes)");
             }
             ts_advance();
             spec.is_empty = true;
             if (!ts_match(TOK_EQ)) {
-                error(ts_peek().line, "Se esperaba '=' después de 'empty'");
+                error(ts_peek().line, "Se esperaba '=' después de '%s'", kw);
             }
 
             /* --- Calificador opcional: global / local --- */
@@ -207,7 +213,7 @@ ASTNode *parse_flags() {
                     ts_advance();
                     parse_flag_body_tokens(&spec.body_tokens, &spec.body_count, 1);
                 }
-        }
+            }
         /* --- catch-all (*) --- */
         else if (ts.pos < ts.count && ts_peek().type == TOK_STAR) {
             ts_advance();
