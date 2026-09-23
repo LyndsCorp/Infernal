@@ -49,6 +49,7 @@ static bool token_starts_expression(TokenType type) {
         case TOK_LBRACE:
         case TOK_LPAREN:
         case TOK_MINUS:
+        case TOK_PLUS:
         case TOK_NOT:
             return true;
         default:
@@ -719,8 +720,31 @@ static ASTNode *parse_power(void) {
     return left;
 }
 
-/* --- parse_unary (interna) --- */
+/* --- parse_unary (interna) ---
+ *
+ * Acepta los signos unarios '+' y '-' con la misma precedencia.
+ *
+ *   +X  ≡  X                (identidad pura, no se crea nodo)
+ *   -X  ≡  0 - X            (implementado como NODE_BINOP con literal 0)
+ *
+ * Ambos son recursivos, así que expresiones como `5 - -5`, `5 - +5`,
+ * `+-5`, `-+5`, `+ +5` o `not not x` se resuelven solas sin código
+ * adicional y sin prohibir combinaciones de signos.
+ *
+ * El signo '+' NO envuelve el operando en un nodo: devolver el operando
+ * tal cual hace que `+X` sea indistinguible de `X` para el resto del
+ * intérprete, que es exactamente lo que se quiere. Además evita tener
+ * que añadir un nuevo caso a eval_unary() o al compilador.
+ */
 static ASTNode *parse_unary() {
+    /* Unario +X ≡ X. Envolverlo en un nodo sería absurdo: devolvemos
+     * el operando tal cual. Esto permite +5, +x, 5 - +5, +-5, -+5,
+     * + +5, etc. sin código adicional, porque la función ya es
+     * recursiva para el menos unario. */
+    if (ts_match(TOK_PLUS)) {
+        return parse_unary();
+    }
+
     if (ts_match(TOK_MINUS)) {
         ASTNode *operand = parse_unary();
         ASTNode *node = node_create(NODE_BINOP, operand->line);

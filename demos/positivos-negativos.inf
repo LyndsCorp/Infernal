@@ -1,0 +1,112 @@
+#!../infernal
+# ============================================================
+#  Test: operadores unarios + y -
+# ------------------------------------------------------------
+#  Verifica que:
+#    · +X ≡ X                (identidad, no un no-op)
+#    · -X ≡ 0 - X            (negación, como ya funcionaba)
+#    · los signos consecutivos se comportan como en matemáticas
+#      (5 - -5 = 10, 5 - +5 = 0, +-5 = -5, -+5 = -5, etc.)
+#    · las mismas reglas se aplican a variables, floats,
+#      llamadas a función y expresiones con paréntesis.
+# ============================================================
+
+print("=== 1. Literales ===")
+print("+5         =", +5)              # 5
+print("-5         =", -5)              # -5
+print("+0         =", +0)              # 0
+print("-0         =", -0)              # 0
+
+print("")
+print("=== 2. Signos combinados ===")
+print("5 - -5     =", 5 - -5)          # 10
+print("5 - +5     =", 5 - +5)          # 0
+print("5 + -5     =", 5 + -5)          # 0
+print("5 + +5     =", 5 + +5)          # 10
+print("-5 - -5    =", -5 - -5)         # 0
+print("-5 - +5    =", -5 - +5)         # -10
+print("-5 + -5    =", -5 + -5)         # -10
+print("-5 + +5    =", -5 + +5)         # 0
+
+print("")
+print("=== 3. Cadenas de signos ===")
+print("+ + 5      =", + +5)            # 5
+print("- - 5      =", - -5)            # 5
+print("+ - 5      =", + -5)            # -5
+print("- + 5      =", - +5)            # -5
+print("+ + + 5    =", + + +5)          # 5
+print("- - - 5    =", - - -5)          # -5
+
+print("")
+print("=== 4. Con variables ===")
+int x = 5
+int y = -3
+
+print("x          =", $x)              # 5
+print("y          =", $y)              # -3
+print("+x         =", +$x)             # 5
+print("-x         =", -$x)             # -5
+print("+y         =", +$y)             # -3
+print("-y         =", -$y)             # 3
+print("x - -y     =", $x - -$y)        # 5 - 3   = 2
+print("x - +y     =", $x - +$y)        # 5 - (-3) = 8
+print("x + -y     =", $x + -$y)        # 5 + 3   = 8
+print("x + +y     =", $x + +$y)        # 5 + (-3) = 2
+
+print("")
+print("=== 5. Precedencia ===")
+print("+5 * 2     =", +5 * 2)          # (5) * 2  = 10
+print("-5 * 2     =", -5 * 2)          # (-5) * 2 = -10
+print("+5 + -3    =", +5 + -3)         # 5 + (-3) = 2
+print("-(5 + 3)   =", -(5 + 3))        # -(8)     = -8
+print("+(5 + 3)   =", +(5 + 3))        # 8
+print("(-5) * -2  =", (-5) * -2)       # (-5) * (-2) = 10
+
+print("")
+print("=== 6. Floats ===")
+float f = -2.5
+print("f          =", $f)              # -2.5
+print("+f         =", +$f)             # -2.5
+print("-f         =", -$f)             # 2.5
+print("+2.5       =", +2.5)            # 2.5
+print("-2.5       =", -2.5)            # -2.5
+print("+f + -f    =", +$f + -$f)       # (-2.5) + 2.5 = 0
+
+print("")
+print("=== 7. Funciones ===")
+function negativo(n)
+    return -n
+fi
+
+function identidad(n)
+    return +n
+fi
+
+print("negativo(7)   =", negativo(7))       # -7
+print("+negativo(7)  =", +negativo(7))      # -7
+print("-negativo(7)  =", -negativo(7))      # 7
+print("identidad(7)  =", identidad(7))      # 7
+print("+identidad(7) =", +identidad(7))     # 7
+print("-identidad(7) =", -identidad(7))     # -7
+
+print("")
+print("=== 8. Preservación de tipo con +X ===")
+# +X no debe convertir el tipo: una string sigue siendo string.
+# Si este test falla con "+" envolviendo el operando en un nodo,
+# el string se volvería "0hola" o similar.
+print("+ \"hola\"   =", +"hola")           # hola
+print("+ \"\"       =", +"")               # (vacío)
+
+print("")
+print("=== 9. Caso práctico ===")
+function distancia(a, b)
+    return $b - $a
+fi
+
+print("distancia(3, 10)    =", distancia(3, 10))    # 7
+print("distancia(-3, 10)   =", distancia(-3, 10))   # 13
+print("-distancia(3, 10)   =", -distancia(3, 10))   # -7
+print("+distancia(-3, 10)  =", +distancia(-3, 10))  # 13
+
+echo
+print("=== Fin de tests de enteros y positivos ===")

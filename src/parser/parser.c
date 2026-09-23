@@ -101,6 +101,7 @@ static bool is_expression_start(TokenType type) {
     return type == TOK_NUMBER || type == TOK_STRING_LITERAL || type == TOK_TRUE ||
     type == TOK_FALSE || type == TOK_IDENT || type == TOK_LBRACKET ||
     type == TOK_LBRACE || type == TOK_LPAREN || type == TOK_MINUS ||
+    type == TOK_PLUS ||
     type == TOK_NOT;
 }
 
