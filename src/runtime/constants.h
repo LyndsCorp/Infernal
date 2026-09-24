@@ -46,4 +46,8 @@ typedef void (*ConstantVisitor)(const char *name,
 
 void constants_foreach(ConstantVisitor visitor, void *user_data);
 
+//para módulos Lava
+Value *constants_make_mutable(const char *name);
+Value *constants_get_ptr(const char *name);
+
 #endif

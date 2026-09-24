@@ -20,6 +20,7 @@ typedef struct ConstantEntry {
     char *name;
     int vtype;
     Value value;
+    bool has_value;
     bool internal;
     bool user_defined;
     ConstantGetter getter;
@@ -59,6 +60,7 @@ static void register_internal_constant(const char *name,
     entry->name = infernal_strdup(name);
     entry->vtype = vtype;
     entry->value = default_value;
+    entry->has_value = true;
     entry->internal = true;
     entry->user_defined = false;
     entry->getter = getter;
@@ -90,6 +92,65 @@ bool constants_is_reserved(const char *name) {
     return name && find_constant(name) != NULL;
 }
 
+/* -------------------------------------------------------------------------
+ *  API para módulos Lava
+ *
+ *  make_infernal_const(name):
+ *      - Si la constante NO existe: la crea con has_value=false y
+ *        devuelve un puntero MUTABLE a su Value. El módulo escribe el
+ *        valor por defecto a través de él.
+ *      - Si ya existe pero has_value=false (otro módulo la creó antes
+ *        de que el usuario la definiera): devuelve el puntero mutable.
+ *      - Si ya existe y has_value=true (definida por el usuario o
+ *        interna): devuelve NULL. El módulo debe usar
+ *        get_infernal_const() para leerla.
+ *
+ *  get_infernal_const(name):
+ *      - Devuelve un puntero al Value actual, o NULL si no existe.
+ *      - El llamador NO debe modificar el valor a través de este puntero.
+ *      - Para constantes internas con getter, refresca el valor antes
+ *        de exponerlo, para que el puntero apunte al estado vivo.
+ * ------------------------------------------------------------------------- */
+
+Value *constants_make_mutable(const char *name) {
+    if (!name || !*name) return NULL;
+
+    ConstantEntry *entry = find_constant(name);
+    if (entry) {
+        if (entry->has_value) return NULL;
+        return &entry->value;
+    }
+
+    entry = infernal_malloc(sizeof(*entry));
+    entry->name = infernal_strdup(name);
+    entry->vtype = 0;
+    entry->value = val_make_null();
+    entry->has_value = false;
+    entry->internal = false;
+    entry->user_defined = false;
+    entry->getter = NULL;
+    entry->setter = NULL;
+    entry->next = constant_table;
+    constant_table = entry;
+
+    return &entry->value;
+}
+
+Value *constants_get_ptr(const char *name) {
+    if (!name || !*name) return NULL;
+
+    ConstantEntry *entry = find_constant(name);
+    if (!entry) return NULL;
+
+    if (entry->getter) {
+        Value current = entry->getter();
+        value_free(&entry->value);
+        entry->value = current;
+    }
+
+    return &entry->value;
+}
+
 void constants_define(const char *name, Value value, int line) {
     if (!definition_allowed) {
         value_free(&value);
@@ -112,6 +173,7 @@ void constants_define(const char *name, Value value, int line) {
     }
 
     if (entry) {
+        /* Constante interna que el usuario redefine por primera vez. */
         if (entry->internal && !entry->user_defined) {
             if (actual_type != entry->vtype) {
                 value_free(&value);
@@ -123,12 +185,25 @@ void constants_define(const char *name, Value value, int line) {
 
             value_free(&entry->value);
             entry->value = copy_value_secure(value);
+            entry->has_value = true;
             entry->user_defined = true;
 
             if (entry->setter)
                 entry->setter(&value);
 
             value_free(&value);
+            return;
+        }
+
+        /* Constante creada por make_infernal_const() y todavía sin valor
+         * asignado. El usuario la define ahora: transferimos la propiedad
+         * del Value que nos pasa el parser. */
+        if (!entry->has_value) {
+            value_free(&entry->value);
+            entry->value = value;
+            entry->vtype = actual_type;
+            entry->has_value = true;
+            entry->user_defined = true;
             return;
         }
 
@@ -153,6 +228,7 @@ void constants_define(const char *name, Value value, int line) {
     entry->name = infernal_strdup(name);
     entry->vtype = actual_type;
     entry->value = value;
+    entry->has_value = true;
     entry->internal = false;
     entry->user_defined = true;
     entry->getter = NULL;

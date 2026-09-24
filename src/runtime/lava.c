@@ -12,6 +12,7 @@
 #include "core/types.h"
 #include "runtime/globals.h"
 #include "runtime/error.h"
+#include "runtime/constants.h"
 #include "vm/vm.h"
 
 #include <dlfcn.h>
@@ -76,26 +77,102 @@ typedef struct {
 static LavaCtx *g_ctx = NULL;
 
 /* ==================================================================
+ * Constantes mutables desde Lava
+ * ================================================================== */
+
+Value *make_infernal_const(const char *name) {
+    return constants_make_mutable(name);
+}
+
+Value *get_infernal_const(const char *name) {
+    return constants_get_ptr(name);
+}
+
+/* ==================================================================
  * Conversión Value -> C
  * ================================================================== */
 
+/*
+ * Conversión estricta de un Value a int. Si el Value es un string que
+ * no representa un entero, disparamos error() en vez de convertir
+ * silenciosamente a 0. Esto evita el bug clásico de `seed("foo")`
+ * comportándose como `seed(0)`.
+ */
 static int value_to_c_int(Value v) {
     switch (v.type) {
         case VAL_INT:    return v.data.ival;
         case VAL_FLOAT:  return (int)v.data.fval;
         case VAL_BOOL:   return v.data.bval ? 1 : 0;
-        case VAL_STRING: return (int)strtol(v.data.sval ? v.data.sval : "0", NULL, 10);
-        default:         return 0;
+        case VAL_STRING: {
+            const char *s = v.data.sval ? v.data.sval : "";
+            char *end = NULL;
+            long n = strtol(s, &end, 10);
+            if (end == s || *end != '\0') {
+                error(0,
+                      "Lava: se esperaba un int, se recibió el string \"%s\"",
+                      s);
+            }
+            if (n < INT_MIN || n > INT_MAX) {
+                error(0,
+                      "Lava: el valor \"%s\" no cabe en un int", s);
+            }
+            return (int)n;
+        }
+        default:
+            error(0,
+                  "Lava: no se puede convertir un valor de tipo '%s' a int",
+                  value_type_name(v.type));
     }
+    return 0;
 }
 
+/*
+ * Conversión estricta de un Value a double. Igual que la de int: un
+ * string no numérico dispara error() en vez de devolver 0.0.
+ */
 static double value_to_c_double(Value v) {
     switch (v.type) {
         case VAL_INT:    return (double)v.data.ival;
         case VAL_FLOAT:  return v.data.fval;
         case VAL_BOOL:   return v.data.bval ? 1.0 : 0.0;
-        case VAL_STRING: return v.data.sval ? atof(v.data.sval) : 0.0;
-        default:         return 0.0;
+        case VAL_STRING: {
+            const char *s = v.data.sval ? v.data.sval : "";
+            char *normalized = strdup(s);
+            if (!normalized) {
+                error(0, "Lava: memoria insuficiente al convertir a float");
+            }
+            for (char *p = normalized; *p; p++) if (*p == ',') *p = '.';
+            char *end = NULL;
+            double f = strtod(normalized, &end);
+            bool ok = (end != normalized && *end == '\0');
+            free(normalized);
+            if (!ok) {
+                error(0,
+                      "Lava: se esperaba un float, se recibió el string \"%s\"",
+                      s);
+            }
+            return f;
+        }
+        default:
+            error(0,
+                  "Lava: no se puede convertir un valor de tipo '%s' a float",
+                  value_type_name(v.type));
+    }
+    return 0.0;
+}
+
+/*
+ * Conversión a bool. A diferencia de int/float, un string no vacío es
+ * truthy. Un string vacío es falsey. Esto imita la semántica de
+ * val_is_truthy() en Infernal.
+ */
+static int value_to_c_bool(Value v) {
+    switch (v.type) {
+        case VAL_BOOL:   return v.data.bval ? 1 : 0;
+        case VAL_INT:    return v.data.ival != 0;
+        case VAL_FLOAT:  return v.data.fval != 0.0;
+        case VAL_STRING: return v.data.sval && v.data.sval[0];
+        default:         return 0;
     }
 }
 
@@ -187,17 +264,7 @@ static Value lava_arg_at(int index) {
 
 int         lava_arg_int   (int i) { return value_to_c_int(lava_arg_at(i)); }
 double      lava_arg_float (int i) { return value_to_c_double(lava_arg_at(i)); }
-
-int lava_arg_bool(int i) {
-    Value v = lava_arg_at(i);
-    switch (v.type) {
-        case VAL_INT:    return v.data.ival != 0;
-        case VAL_FLOAT:  return v.data.fval != 0.0;
-        case VAL_BOOL:   return v.data.bval ? 1 : 0;
-        case VAL_STRING: return v.data.sval && v.data.sval[0];
-        default:         return 0;
-    }
-}
+int         lava_arg_bool  (int i) { return value_to_c_bool(lava_arg_at(i)); }
 
 const char *lava_arg_string(int i) {
     Value v = lava_arg_at(i);
@@ -715,7 +782,7 @@ static Value lava_dispatch(int slot, int argc, Value *args) {
             switch (e->signature[i]) {
                 case 'i': *(int *)values[i] = value_to_c_int(args[i]); break;
                 case 'f': *(double *)values[i] = value_to_c_double(args[i]); break;
-                case 'b': *(int *)values[i] = value_to_c_int(args[i]) != 0; break;
+                case 'b': *(int *)values[i] = value_to_c_bool(args[i]); break;
                 case 'l':
                     /* Pasamos la dirección del Value en args[]. Vive
                      * durante toda la llamada, así que es seguro desde
@@ -832,10 +899,29 @@ static int lava_load_from_path(const char *path, const char *prefix) {
     g_loading_module_path    = path;
     g_loading_prefix         = prefix;
 
+    /* Si la inicialización del módulo lanza un error vía longjmp,
+     * restauramos el estado de carga antes de re-propagar el error.
+     * Sin esto, un módulo que falle dejaría g_loading_module_path
+     * apuntando a un buffer muerto y el siguiente módulo lo heredaría. */
+    jmp_buf saved_env;
+    memcpy(&saved_env, &exception_env, sizeof(jmp_buf));
+    int saved_raised = exception_raised;
+
+    if (setjmp(exception_env) != 0) {
+        g_loading_module_path = saved_path;
+        g_loading_prefix      = saved_prefix;
+        memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
+        exception_raised = saved_raised;
+        longjmp(exception_env, 1);
+    }
+
     reg();
 
     g_loading_module_path = saved_path;
     g_loading_prefix      = saved_prefix;
+
+    memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
+    exception_raised = saved_raised;
     return 1;
 }
 
