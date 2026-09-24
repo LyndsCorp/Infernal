@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <stdbool.h>
 #include <unistd.h>
 #include <termios.h>
 #include <errno.h>
@@ -16,6 +17,7 @@
 #include "runtime/scope.h"
 #include "runtime/globals.h"
 #include "runtime/error.h"
+#include "runtime/constants.h"
 #include "runtime/evaluator/helpers.h"
 #include "vm/vm.h"
 #include "stdlib/output.h"
@@ -51,33 +53,33 @@ static void print_value_for_inspection(Value v) {
             putchar('"');
             break;
 
-                        case VAL_LIST:
-                            printf("[");
-                            for (int i = 0; i < v.data.list.count; i++) {
-                                if (i > 0) printf(", ");
-                                print_value_for_inspection(v.data.list.items[i]);
-                            }
-                            printf("]");
-                            break;
+        case VAL_LIST:
+            printf("[");
+            for (int i = 0; i < v.data.list.count; i++) {
+                if (i > 0) printf(", ");
+                print_value_for_inspection(v.data.list.items[i]);
+            }
+            printf("]");
+            break;
 
-                        case VAL_MAP: {
-                            printf("[");
-                            MapData *md = v.data.map;
-                            if (md) {
-                                for (int i = 0; i < md->count; i++) {
-                                    if (i > 0) printf(", ");
-                                    printf("%s = ", md->pairs[i].key ? md->pairs[i].key : "");
-                                    print_value_for_inspection(md->pairs[i].value);
-                                }
-                            }
-                            printf("]");
-                            break;
-                        }
+        case VAL_MAP: {
+            printf("[");
+            MapData *md = v.data.map;
+            if (md) {
+                for (int i = 0; i < md->count; i++) {
+                    if (i > 0) printf(", ");
+                    printf("%s = ", md->pairs[i].key ? md->pairs[i].key : "");
+                    print_value_for_inspection(md->pairs[i].value);
+                }
+            }
+            printf("]");
+            break;
+        }
 
-                        default:
-                            /* int, float, bool, null, reference, ptr */
-                            print_value(v);
-                            break;
+        default:
+            /* int, float, bool, null, reference, ptr */
+            print_value(v);
+            break;
     }
 }
 
@@ -185,24 +187,13 @@ static Value builtin_printAllFunctions(int argc, Value *args) {
 
     printf("Funciones disponibles:\n");
 
-    /* --- 1. Builtins (nativas) --- */
-    printf("  Funciones builtin (nativas):\n");
-    int n = 0;
-    for (FuncEntry *e = func_table; e; e = e->next) {
-        if (e->obj && e->obj->kind == FUNC_BUILTIN) {
-            printf("    %s\n", e->name);
-            n++;
-        }
-    }
-    if (n == 0) printf("    (ninguna)\n");
-
-    /* --- 2. Funciones definidas en el script principal ---
+    /* --- 1. Funciones definidas en el script principal ---
      *
      * Filtramos las que tienen "." en el nombre (esas vienen de imports)
      * y también las que tienen un hermano "con punto" (duplicado que el
      * parser registra al importar un .fire). */
-    printf("\n  Funciones definidas en el script:\n");
-    n = 0;
+    printf("  Funciones definidas en el script:\n");
+    int n = 0;
     for (FuncEntry *e = func_table; e; e = e->next) {
         if (!e->obj || e->obj->kind != FUNC_USER) continue;
         if (strchr(e->name, '.') != NULL) continue;
@@ -214,7 +205,7 @@ static Value builtin_printAllFunctions(int argc, Value *args) {
     }
     if (n == 0) printf("    (ninguna)\n");
 
-    /* --- 3. Funciones importadas de módulos .fire --- */
+    /* --- 2. Funciones importadas de módulos .fire --- */
     printf("\n  Funciones importadas de módulos .fire:\n");
     n = 0;
     for (FuncEntry *e = func_table; e; e = e->next) {
@@ -226,6 +217,54 @@ static Value builtin_printAllFunctions(int argc, Value *args) {
         n++;
     }
     if (n == 0) printf("    (ninguna)\n");
+
+    return val_make_null();
+}
+
+/* --- Helpers para printAllBuiltins() -------------------------- */
+
+static void print_constant_visitor(const char *name,
+                                   int vtype,
+                                   const Value *value,
+                                   bool internal,
+                                   void *user_data) {
+    (void)user_data;
+    printf("    %s (%s%s) = ", name, type_name(vtype), internal ? "" : "");
+    if (value) {
+        print_value_for_inspection(*value);
+    } else {
+        printf("null");
+    }
+    printf("\n");
+}
+
+/* --- printAllBuiltins() ---
+ *
+ * Lista las funciones nativas (builtin) y todas las constantes
+ * registradas (internas y definidas por el usuario), mostrando el tipo
+ * y el valor actual de cada constante. Para las constantes internas
+ * cuyo valor está respaldado por una variable de C (por ejemplo
+ * _MAX_LOOP_LIMIT) se consulta siempre el valor vivo mediante el
+ * getter, así que la salida refleja el estado real del intérprete. */
+static Value builtin_printAllBuiltins(int argc, Value *args) {
+    (void)argc; (void)args;
+
+    printf("Elementos builtin disponibles:\n");
+
+    /* --- 1. Funciones builtin --- */
+    printf("  Funciones builtin (funciones nativas):\n");
+    int n = 0;
+    for (FuncEntry *e = func_table; e; e = e->next) {
+        if (e->obj && e->obj->kind == FUNC_BUILTIN) {
+            printf("    %s()\n", e->name);
+            n++;
+        }
+    }
+    if (n == 0) printf("    (ninguna)\n");
+
+    /* --- 2. Constantes --- */
+    printf("\n  Constantes:\n");
+    constants_foreach(print_constant_visitor, NULL);
 
     return val_make_null();
 }
@@ -393,11 +432,13 @@ static Value builtin_input(int argc, Value *args) {
 void register_io_builtins(void) {
     func_register_builtin("printAllVars",      builtin_printAllVars);
     func_register_builtin("printAllFunctions", builtin_printAllFunctions);
+    func_register_builtin("printAllBuiltins",  builtin_printAllBuiltins);
     func_register_builtin("vartype",           builtin_vartype);
     func_register_builtin("input",             builtin_input);
 
     vm_register_builtin("printAllVars",      builtin_printAllVars);
     vm_register_builtin("printAllFunctions", builtin_printAllFunctions);
+    vm_register_builtin("printAllBuiltins",  builtin_printAllBuiltins);
     vm_register_builtin("vartype",           builtin_vartype);
     vm_register_builtin("input",             builtin_input);
 }

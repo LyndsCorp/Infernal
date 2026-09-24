@@ -38,4 +38,12 @@ void constants_define(const char *name, Value value, int line);
 void constants_set_definition_allowed(bool allowed);
 bool constants_definition_allowed(void);
 
+typedef void (*ConstantVisitor)(const char *name,
+                                int vtype,
+                                const Value *value,
+                                bool internal,
+                                void *user_data);
+
+void constants_foreach(ConstantVisitor visitor, void *user_data);
+
 #endif

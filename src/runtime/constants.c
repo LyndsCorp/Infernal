@@ -200,3 +200,17 @@ void constants_cleanup(void) {
     }
     definition_allowed = true;
 }
+
+void constants_foreach(ConstantVisitor visitor, void *user_data) {
+    if (!visitor) return;
+    for (ConstantEntry *entry = constant_table; entry; entry = entry->next) {
+        Value v;
+        if (entry->getter) {
+            v = entry->getter();
+        } else {
+            v = copy_value_secure(entry->value);
+        }
+        visitor(entry->name, entry->vtype, &v, entry->internal, user_data);
+        value_free(&v);
+    }
+}
