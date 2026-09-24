@@ -114,7 +114,7 @@ DEPS := $(ALL_OBJS:.o=.d)
 # --------------------------------------------------------------------
 .PHONY: all clean help test sanitize debug release config install re lava
 
-all: $(TARGET) $(LAVA_SOS)
+all: $(TARGET)
 
 debug:
 	$(MAKE) CFLAGS='$(CFLAGS) -DDEBUG'
