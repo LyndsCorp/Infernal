@@ -3,7 +3,7 @@
  * Copyright (C) 2026, David Baña Szymaniak, GPL v3+ License.
  * Proyecto: Aros Legendarios
  * Código fuente de Infernal: stdlib/output.c
-*/
+ */
 
 #include <stdio.h>
 #include <string.h>
@@ -33,99 +33,113 @@ static const struct {
     {NULL, NULL}
 };
 
-/* --- Representación para print() --------------------------- */
-static void print_value_literal(Value v);
+/* --- Helpers internos que escriben en un FILE* arbitrario ---- */
+
+static void fprint_value_literal(FILE *out, Value v);
 
 /* Imprime un valor en su forma normal de salida. */
-void print_value(Value v) {
+static void fprint_value(FILE *out, Value v) {
     switch (v.type) {
-        case VAL_INT:    printf("%d", v.data.ival); break;
-        case VAL_FLOAT:  printf("%g", v.data.fval); break;
-        case VAL_BOOL:   printf("%s", v.data.bval ? "true" : "false"); break;
-        case VAL_STRING: printf("%s", v.data.sval ? v.data.sval : ""); break;
+        case VAL_INT:    fprintf(out, "%d", v.data.ival); break;
+        case VAL_FLOAT:  fprintf(out, "%g", v.data.fval); break;
+        case VAL_BOOL:   fprintf(out, "%s", v.data.bval ? "true" : "false"); break;
+        case VAL_STRING: fprintf(out, "%s", v.data.sval ? v.data.sval : ""); break;
         case VAL_LIST:
-            printf("[");
+            fprintf(out, "[");
             for (int j = 0; j < v.data.list.count; j++) {
-                if (j > 0) printf(", ");
-                print_value_literal(v.data.list.items[j]);
+                if (j > 0) fprintf(out, ", ");
+                fprint_value_literal(out, v.data.list.items[j]);
             }
-            printf("]");
+            fprintf(out, "]");
             break;
-        case VAL_MAP:
-            // Ahora usamos corchetes para representar mapas, igual que la sintaxis del lenguaje
-            printf("[");
+        case VAL_MAP: {
+            fprintf(out, "[");
             MapData *md = v.data.map;
-            for (int i = 0; i < md->count; i++) {
-                if (i > 0) printf(", ");
-                printf("%s = ", md->pairs[i].key);
-                print_value_literal(md->pairs[i].value);
-            }
-            printf("]");
-            break;
-        default:
-            /* Fallback por si algún tipo no se hubiera cubierto */
-            if (v.type == VAL_MAP) {
-                // Redundante, pero seguro
-                MapData *md = v.data.map;
-                printf("[");
+            if (md) {
                 for (int i = 0; i < md->count; i++) {
-                    if (i > 0) printf(", ");
-                    printf("%s = ", md->pairs[i].key);
-                    print_value(md->pairs[i].value);
+                    if (i > 0) fprintf(out, ", ");
+                    fprintf(out, "%s = ", md->pairs[i].key ? md->pairs[i].key : "");
+                    fprint_value_literal(out, md->pairs[i].value);
                 }
-                printf("]");
-            } else {
-                printf("?");
             }
+            fprintf(out, "]");
+            break;
+        }
+        default:
+            fprintf(out, "?");
             break;
     }
 }
 
 /* Representa strings dentro de contenedores con comillas, sin cambiar
  * el comportamiento de print("texto") fuera de una lista/mapa. */
-static void print_value_literal(Value v) {
+static void fprint_value_literal(FILE *out, Value v) {
     switch (v.type) {
         case VAL_STRING:
-            putchar('"');
+            fputc('"', out);
             if (v.data.sval) {
                 for (const unsigned char *p = (const unsigned char *)v.data.sval; *p; ++p) {
                     switch (*p) {
-                        case '\\': printf("\\\\"); break;
-                        case '"':  printf("\\\""); break;
-                        case '\n': printf("\\n"); break;
-                        case '\r': printf("\\r"); break;
-                        case '\t': printf("\\t"); break;
-                        default:   putchar(*p); break;
+                        case '\\': fprintf(out, "\\\\"); break;
+                        case '"':  fprintf(out, "\\\""); break;
+                        case '\n': fprintf(out, "\\n"); break;
+                        case '\r': fprintf(out, "\\r"); break;
+                        case '\t': fprintf(out, "\\t"); break;
+                        default:   fputc(*p, out); break;
                     }
                 }
             }
-            putchar('"');
+            fputc('"', out);
             break;
-        case VAL_LIST:
-            printf("[");
-            for (int i = 0; i < v.data.list.count; i++) {
-                if (i > 0) printf(", ");
-                print_value_literal(v.data.list.items[i]);
-            }
-            printf("]");
-            break;
-        case VAL_MAP: {
-            printf("[");
-            MapData *md = v.data.map;
-            if (md) {
-                for (int i = 0; i < md->count; i++) {
-                    if (i > 0) printf(", ");
-                    printf("%s = ", md->pairs[i].key ? md->pairs[i].key : "");
-                    print_value_literal(md->pairs[i].value);
-                }
-            }
-            printf("]");
-            break;
-        }
-        default:
-            print_value(v);
-            break;
+                        case VAL_LIST:
+                            fprintf(out, "[");
+                            for (int i = 0; i < v.data.list.count; i++) {
+                                if (i > 0) fprintf(out, ", ");
+                                fprint_value_literal(out, v.data.list.items[i]);
+                            }
+                            fprintf(out, "]");
+                            break;
+                        case VAL_MAP: {
+                            fprintf(out, "[");
+                            MapData *md = v.data.map;
+                            if (md) {
+                                for (int i = 0; i < md->count; i++) {
+                                    if (i > 0) fprintf(out, ", ");
+                                    fprintf(out, "%s = ", md->pairs[i].key ? md->pairs[i].key : "");
+                                    fprint_value_literal(out, md->pairs[i].value);
+                                }
+                            }
+                            fprintf(out, "]");
+                            break;
+                        }
+                        default:
+                            fprint_value(out, v);
+                            break;
     }
+}
+
+/* --- API pública usada por io.c y otros módulos ------------- */
+void print_value(Value v) {
+    fprint_value(stdout, v);
+}
+
+/* --- Strip del sufijo 0x1A (\\N) para suprimir el salto de línea --- */
+static int strip_newline_marker(Value *args, int argc) {
+    if (argc > 0 && args[argc-1].type == VAL_STRING) {
+        char *s = args[argc-1].data.sval;
+        size_t len = strlen(s);
+        if (len > 0 && s[len-1] == 0x1A) {
+            char *new_s = malloc(len);
+            if (new_s) {
+                memcpy(new_s, s, len - 1);
+                new_s[len - 1] = '\0';
+                free(args[argc-1].data.sval);
+                args[argc-1].data.sval = new_s;
+                return 1;
+            }
+        }
+    }
+    return 0;
 }
 
 /* --- color() --- */
@@ -144,21 +158,7 @@ static Value builtin_color(int argc, Value *args) {
 
 /* --- print() --- */
 static Value builtin_print(int argc, Value *args) {
-    int suppress_newline = 0;
-    if (argc > 0 && args[argc-1].type == VAL_STRING) {
-        char *s = args[argc-1].data.sval;
-        size_t len = strlen(s);
-        if (len > 0 && s[len-1] == 0x1A) {
-            char *new_s = malloc(len); // sin el último byte
-            if (new_s) {
-                memcpy(new_s, s, len - 1);
-                new_s[len - 1] = '\0';
-                free(args[argc-1].data.sval);
-                args[argc-1].data.sval = new_s;
-                suppress_newline = 1;
-            }
-        }
-    }
+    int suppress_newline = strip_newline_marker(args, argc);
 
     for (int i = 0; i < argc; i++) {
         if (i > 0) printf(" ");
@@ -170,102 +170,42 @@ static Value builtin_print(int argc, Value *args) {
     return val_make_null();
 }
 
-/* --- warn, error, success --- */
-static Value builtin_warn(int argc, Value *args) {
-    int suppress_newline = 0;
-    if (argc > 0 && args[argc-1].type == VAL_STRING) {
-        char *s = args[argc-1].data.sval;
-        size_t len = strlen(s);
-        if (len > 0 && s[len-1] == 0x1A) {
-            char *new_s = malloc(len);
-            if (new_s) {
-                memcpy(new_s, s, len - 1);
-                new_s[len - 1] = '\0';
-                free(args[argc-1].data.sval);
-                args[argc-1].data.sval = new_s;
-                suppress_newline = 1;
-            }
-        }
-    }
-
-    printf("\033[33m");
+/* --- printf() ---
+ * Como print normal pero sin salto de línea ni color reset. */
+static Value builtin_printf(int argc, Value *args) {
     for (int i = 0; i < argc; i++) {
         if (i > 0) printf(" ");
         print_value(args[i]);
     }
-    printf("\033[0m");
-    if (!suppress_newline) printf("\n");
     fflush(stdout);
     return val_make_null();
 }
 
+/* --- error() ---
+ * Se comporta como print normal (salto de línea y color reset), pero
+ * toda la salida va a stderr. */
 static Value builtin_error(int argc, Value *args) {
-    int suppress_newline = 0;
-    if (argc > 0 && args[argc-1].type == VAL_STRING) {
-        char *s = args[argc-1].data.sval;
-        size_t len = strlen(s);
-        if (len > 0 && s[len-1] == 0x1A) {
-            char *new_s = malloc(len);
-            if (new_s) {
-                memcpy(new_s, s, len - 1);
-                new_s[len - 1] = '\0';
-                free(args[argc-1].data.sval);
-                args[argc-1].data.sval = new_s;
-                suppress_newline = 1;
-            }
-        }
-    }
+    int suppress_newline = strip_newline_marker(args, argc);
 
-    printf("\033[31m");
     for (int i = 0; i < argc; i++) {
-        if (i > 0) printf(" ");
-        print_value(args[i]);
+        if (i > 0) fprintf(stderr, " ");
+        fprint_value(stderr, args[i]);
     }
-    printf("\033[0m");
-    if (!suppress_newline) printf("\n");
-    fflush(stdout);
-    return val_make_null();
-}
-
-static Value builtin_success(int argc, Value *args) {
-    int suppress_newline = 0;
-    if (argc > 0 && args[argc-1].type == VAL_STRING) {
-        char *s = args[argc-1].data.sval;
-        size_t len = strlen(s);
-        if (len > 0 && s[len-1] == 0x1A) {
-            char *new_s = malloc(len);
-            if (new_s) {
-                memcpy(new_s, s, len - 1);
-                new_s[len - 1] = '\0';
-                free(args[argc-1].data.sval);
-                args[argc-1].data.sval = new_s;
-                suppress_newline = 1;
-            }
-        }
-    }
-
-    printf("\033[32m");
-    for (int i = 0; i < argc; i++) {
-        if (i > 0) printf(" ");
-        print_value(args[i]);
-    }
-    printf("\033[0m");
-    if (!suppress_newline) printf("\n");
-    fflush(stdout);
+    fprintf(stderr, "\033[0m");
+    if (!suppress_newline) fprintf(stderr, "\n");
+    fflush(stderr);
     return val_make_null();
 }
 
 /* --- Registro --- */
 void register_output_builtins(void) {
-    func_register_builtin("print", builtin_print);
-    func_register_builtin("warn", builtin_warn);
-    func_register_builtin("error", builtin_error);
-    func_register_builtin("success", builtin_success);
-    func_register_builtin("color", builtin_color);
+    func_register_builtin("print",  builtin_print);
+    func_register_builtin("printf", builtin_printf);
+    func_register_builtin("error",  builtin_error);
+    func_register_builtin("color",  builtin_color);
 
-    vm_register_builtin("print", builtin_print);
-    vm_register_builtin("warn", builtin_warn);
-    vm_register_builtin("error", builtin_error);
-    vm_register_builtin("success", builtin_success);
-    vm_register_builtin("color", builtin_color);
+    vm_register_builtin("print",  builtin_print);
+    vm_register_builtin("printf", builtin_printf);
+    vm_register_builtin("error",  builtin_error);
+    vm_register_builtin("color",  builtin_color);
 }
