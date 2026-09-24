@@ -23,12 +23,16 @@
 #include <setjmp.h>
 #include <unistd.h>
 #include <limits.h>
+#include <stdint.h>
+
+typedef Value lava_list;
 
 #ifndef PATH_MAX
 #  define PATH_MAX 4096
 #endif
 
 #define LAVA_MAX_SLOTS 256
+#define LAVA_ARG_SLOT  128   /* bytes por argumento en el storage de libffi */
 
 /* ==================================================================
  * Estado global
@@ -62,7 +66,7 @@ static const char *g_loading_prefix      = NULL;
 /* Contexto activo durante la llamada a una función Lava. */
 typedef struct {
     bool   type_set;
-    int    type;      /* TOK_INT, TOK_FLOAT, TOK_STRING, TOK_BOOL */
+    int    type;      /* TOK_INT, TOK_FLOAT, TOK_STRING, TOK_BOOL, TOK_LIST */
     bool   value_set;
     Value  value;
     int    argc;
@@ -106,7 +110,7 @@ void infernal_return_type(const char *type) {
         abort();
     }
     if (g_ctx->type_set) {
-        fprintf(stderr, "Error Lava: infernal_return_type() llamado dos veces\n");
+        fprintf(stderr, "Error Lava: tipo de retorno ya fijado\n");
         abort();
     }
     if (!type || !*type) {
@@ -118,10 +122,11 @@ void infernal_return_type(const char *type) {
     else if (strcmp(type, "float")  == 0) t = TOK_FLOAT;
     else if (strcmp(type, "string") == 0) t = TOK_STRING;
     else if (strcmp(type, "bool")   == 0) t = TOK_BOOL;
+    else if (strcmp(type, "list")   == 0) t = TOK_LIST;
     else {
         fprintf(stderr,
                 "Error Lava: tipo inválido '%s'. "
-                "Usa \"int\", \"float\", \"string\" o \"bool\".\n", type);
+                "Usa \"int\", \"float\", \"string\", \"bool\" o \"list\".\n", type);
         abort();
     }
     g_ctx->type     = t;
@@ -142,7 +147,7 @@ void infernal_return_value(const char *fmt, ...) {
         abort();
     }
     if (g_ctx->value_set) {
-        fprintf(stderr, "Error Lava: infernal_return_value() llamado dos veces\n");
+        fprintf(stderr, "Error Lava: valor de retorno ya fijado\n");
         abort();
     }
 
@@ -157,7 +162,14 @@ void infernal_return_value(const char *fmt, ...) {
             g_ctx->value = val_string(s ? s : "");
             break;
         }
-        default: g_ctx->value = val_make_null(); break;
+        case TOK_LIST:
+            /* Para listas usa infernal_return_list(); si alguien llega aquí
+             * con TOK_LIST, devolvemos lista vacía. */
+            g_ctx->value = val_list_empty();
+            break;
+        default:
+            g_ctx->value = val_make_null();
+            break;
     }
     va_end(ap);
     g_ctx->value_set = true;
@@ -205,6 +217,320 @@ const char *lava_arg_string(int i) {
 }
 
 /* ==================================================================
+ * API de listas
+ * ================================================================== */
+
+lava_list *lava_arg_list(int index) {
+    if (!g_ctx || index < 0 || index >= g_ctx->argc) return NULL;
+    Value *v = &g_ctx->args[index];
+    if (v->type != VAL_LIST) return NULL;
+    return (lava_list *)v;
+}
+
+int lava_list_len(lava_list *l) {
+    if (!l) return 0;
+    Value *v = (Value *)l;
+    if (v->type != VAL_LIST) return 0;
+    return v->data.list.count;
+}
+
+const char *lava_list_element_type(lava_list *l, int index) {
+    if (!l) return NULL;
+    Value *v = (Value *)l;
+    if (v->type != VAL_LIST) return NULL;
+    if (index < 1 || index > v->data.list.count) return NULL;
+    switch (v->data.list.items[index - 1].type) {
+        case VAL_NULL:   return "null";
+        case VAL_INT:    return "int";
+        case VAL_FLOAT:  return "float";
+        case VAL_BOOL:   return "bool";
+        case VAL_STRING: return "string";
+        case VAL_LIST:   return "list";
+        case VAL_MAP:    return "map";
+        default:         return NULL;
+    }
+}
+
+int lava_list_int(lava_list *l, int index) {
+    if (!l) return 0;
+    Value *v = (Value *)l;
+    if (v->type != VAL_LIST) return 0;
+    if (index < 1 || index > v->data.list.count) return 0;
+    Value item = v->data.list.items[index - 1];
+    switch (item.type) {
+        case VAL_INT:    return item.data.ival;
+        case VAL_FLOAT:  return (int)item.data.fval;
+        case VAL_BOOL:   return item.data.bval ? 1 : 0;
+        case VAL_STRING: return (int)strtol(item.data.sval ? item.data.sval : "0", NULL, 10);
+        default:         return 0;
+    }
+}
+
+double lava_list_float(lava_list *l, int index) {
+    if (!l) return 0.0;
+    Value *v = (Value *)l;
+    if (v->type != VAL_LIST) return 0.0;
+    if (index < 1 || index > v->data.list.count) return 0.0;
+    Value item = v->data.list.items[index - 1];
+    switch (item.type) {
+        case VAL_INT:    return (double)item.data.ival;
+        case VAL_FLOAT:  return item.data.fval;
+        case VAL_BOOL:   return item.data.bval ? 1.0 : 0.0;
+        case VAL_STRING: return item.data.sval ? atof(item.data.sval) : 0.0;
+        default:         return 0.0;
+    }
+}
+
+const char *lava_list_string(lava_list *l, int index) {
+    if (!l) return NULL;
+    Value *v = (Value *)l;
+    if (v->type != VAL_LIST) return NULL;
+    if (index < 1 || index > v->data.list.count) return NULL;
+    Value item = v->data.list.items[index - 1];
+    if (item.type == VAL_STRING)
+        return item.data.sval ? item.data.sval : "";
+
+    static char bufs[4][64];
+    static int  slot = 0;
+    char *buf = bufs[slot];
+    slot = (slot + 1) & 3;
+    switch (item.type) {
+        case VAL_INT:   snprintf(buf, 64, "%d", item.data.ival); break;
+        case VAL_FLOAT: snprintf(buf, 64, "%g", item.data.fval); break;
+        case VAL_BOOL:  snprintf(buf, 64, "%s", item.data.bval ? "true" : "false"); break;
+        default:        buf[0] = '\0'; break;
+    }
+    return buf;
+}
+
+int lava_list_bool(lava_list *l, int index) {
+    if (!l) return 0;
+    Value *v = (Value *)l;
+    if (v->type != VAL_LIST) return 0;
+    if (index < 1 || index > v->data.list.count) return 0;
+    Value item = v->data.list.items[index - 1];
+    switch (item.type) {
+        case VAL_BOOL:   return item.data.bval ? 1 : 0;
+        case VAL_INT:    return item.data.ival != 0;
+        case VAL_FLOAT:  return item.data.fval != 0.0;
+        case VAL_STRING: return item.data.sval && item.data.sval[0];
+        default:         return 0;
+    }
+}
+
+lava_list *lava_list_list(lava_list *l, int index) {
+    if (!l) return NULL;
+    Value *v = (Value *)l;
+    if (v->type != VAL_LIST) return NULL;
+    if (index < 1 || index > v->data.list.count) return NULL;
+    Value *item = &v->data.list.items[index - 1];
+    if (item->type != VAL_LIST) return NULL;
+    return (lava_list *)item;   /* prestada, vive dentro del padre */
+}
+
+lava_list *lava_list_create(void) {
+    Value *v = malloc(sizeof(Value));
+    if (!v) return NULL;
+    *v = val_list_empty();
+    return (lava_list *)v;
+}
+
+void lava_list_add_int(lava_list *l, int x) {
+    if (!l) return;
+    Value *v = (Value *)l;
+    if (v->type != VAL_LIST) return;
+    val_list_append(v, val_int(x));
+}
+
+void lava_list_add_float(lava_list *l, double x) {
+    if (!l) return;
+    Value *v = (Value *)l;
+    if (v->type != VAL_LIST) return;
+    val_list_append(v, val_float(x));
+}
+
+void lava_list_add_string(lava_list *l, const char *s) {
+    if (!l) return;
+    Value *v = (Value *)l;
+    if (v->type != VAL_LIST) return;
+    val_list_append(v, val_string(s ? s : ""));
+}
+
+void lava_list_add_bool(lava_list *l, int x) {
+    if (!l) return;
+    Value *v = (Value *)l;
+    if (v->type != VAL_LIST) return;
+    val_list_append(v, val_bool(x != 0));
+}
+
+void lava_list_add_list(lava_list *l, lava_list *sub) {
+    if (!l || !sub) return;
+    Value *v = (Value *)l;
+    Value *s = (Value *)sub;
+    if (v->type != VAL_LIST || s->type != VAL_LIST) return;
+    val_list_append(v, copy_value_secure(*s));   /* copia profunda */
+}
+
+void lava_list_free(lava_list *l) {
+    if (!l) return;
+    Value *v = (Value *)l;
+    value_free(v);
+    free(v);
+}
+
+void infernal_return_list(lava_list *l) {
+    if (!g_ctx) {
+        fprintf(stderr,
+                "Error Lava: infernal_return_list() fuera de una función Lava\n");
+        abort();
+    }
+    if (g_ctx->type_set) {
+        fprintf(stderr,
+                "Error Lava: tipo de retorno ya fijado antes de "
+                "infernal_return_list()\n");
+        abort();
+    }
+    if (g_ctx->value_set) {
+        fprintf(stderr, "Error Lava: valor de retorno ya fijado\n");
+        abort();
+    }
+    g_ctx->type     = TOK_LIST;
+    g_ctx->type_set = true;
+
+    if (!l) {
+        g_ctx->value = val_list_empty();
+    } else {
+        Value *v = (Value *)l;
+        g_ctx->value = *v;    /* transferimos el contenido */
+        free(v);              /* liberamos solo el wrapper */
+    }
+    g_ctx->value_set = true;
+}
+
+/* ==================================================================
+ * Helpers UTF-8 para strings
+ * ================================================================== */
+
+static size_t utf8_seq_len(unsigned char c) {
+    if (c < 0x80) return 1;
+    if ((c & 0xE0) == 0xC0) return 2;
+    if ((c & 0xF0) == 0xE0) return 3;
+    if ((c & 0xF8) == 0xF0) return 4;
+    return 1;
+}
+
+int lava_string_length(const char *s) {
+    if (!s) return 0;
+    int n = 0;
+    const unsigned char *p = (const unsigned char *)s;
+    while (*p) {
+        if ((*p & 0xC0) != 0x80) n++;
+        p++;
+    }
+    return n;
+}
+
+const char *lava_string_char(const char *s, int index) {
+    static char buf[8];
+    if (!s || index < 1) { buf[0] = '\0'; return buf; }
+
+    const unsigned char *p = (const unsigned char *)s;
+    int n = 1;
+    while (*p && n < index) {
+        p += utf8_seq_len(*p);
+        n++;
+    }
+    if (!*p) { buf[0] = '\0'; return buf; }
+
+    size_t len = utf8_seq_len(*p);
+    if (len > 7) len = 1;
+    memcpy(buf, p, len);
+    buf[len] = '\0';
+    return buf;
+}
+
+char *lava_string_concat(const char *a, const char *b) {
+    if (!a) a = "";
+    if (!b) b = "";
+    size_t la = strlen(a);
+    size_t lb = strlen(b);
+    if (la > SIZE_MAX - lb - 1) return NULL;
+    char *buf = malloc(la + lb + 1);
+    if (!buf) return NULL;
+    memcpy(buf, a, la);
+    memcpy(buf + la, b, lb + 1);
+    return buf;
+}
+
+char *lava_string_replace(const char *s, const char *from, const char *to) {
+    if (!s)    s    = "";
+    if (!from) from = "";
+    if (!to)   to   = "";
+    size_t from_len = strlen(from);
+    if (from_len == 0) return strdup(s);
+
+    size_t count = 0;
+    const char *p = s;
+    while ((p = strstr(p, from)) != NULL) { count++; p += from_len; }
+
+    size_t s_len   = strlen(s);
+    size_t to_len  = strlen(to);
+    size_t out_len;
+    if (to_len >= from_len) {
+        size_t diff = to_len - from_len;
+        if (count > 0 && diff > (SIZE_MAX - s_len) / count) return NULL;
+        out_len = s_len + count * diff;
+    } else {
+        size_t diff = from_len - to_len;
+        if (count > 0 && diff * count > s_len) return NULL;
+        out_len = s_len - count * diff;
+    }
+
+    char *result = malloc(out_len + 1);
+    if (!result) return NULL;
+
+    char *dst = result;
+    p = s;
+    const char *next;
+    while ((next = strstr(p, from)) != NULL) {
+        size_t chunk = (size_t)(next - p);
+        memcpy(dst, p, chunk);
+        dst += chunk;
+        memcpy(dst, to, to_len);
+        dst += to_len;
+        p = next + from_len;
+    }
+    strcpy(dst, p);
+    return result;
+}
+
+lava_list *lava_string_split(const char *s, const char *sep) {
+    if (!s || !sep || !*sep) return NULL;
+
+    size_t sep_len = strlen(sep);
+    Value *result = malloc(sizeof(Value));
+    if (!result) return NULL;
+    *result = val_list_empty();
+
+    const char *p = s;
+    const char *next;
+    while ((next = strstr(p, sep)) != NULL) {
+        size_t piece_len = (size_t)(next - p);
+        char *piece = malloc(piece_len + 1);
+        if (piece) {
+            memcpy(piece, p, piece_len);
+            piece[piece_len] = '\0';
+            val_list_append(result, val_string(piece));
+            free(piece);
+        }
+        p = next + sep_len;
+    }
+    val_list_append(result, val_string(p));
+
+    return (lava_list *)result;
+}
+
+/* ==================================================================
  * Registro (llamado por el .lava)
  * ================================================================== */
 
@@ -238,10 +564,11 @@ int lava_register_fn(const char *name, void (*fn)(void), const char *sig) {
                 case 'f': types[i] = &ffi_type_double;  break;
                 case 's': types[i] = &ffi_type_pointer; break;
                 case 'b': types[i] = &ffi_type_sint;    break;
+                case 'l': types[i] = &ffi_type_pointer; break;
                 default:
                     fprintf(stderr,
                             "Error Lava: firma '%s' inválida para '%s'. "
-                            "Solo i, f, s, b.\n", sig, name);
+                            "Solo i, f, s, b, l.\n", sig, name);
                     free(types);
                     return -1;
             }
@@ -282,7 +609,7 @@ int lava_register_fn(const char *name, void (*fn)(void), const char *sig) {
         if (prefixed) {
             snprintf(prefixed, plen, "%s.%s", g_loading_prefix, name);
             func_register_builtin(prefixed, thunk);
-            vm_register_builtin(prefixed, thunk);   /* se conserva el ptr */
+            vm_register_builtin(prefixed, thunk);
         }
     }
     return 0;
@@ -362,14 +689,12 @@ static Value lava_dispatch(int slot, int argc, Value *args) {
 
     void  * volatile storage = NULL;
     void ** volatile values  = NULL;
-    char  * volatile tmp_str[8] = {0};
     LavaCtx ctx;
     LavaCtx *saved_ctx = g_ctx;
     const char *err_msg = NULL;
     char err_buf[512];
 
     if (setjmp(exception_env) != 0) {
-        for (int i = 0; i < 8; i++) free(tmp_str[i]);
         free((void *)values);
         free((void *)storage);
         g_ctx = saved_ctx;
@@ -380,41 +705,57 @@ static Value lava_dispatch(int slot, int argc, Value *args) {
 
     if (e->nargs > 0) {
         values  = malloc(sizeof(void *) * (size_t)e->nargs);
-        storage = calloc((size_t)e->nargs, 16);
+        storage = calloc((size_t)e->nargs, LAVA_ARG_SLOT);
         if (!values || !storage) err_msg = "Lava: memoria insuficiente";
     }
 
-    int tmp_str_count = 0;
     if (!err_msg) {
         for (int i = 0; i < e->nargs; i++) {
-            values[i] = (char *)storage + (size_t)i * 16;
+            values[i] = (char *)storage + (size_t)i * LAVA_ARG_SLOT;
             switch (e->signature[i]) {
                 case 'i': *(int *)values[i] = value_to_c_int(args[i]); break;
                 case 'f': *(double *)values[i] = value_to_c_double(args[i]); break;
+                case 'b': *(int *)values[i] = value_to_c_int(args[i]) != 0; break;
+                case 'l':
+                    /* Pasamos la dirección del Value en args[]. Vive
+                     * durante toda la llamada, así que es seguro desde
+                     * dentro de la función Lava. */
+                    *(Value **)values[i] = (args[i].type == VAL_LIST)
+                                           ? &args[i] : NULL;
+                    break;
                 case 's': {
                     if (args[i].type == VAL_STRING) {
                         *(const char **)values[i] =
                             args[i].data.sval ? args[i].data.sval : "";
                     } else {
-                        char *s = malloc(64);
-                        if (!s) { err_msg = "Lava: memoria insuficiente"; break; }
+                        /* Buffer inline tras el puntero. */
+                        char *s = (char *)values[i] + sizeof(void *);
                         switch (args[i].type) {
-                            case VAL_INT:   snprintf(s, 64, "%d", args[i].data.ival); break;
-                            case VAL_FLOAT: snprintf(s, 64, "%g", args[i].data.fval); break;
-                            case VAL_BOOL:  snprintf(s, 64, "%s",
-                                                     args[i].data.bval ? "true" : "false"); break;
-                            default:        s[0] = '\0'; break;
+                            case VAL_INT:
+                                snprintf(s, LAVA_ARG_SLOT - sizeof(void *),
+                                         "%d", args[i].data.ival);
+                                break;
+                            case VAL_FLOAT:
+                                snprintf(s, LAVA_ARG_SLOT - sizeof(void *),
+                                         "%g", args[i].data.fval);
+                                break;
+                            case VAL_BOOL:
+                                snprintf(s, LAVA_ARG_SLOT - sizeof(void *),
+                                         "%s",
+                                         args[i].data.bval ? "true" : "false");
+                                break;
+                            default:
+                                s[0] = '\0';
+                                break;
                         }
                         *(const char **)values[i] = s;
-                        if (tmp_str_count < 8) tmp_str[tmp_str_count++] = s;
-                        else free(s);
                     }
                     break;
                 }
-                case 'b': *(int *)values[i] = value_to_c_int(args[i]) != 0; break;
-                default:  *(int *)values[i] = 0; break;
+                default:
+                    *(int *)values[i] = 0;
+                    break;
             }
-            if (err_msg) break;
         }
     }
 
@@ -431,21 +772,23 @@ static Value lava_dispatch(int slot, int argc, Value *args) {
 
         if (!ctx.type_set) {
             snprintf(err_buf, sizeof(err_buf),
-                     "Lava: '%s' no llamó a infernal_return_type()", e->name);
+                     "Lava: '%s' no llamó a infernal_return_type() "
+                     "ni a infernal_return_list()", e->name);
             err_msg = err_buf;
         } else if (ctx.value_set) {
             result = ctx.value;
         } else {
             switch (ctx.type) {
-                case TOK_INT:    result = val_int(0);      break;
-                case TOK_FLOAT:  result = val_float(0.0);  break;
-                case TOK_BOOL:   result = val_bool(false); break;
-                case TOK_STRING: result = val_string("");  break;
+                case TOK_INT:    result = val_int(0);         break;
+                case TOK_FLOAT:  result = val_float(0.0);     break;
+                case TOK_BOOL:   result = val_bool(false);    break;
+                case TOK_STRING: result = val_string("");     break;
+                case TOK_LIST:   result = val_list_empty();   break;
+                default:         result = val_make_null();    break;
             }
         }
     }
 
-    for (int i = 0; i < tmp_str_count; i++) free(tmp_str[i]);
     free((void *)values);
     free((void *)storage);
 
@@ -461,20 +804,12 @@ static Value lava_dispatch(int slot, int argc, Value *args) {
  * ================================================================== */
 
 static int lava_load_from_path(const char *path, const char *prefix) {
-    /*
-     * RTLD_NOW:  resuelve todos los símbolos al cargar.
-     * RTLD_LOCAL: los símbolos del .lava no se filtran al resto del
-     *             proceso. En particular, si el .lava define un `main`
-     *             (por error o por lo que sea), no colisiona con el
-     *             `main` del intérprete y NUNCA se invoca.
-     */
     void *h = dlopen(path, RTLD_NOW | RTLD_LOCAL);
     if (!h) {
         fprintf(stderr, "Lava: dlopen('%s') falló: %s\n", path, dlerror());
         return 0;
     }
 
-    /* Solo llamamos a infernal_lava_register. Nunca a main. */
     void (*reg)(void) = (void (*)(void))dlsym(h, "infernal_lava_register");
     if (!reg) {
         fprintf(stderr,
