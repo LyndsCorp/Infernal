@@ -1,7 +1,8 @@
 /*
  * Infernal: el intérprete de Aro Infernal.
- * Copyright (C) 2026, David Baña Szymaniak
- * Apache 2.0 — Código fuente de Infernal: include/lava.h
+ * Copyright (C) 2026 David Baña Szymaniak
+ * Licencia Apache 2.0
+ * Código fuente de Infernal: lava/lava.h
  *
  * API pública para escribir módulos Lava para Infernal (librerías .lava).
  *
@@ -35,54 +36,60 @@ print(suma(2, 3))     # 5  (también sin prefijo)
 #include <stdint.h>
 #include <stdbool.h>
 
+#ifndef LAVA_EXPORT
+#  if defined(_WIN32) || defined(__CYGWIN__)
+#    define LAVA_EXPORT __declspec(dllexport)
+#  else
+#    define LAVA_EXPORT __attribute__((visibility("default")))
+#  endif
+#endif
+
+#ifdef __cplusplus
+#  define LAVA_LINKAGE extern "C"
+#else
+#  define LAVA_LINKAGE
+#endif
+
+#define VAL_NULL      0
+#define VAL_INT       1
+#define VAL_FLOAT     2
+#define VAL_BOOL      3
+#define VAL_STRING    4
+#define VAL_LIST      5
+#define VAL_REFERENCE 6
+#define VAL_PTR       7
+#define VAL_MAP       8
+
+typedef struct MapData MapData;
+typedef struct Value   Value;
+
+struct Value {
+    int type;
+    union {
+        int    ival;
+        double fval;
+        bool   bval;
+        char  *sval;
+        struct {
+            Value *items;
+            int    count, cap;
+        } list;
+        struct {
+            char *container_name;
+            char *map_key;
+            int   index;
+            bool  is_map;
+        } ref;
+        void    *ptr;
+        MapData *map;
+    } data;
+};
+
+typedef Value lava_list;
+
 #ifdef __cplusplus
 extern "C" {
     #endif
-
-    #ifndef LAVA_EXPORT
-    #  if defined(_WIN32) || defined(__CYGWIN__)
-    #    define LAVA_EXPORT __declspec(dllexport)
-    #  else
-    #    define LAVA_EXPORT __attribute__((visibility("default")))
-    #  endif
-    #endif
-
-    #define VAL_NULL      0
-    #define VAL_INT       1
-    #define VAL_FLOAT     2
-    #define VAL_BOOL      3
-    #define VAL_STRING    4
-    #define VAL_LIST      5
-    #define VAL_REFERENCE 6
-    #define VAL_PTR       7
-    #define VAL_MAP       8
-
-    typedef struct MapData MapData;
-    typedef struct Value   Value;
-
-    struct Value {
-        int type;
-        union {
-            int    ival;
-            double fval;
-            bool   bval;
-            char  *sval;
-            struct {
-                Value *items;
-                int    count, cap;
-            } list;
-            struct {
-                char *container_name;
-                char *map_key;
-                int   index;
-                bool  is_map;
-            } ref;
-            void    *ptr;
-            MapData *map;
-        } data;
-    };
-
-    typedef Value lava_list;
 
     Value val_make_null(void);
     Value val_int(int x);
@@ -102,17 +109,11 @@ extern "C" {
 
     int lava_register_fn(const char *name, LavaFnPtr fn, const char *signature);
 
-    #define LAVA_MODULE \
-    LAVA_EXPORT void infernal_lava_register(void)
-
-    #define LAVA_REGISTER(name, fn, sig) \
-    lava_register_fn((name), (LavaFnPtr)(fn), (sig))
-
-    void infernal_return_type(const char *type);
+    void infernal_return_type (const char *type);
     void infernal_return_value(const char *fmt, ...);
-    void infernal_return_list(lava_list *l);
+    void infernal_return_list (lava_list *l);
 
-    int          lava_argc(void);
+    int          lava_argc      (void);
     int          lava_arg_int   (int index);
     double       lava_arg_float (int index);
     int          lava_arg_bool  (int index);
@@ -147,5 +148,11 @@ extern "C" {
     #ifdef __cplusplus
 }
 #endif
+
+#define LAVA_MODULE \
+LAVA_LINKAGE LAVA_EXPORT void infernal_lava_register(void)
+
+#define LAVA_REGISTER(name, fn, sig) \
+lava_register_fn((name), (LavaFnPtr)(fn), (sig))
 
 #endif
