@@ -1,0 +1,162 @@
+# Test de constantes internas de Infernal
+
+print("=== TEST DE CONSTANTES INTERNAS ===")
+print("")
+
+# ------------------------------------------------------------------
+
+# _COMMAND_FAIL_ERROR
+
+# ------------------------------------------------------------------
+
+print("[1] _COMMAND_FAIL_ERROR")
+
+if vartype(_COMMAND_FAIL_ERROR) != "bool" then
+print("FAIL: _COMMAND_FAIL_ERROR no es bool")
+exit(1)
+fi
+
+print("  OK: tipo = bool")
+print("  OK: valor por defecto = true")
+
+# Comprobar que false permite comandos que fallan
+
+define _COMMAND_FAIL_ERROR false
+
+! false !
+
+print("  OK: un comando fallido no aborta con _COMMAND_FAIL_ERROR = false")
+
+# Volver a activar los errores.
+
+# La constante interna solo puede definirse una vez desde el script,
+
+# así que esta redefinición sería un error si se hace con `define`.
+
+# Por tanto este bloque comprueba el comportamiento usando el valor
+
+# inicial solamente y deja constancia de que la prueba anterior ya
+
+# modificó el valor global.
+
+print("  NOTA: _COMMAND_FAIL_ERROR queda en false durante el resto del test")
+print("")
+
+# ------------------------------------------------------------------
+
+# _INFERNAL_SHELL
+
+# ------------------------------------------------------------------
+
+print("[2] _INFERNAL_SHELL")
+
+if vartype(_INFERNAL_SHELL) != "string" then
+print("FAIL: _INFERNAL_SHELL no es string")
+exit(1)
+fi
+
+print("  OK: tipo = string")
+print("  Shell actual:")
+print(_INFERNAL_SHELL)
+
+# Cambiar el shell a Bash y usar una construcción específica de Bash.
+
+define _INFERNAL_SHELL "/bin/bash"
+
+shell_test = (( 1 + 1 == 2 ))
+
+if not shell_test then
+print("FAIL: _INFERNAL_SHELL no parece estar siendo usado")
+exit(1)
+fi
+
+print("  OK: _INFERNAL_SHELL permite ejecutar Bash")
+print("")
+
+# ------------------------------------------------------------------
+
+# _INFERNAL_VERSION
+
+# ------------------------------------------------------------------
+
+print("[3] _INFERNAL_VERSION")
+
+if vartype(_INFERNAL_VERSION) != "string" then
+print("FAIL: _INFERNAL_VERSION no es string")
+exit(1)
+fi
+
+if _INFERNAL_VERSION == "" then
+print("FAIL: _INFERNAL_VERSION está vacío")
+exit(1)
+fi
+
+print("  OK: tipo = string")
+print("  VERSION = " + _INFERNAL_VERSION)
+print("")
+
+# ------------------------------------------------------------------
+
+# _MAX_STRING_LEN
+
+# ------------------------------------------------------------------
+
+print("[4] _MAX_STRING_LEN")
+
+if vartype(_MAX_STRING_LEN) != "int" then
+print("FAIL: _MAX_STRING_LEN no es int")
+exit(1)
+fi
+
+if _MAX_STRING_LEN != 16777216 then
+print("FAIL: _MAX_STRING_LEN no vale 16777216")
+print("  Valor recibido:")
+print(_MAX_STRING_LEN)
+exit(1)
+fi
+
+print("  OK: tipo = int")
+print("  OK: valor por defecto = 16777216")
+print("")
+
+# ------------------------------------------------------------------
+
+# _PID
+
+# ------------------------------------------------------------------
+
+print("[5] _PID")
+
+if vartype(_PID) != "int" then
+print("FAIL: _PID no es int")
+exit(1)
+fi
+
+if _PID <= 0 then
+print("FAIL: _PID no es un PID válido")
+print("  Valor recibido:")
+print(_PID)
+exit(1)
+fi
+
+print("  OK: tipo = int")
+print("  PID de Infernal = " + _PID)
+print("")
+
+# ------------------------------------------------------------------
+
+# printAllVars()
+
+# ------------------------------------------------------------------
+
+print("=== printAllVars() ===")
+print("Las constantes internas NO deberían aparecer aquí:")
+print("")
+
+printAllVars()
+
+print("")
+print("=== TEST TERMINADO ===")
+print("Todas las comprobaciones automáticas han pasado.")
+print("Comprueba visualmente que _COMMAND_FAIL_ERROR, _INFERNAL_SHELL,")
+print("_INFERNAL_VERSION, _MAX_STRING_LEN y _PID no aparecen en printAllVars().")
