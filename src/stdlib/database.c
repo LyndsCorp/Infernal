@@ -31,7 +31,6 @@
  * ============================================================ */
 #define DB_MAX_DEPTH               64
 #define DB_MAX_ITEMS          1000000
-#define DB_MAX_STRING_LEN     (16ULL * 1024 * 1024)
 #define DB_MAX_FILE_SIZE      (256ULL * 1024 * 1024)
 #define DB_MAX_SERIALIZED_SIZE (256ULL * 1024 * 1024)
 
@@ -339,7 +338,7 @@ static int parse_string(TextParser *p, char **out) {
         return -1;
     size_t end = p->pos;
     size_t raw_len = end - start;
-    if (raw_len > DB_MAX_STRING_LEN)
+    if (raw_len > ((uint64_t)max_string_len))
         error(current_eval_line, "String demasiado largo en el archivo de texto");
     char *result = malloc(raw_len + 1);
     if (!result) return -1;
@@ -761,7 +760,7 @@ static void serialize_value_binary_rec(ByteBuffer *buf, Value v, int depth) {
         }
         case VAL_STRING: {
             size_t str_len = strlen(v.data.sval);
-            if (str_len > DB_MAX_STRING_LEN)
+            if (str_len > ((uint64_t)max_string_len))
                 error(current_eval_line, "String demasiado largo para serializar");
             buf_append_byte(buf, 'S');
             buf_append_u64_le(buf, (uint64_t)str_len);
@@ -788,7 +787,7 @@ static void serialize_value_binary_rec(ByteBuffer *buf, Value v, int depth) {
             buf_append_u32_le(buf, (uint32_t)count);
             for (int i = 0; i < count; i++) {
                 size_t key_len = strlen(md->pairs[i].key);
-                if (key_len > DB_MAX_STRING_LEN)
+                if (key_len > ((uint64_t)max_string_len))
                     error(current_eval_line, "Clave de mapa demasiado larga");
                 buf_append_u64_le(buf, (uint64_t)key_len);
                 buf_append(buf, md->pairs[i].key, key_len);
@@ -856,7 +855,7 @@ static Value deserialize_value_binary(const unsigned char *buffer, size_t *offse
                 error(current_eval_line, "Buffer corrupto (STRING len incompleto)");
             uint64_t len64 = read_u64_le(buffer + *offset);
             *offset += sizeof(uint64_t);
-            if (len64 > DB_MAX_STRING_LEN)
+            if (len64 > ((uint64_t)max_string_len))
                 error(current_eval_line, "String demasiado largo en el buffer");
             size_t str_len = (size_t)len64;
             if (str_len > total_len - *offset)
@@ -897,7 +896,7 @@ static Value deserialize_value_binary(const unsigned char *buffer, size_t *offse
                     error(current_eval_line, "Buffer corrupto (MAP key len incompleto)");
                 uint64_t len64 = read_u64_le(buffer + *offset);
                 *offset += sizeof(uint64_t);
-                if (len64 > DB_MAX_STRING_LEN)
+                if (len64 > ((uint64_t)max_string_len))
                     error(current_eval_line, "Clave de mapa demasiado larga");
                 size_t key_len = (size_t)len64;
                 if (key_len > total_len - *offset)

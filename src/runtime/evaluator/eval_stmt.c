@@ -285,9 +285,9 @@ void exec_stmt(ASTNode *stmt) {
         case NODE_CMD_STMT: {
             char *expanded = expand_command(stmt->data.cmd_stmt.cmd);
             int ret = execute_embedded(expanded);
-            if (ret == -1) {
+            if (ret != 0 && command_fail_error) {
                 free(expanded);
-                error(stmt->line, "Comando embebido no encontrado: %s", stmt->data.cmd_stmt.cmd);
+                error(stmt->line, "Comando embebido falló (código %d): %s", ret, stmt->data.cmd_stmt.cmd);
             }
             free(expanded);
             break;
@@ -296,7 +296,7 @@ void exec_stmt(ASTNode *stmt) {
         case NODE_SHELL_CMD: {
             char *expanded = expand_command(stmt->data.shell_cmd.cmd);
             int ret = run_shell_command(expanded);
-            if (ret != 0) {
+            if (ret != 0 && command_fail_error) {
                 char msg[1024];
                 snprintf(msg, sizeof(msg), "falló: %s", expanded);
                 free(expanded);
@@ -365,7 +365,7 @@ void exec_stmt(ASTNode *stmt) {
                     fp = popen_embedded_with_path(trimmed, "r", &temp_path);
                     free(trimmed);
                 } else {
-                    fp = popen(cmd_with_redir, "r");
+                    fp = popen_infernal_shell(cmd_with_redir, "r");
                 }
 
                 free(cmd_with_redir);
@@ -418,7 +418,7 @@ void exec_stmt(ASTNode *stmt) {
 
                     int status = pclose(fp);
 
-                    if (status != 0 && status != -1) {
+                    if (status != 0 && status != -1 && command_fail_error) {
                         int code = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
 
                         char err_output[1024] = "";

@@ -20,6 +20,8 @@ Scope *current_scope = NULL;
 FuncEntry *func_table = NULL;
 char *current_import_prefix = NULL;
 int max_loop_iterations = 10000;
+bool command_fail_error = true;
+int max_string_len = 16777216;
 
 jmp_buf exception_env;
 int exception_raised = 0;

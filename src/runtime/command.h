@@ -20,5 +20,6 @@ void set_embedded_tmp_dir(const char *dir);
 void cleanup_embedded_temp_dir(void);
 int run_shell_command(const char *cmd);
 int run_command_get_exit_code(const char *cmd);
+FILE *popen_infernal_shell(const char *cmd, const char *mode);
 
 #endif

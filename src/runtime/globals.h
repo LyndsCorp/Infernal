@@ -40,6 +40,8 @@ FuncObject *func_lookup(const char *name);
 /* --- Import prefix y límite de iteraciones --------------- */
 extern char *current_import_prefix;
 extern int max_loop_iterations;
+extern bool command_fail_error;
+extern int max_string_len;
 
 /* --- Error y control de flujo ----------------------------- */
 extern jmp_buf exception_env;

@@ -443,6 +443,63 @@ static char *prepare_embedded_binary(const char *cmd_name) {
     return abs_path;
 }
 
+/* --- Ejecutar comandos a través del shell configurado de Infernal --- */
+static char *shell_quote(const char *text) {
+    if (!text) return NULL;
+
+    size_t len = 2; /* comillas simples de apertura y cierre */
+    for (const char *p = text; *p; p++)
+        len += (*p == '\'') ? 4 : 1;
+
+    char *quoted = malloc(len + 1);
+    if (!quoted) return NULL;
+
+    size_t out = 0;
+    quoted[out++] = '\'';
+    for (const char *p = text; *p; p++) {
+        if (*p == '\'') {
+            quoted[out++] = '\'';
+            quoted[out++] = '\\';
+            quoted[out++] = '\'';
+            quoted[out++] = '\'';
+        } else {
+            quoted[out++] = *p;
+        }
+    }
+    quoted[out++] = '\'';
+    quoted[out] = '\0';
+    return quoted;
+}
+
+FILE *popen_infernal_shell(const char *cmd, const char *mode) {
+    if (!cmd || !mode) return NULL;
+
+    const char *shell = infernal_shell ? infernal_shell : "/bin/sh";
+    char *quoted_shell = shell_quote(shell);
+    char *quoted_cmd = shell_quote(cmd);
+    if (!quoted_shell || !quoted_cmd) {
+        free(quoted_shell);
+        free(quoted_cmd);
+        return NULL;
+    }
+
+    size_t len = strlen(quoted_shell) + strlen(quoted_cmd) + 16;
+    char *wrapper = malloc(len);
+    if (!wrapper) {
+        free(quoted_shell);
+        free(quoted_cmd);
+        return NULL;
+    }
+
+    snprintf(wrapper, len, "exec %s -c %s", quoted_shell, quoted_cmd);
+    FILE *fp = popen(wrapper, mode);
+
+    free(wrapper);
+    free(quoted_shell);
+    free(quoted_cmd);
+    return fp;
+}
+
 /* --- Ejecutar comando embebido y devolver código de salida --- */
 int execute_embedded(const char *full_cmd) {
     if (!full_cmd) return -1;
@@ -472,8 +529,8 @@ int execute_embedded(const char *full_cmd) {
      * y corromper los punteros etiquetados antes de devolver el control al intérprete. */
     pid_t pid = fork();
     if (pid == 0) {
-        execl("/bin/sh", "sh", "-c", exec_cmd, (char *)NULL);
-        execlp("sh", "sh", "-c", exec_cmd, (char *)NULL);
+        const char *shell = infernal_shell ? infernal_shell : "/bin/sh";
+        execlp(shell, shell, "-c", exec_cmd, (char *)NULL);
         _exit(127);
     }
 
@@ -513,7 +570,7 @@ FILE *popen_embedded_with_path(const char *full_cmd, const char *mode, char **te
         free(cmd_copy);
         return NULL;
     }
-    FILE *fp = popen(exec_cmd, mode);
+    FILE *fp = popen_infernal_shell(exec_cmd, mode);
     if (fp) { *temp_path = binary_path; }
     else { unlink(binary_path); free(binary_path); }
     free(exec_cmd);
@@ -552,8 +609,7 @@ int run_shell_command(const char *cmd) {
     pid_t pid = fork();
     if (pid == 0) {
         execlp(shell, shell, "-c", cmd, (char *)NULL);
-        execlp("/bin/sh", "/bin/sh", "-c", cmd, (char *)NULL);
-        exit(127);
+        _exit(127);
     } else if (pid > 0) {
         int status;
         waitpid(pid, &status, 0);
@@ -578,7 +634,7 @@ int run_command_get_exit_code(const char *cmd) {
     sprintf(silent_cmd, "%s 2>/dev/null", expanded);
     free(expanded);
 
-    FILE *fp = popen(silent_cmd, "r");
+    FILE *fp = popen_infernal_shell(silent_cmd, "r");
     free(silent_cmd);
     if (!fp) return -1;
 

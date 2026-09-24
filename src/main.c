@@ -181,6 +181,8 @@ int main(int argc, char **argv) {
     current_source_file = script_file;
 
     super_global_scope = scope_new(NULL, NULL);
+    if (!infernal_shell)
+        infernal_shell = strdup("/bin/sh");
     register_all_constants();
 
     extern char **environ;
@@ -218,12 +220,8 @@ int main(int argc, char **argv) {
 
     register_all_builtins();
 
-    // --- Cargar configuración de shell (solo si no se especificó --shell) --
-    if (!infernal_shell) {
-        load_infernal_config();
-    } else {
-        DEBUG_INFO("Shell ya configurado por --shell, no se cargan configuraciones");
-    }
+    /* ~/.infernalrc ya no selecciona el shell: _INFERNAL_SHELL es la fuente de verdad. */
+    DEBUG_INFO("Shell efectivo de Infernal: %s", infernal_shell);
 
     FILE *volatile fp = fopen(script_file, "r");
     if (!fp) {

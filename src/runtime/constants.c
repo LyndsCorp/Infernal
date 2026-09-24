@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 #include "constants.h"
 #include "core/memory.h"
 #include "runtime/error.h"
@@ -182,12 +183,85 @@ static void set_max_loop_limit(const Value *value) {
     max_loop_iterations = value->data.ival;
 }
 
+static Value get_command_fail_error(void) {
+    return val_bool(command_fail_error);
+}
+
+static void set_command_fail_error(const Value *value) {
+    if (!value || value->type != VAL_BOOL)
+        internal_registration_error("_COMMAND_FAIL_ERROR recibió un valor con tipo inválido");
+    command_fail_error = value->data.bval;
+}
+
+static Value get_infernal_shell(void) {
+    return val_string(infernal_shell ? infernal_shell : "/bin/sh");
+}
+
+static void set_infernal_shell(const Value *value) {
+    if (!value || value->type != VAL_STRING)
+        internal_registration_error("_INFERNAL_SHELL recibió un valor con tipo inválido");
+    if (!value->data.sval || !value->data.sval[0])
+        internal_registration_error("_INFERNAL_SHELL no puede estar vacío");
+
+    char *new_shell = infernal_strdup(value->data.sval);
+    free(infernal_shell);
+    infernal_shell = new_shell;
+}
+
+extern const char *get_metadata(const char *type);
+
+static Value get_infernal_version(void) {
+    const char *version = get_metadata("VERSION");
+    return val_string(version ? version : "");
+}
+
+static Value get_max_string_len(void) {
+    return val_int(max_string_len);
+}
+
+static void set_max_string_len(const Value *value) {
+    if (!value || value->type != VAL_INT)
+        internal_registration_error("_MAX_STRING_LEN recibió un valor con tipo inválido");
+    if (value->data.ival < 0)
+        internal_registration_error("_MAX_STRING_LEN no puede ser negativo");
+    max_string_len = value->data.ival;
+}
+
+static Value get_pid(void) {
+    return val_int((int)getpid());
+}
+
 void register_all_constants(void) {
+    register_internal_constant("_COMMAND_FAIL_ERROR",
+                               TOK_BOOL,
+                               val_bool(command_fail_error),
+                               get_command_fail_error,
+                               set_command_fail_error);
+    register_internal_constant("_INFERNAL_SHELL",
+                               TOK_STRING,
+                               val_string(infernal_shell ? infernal_shell : "/bin/sh"),
+                               get_infernal_shell,
+                               set_infernal_shell);
+    register_internal_constant("_INFERNAL_VERSION",
+                               TOK_STRING,
+                               get_infernal_version(),
+                               get_infernal_version,
+                               NULL);
     register_internal_constant("_MAX_LOOP_LIMIT",
                                TOK_INT,
                                val_int(max_loop_iterations),
                                get_max_loop_limit,
                                set_max_loop_limit);
+    register_internal_constant("_MAX_STRING_LEN",
+                               TOK_INT,
+                               val_int(max_string_len),
+                               get_max_string_len,
+                               set_max_string_len);
+    register_internal_constant("_PID",
+                               TOK_INT,
+                               val_int((int)getpid()),
+                               get_pid,
+                               NULL);
 }
 
 void constants_cleanup(void) {

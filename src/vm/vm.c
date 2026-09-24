@@ -799,9 +799,9 @@ Value vm_run(Chunk *chunk) {
                                         const char *cmd = cmd_val.data.sval;
                                         char *expanded = expand_command_vm(chunk, locals, cmd);
                                         int ret = execute_embedded(expanded);
-                                        if (ret == -1) {
+                                        if (ret != 0 && command_fail_error) {
                                             free(expanded);
-                                            error(current_eval_line, "Comando embebido falló");
+                                            error(current_eval_line, "Comando embebido falló (código %d)", ret);
                                         }
                                         free(expanded);
                                         ip++;
@@ -812,7 +812,7 @@ Value vm_run(Chunk *chunk) {
                                         const char *cmd = cmd_val.data.sval;
                                         char *expanded = expand_command_vm(chunk, locals, cmd);
                                         int ret = run_shell_command(expanded);
-                                        if (ret != 0) {
+                                        if (ret != 0 && command_fail_error) {
                                             int saved_ret = ret;
                                             free(expanded);
                                             error(current_eval_line, "Comando shell falló (código %d)", saved_ret);
@@ -840,7 +840,7 @@ Value vm_run(Chunk *chunk) {
                                             fp = popen_embedded_with_path(trimmed, "r", &temp_path);
                                             free(trimmed);
                                         } else {
-                                            fp = popen(expanded, "r");
+                                            fp = popen_infernal_shell(expanded, "r");
                                         }
                                         free(expanded);
 
@@ -867,7 +867,7 @@ Value vm_run(Chunk *chunk) {
                                             memcpy(out + old_len, buf, add_len + 1);
                                         }
                                         int status = pclose(fp);
-                                        if (status != 0) error(current_eval_line, "Comando falló: %s", cmd);
+                                        if (status != 0 && command_fail_error) error(current_eval_line, "Comando falló: %s", cmd);
 
                                         if (temp_path) {
                                             unlink(temp_path);
