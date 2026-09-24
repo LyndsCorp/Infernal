@@ -1,0 +1,19 @@
+#!/usr/bin/infernal
+
+flags (1,
+    arg = string archivo
+)
+
+if not archivo then
+    error(color("red") + "Te faltó especificar el archivo como primer argumento")
+    exit(1)
+fi
+
+salida = exited("gcc -shared -fPIC -o " + archivo + ".lava " + archivo + ".c")
+
+if salida == 0 then
+    print(color("green") + "Archivo compilado con éxito. Salida: " + archivo + ".lava")
+else
+    error(color("red") + "Se produjo un error de compilación. Verifica que el archivo '" + archivo + ".c' exista.")
+    exit(1)
+fi
