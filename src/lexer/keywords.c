@@ -56,6 +56,9 @@ TokenType lookup_keyword(const char *lexeme) {
     if (strcasecmp(lexeme, "true") == 0) return TOK_TRUE;
     if (strcasecmp(lexeme, "false") == 0) return TOK_FALSE;
 
+    // Constantes
+    if (strcmp(lexeme, "define") == 0) return TOK_DEFINE;
+
     // Scopes para variables
     if (strcmp(lexeme, "local") == 0) return TOK_LOCAL;
     if (strcmp(lexeme, "global") == 0) return TOK_GLOBAL;

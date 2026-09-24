@@ -31,21 +31,6 @@ static Value builtin_exit(int argc, Value *args) {
     exit(code);
 }
 
-/* --- setlooplimit() --- */
-static Value builtin_setlooplimit(int argc, Value *args) {
-    if (argc < 1) error(0, "setlooplimit requiere un argumento");
-    Value v = args[0];
-    if (v.type == VAL_INT) max_loop_iterations = v.data.ival;
-    else error(0, "setlooplimit espera un entero");
-    return val_make_null();
-}
-
-/* --- getlooplimit() --- */
-static Value builtin_getlooplimit(int argc, Value *args) {
-    (void)argc; (void)args;
-    return val_int(max_loop_iterations);
-}
-
 /* --- here() --- */
 static Value builtin_here(int argc, Value *args) {
     (void)argc;
@@ -71,14 +56,10 @@ static Value builtin_exited(int argc, Value *args) {
 
 void register_system_builtins(void) {
     func_register_builtin("exit", builtin_exit);
-    func_register_builtin("setlooplimit", builtin_setlooplimit);
-    func_register_builtin("getlooplimit", builtin_getlooplimit);
     func_register_builtin("here", builtin_here);
     func_register_builtin("exited", builtin_exited);
 
     vm_register_builtin("exit", builtin_exit);
-    vm_register_builtin("setlooplimit", builtin_setlooplimit);
-    vm_register_builtin("getlooplimit", builtin_getlooplimit);
     vm_register_builtin("here", builtin_here);
     vm_register_builtin("exited", builtin_exited);
 }

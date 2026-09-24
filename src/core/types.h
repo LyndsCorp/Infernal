@@ -44,7 +44,8 @@ typedef enum {
     TOK_PERCENT_EQ,
     TOK_POW,
     TOK_INC,
-    TOK_DEC
+    TOK_DEC,
+    TOK_DEFINE
 } TokenType;
 
 typedef struct {
@@ -138,7 +139,8 @@ struct ASTNode {
         NODE_UNARY,
         NODE_POST_INC,
         NODE_POST_DEC,
-        NODE_EMPTY_AMBIGUOUS
+        NODE_EMPTY_AMBIGUOUS,
+        NODE_DEFINE
     } kind;
     union {
         struct { NodeList stmts; } prog;
@@ -197,6 +199,10 @@ struct ASTNode {
                 ASTNode *var;
                 bool statement_context;
             } post_op;
+            struct {
+                char *name;
+                ASTNode *value;
+            } define;
     } data;
 };
 

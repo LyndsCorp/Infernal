@@ -21,6 +21,7 @@
 #include "core/value.h"
 #include "runtime/scope.h"
 #include "runtime/globals.h"
+#include "runtime/constants.h"
 #include "runtime/command.h"
 #include <stdlib.h>
 
@@ -44,6 +45,9 @@ Value eval_expr(ASTNode *expr) {
             const char *raw_name = var_node->data.var.name;
             const char *name = raw_name;
             if (name[0] == '$' || name[0] == '?') name++;
+
+            if (constants_is_reserved(name))
+                error(expr->line, "La constante '%s' no se puede modificar", name);
 
             VarEntry *e = scope_find(current_scope, name);
             if (!e) {

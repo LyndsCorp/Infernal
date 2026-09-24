@@ -434,6 +434,12 @@ static void compile_expr(Compiler *c, ASTNode *expr) {
 
 static void compile_stmt(Compiler *c, ASTNode *stmt) {
     switch (stmt->kind) {
+        case NODE_DEFINE: {
+            int const_idx = add_constant(c, val_ptr(stmt));
+            emit(c->chunk, OP_INTERPRET_NODE, const_idx, stmt->line);
+            c->chunk->code[c->chunk->code_count - 1].operand2 = 0;
+            break;
+        }
         case NODE_EXPR_STMT:
             compile_expr(c, stmt->data.expr_stmt.expr);
             emit(c->chunk, OP_POP, 0, stmt->line);

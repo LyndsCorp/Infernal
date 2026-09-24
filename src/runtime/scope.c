@@ -14,11 +14,13 @@
 #include "runtime/evaluator/evaluator.h"
 #include "runtime/evaluator/helpers.h"
 #include "developer/debug.h"
+#include "runtime/constants.h"
 
 
 /* --- Declaraciones de ámbitos globales (definidos en globals.c) --- */
 extern Scope *global_scope;
 extern Scope *super_global_scope;
+extern int current_eval_line;
 
 
 typedef struct ScopeRegistryEntry {
@@ -120,6 +122,10 @@ VarEntry *scope_find_script(Scope *scope, const char *name) {
 
 /* --- Definir una nueva variable en un ámbito dado --- */
 void scope_define(Scope *scope, const char *name, int vtype, Value val) {
+    if (constants_is_reserved(name)) {
+        value_free(&val);
+        error(current_eval_line, "El nombre '%s' está reservado por una constante y no se puede usar como variable", name);
+    }
     if (val.type == VAL_NULL) {
         vtype = 0;
     }
@@ -140,6 +146,10 @@ void scope_define(Scope *scope, const char *name, int vtype, Value val) {
 
 /* --- Asignar un valor a una variable existente en el ámbito (o crear si no existe) --- */
 void scope_assign(Scope *scope, const char *name, Value val, int line) {
+    if (constants_is_reserved(name)) {
+        value_free(&val);
+        error(line, "La constante '%s' no se puede sobreescribir", name);
+    }
     VarEntry *e = scope_find(scope, name);
     if (e) {
         if (e->value.type == VAL_REFERENCE) {

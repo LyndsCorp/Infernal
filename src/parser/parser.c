@@ -1309,6 +1309,38 @@ NodeList parse_block(const char *terminator) {
             continue;
         }
 
+        /* --- DEFINE: declaración de constantes --- */
+        if (t.type == TOK_DEFINE) {
+            ts_advance();
+
+            Token name_tok = ts_peek();
+            if (name_tok.type != TOK_IDENT)
+                error_at(name_tok.line, name_tok.start_col > 0 ? name_tok.start_col : 1,
+                         "Se esperaba el nombre de la constante después de 'define'");
+
+            ts_advance();
+            char *name = clean_var_name(name_tok.lexeme);
+            validate_var_name(name, t.line);
+
+            if (!is_expression_start(ts_peek().type))
+                error_at(ts_peek().line, ts_peek().start_col > 0 ? ts_peek().start_col : 1,
+                         "Se esperaba un valor después del nombre de la constante '%s'", name);
+
+            ASTNode *value = parse_expression(0);
+            if (!value) {
+                error(t.line, "Se esperaba un valor para la constante '%s'", name);
+            }
+            require_statement_end("la definición de la constante");
+
+            stmt = node_create(NODE_DEFINE, t.line);
+            stmt->data.define.name = name;
+            stmt->data.define.value = value;
+            nodelist_add(&block, stmt);
+            DEBUG_INFO("parse_block: añadida constante '%s' en línea %d", name, stmt->line);
+            ts_skip_newlines();
+            continue;
+        }
+
         /* --- LOCAL / GLOBAL / TIPO: declaraciones de variables --- */
         if (t.type == TOK_LOCAL || t.type == TOK_GLOBAL) {
             bool is_local = ts_match(TOK_LOCAL);

@@ -19,6 +19,7 @@
 #include "runtime/globals.h"
 #include "runtime/error.h"
 #include "vm/vm.h"
+#include "runtime/constants.h"
 #include "developer/debug.h"
 
 
@@ -199,6 +200,9 @@ static Value builtin_delvar(int argc, Value *args) {
     const char *name = args[0].data.sval;
     if (!name || !*name)
         error(current_eval_line, "delvar(): el nombre de la variable está vacío");
+
+    if (constants_is_reserved(name))
+        error(current_eval_line, "delvar(): '%s' es una constante y no se puede eliminar", name);
     if (!is_valid_var_name(name))
         error(current_eval_line,
               "delvar(): \"%s\" no es un nombre de variable válido", name);

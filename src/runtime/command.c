@@ -27,6 +27,7 @@
 #include "embedded/embedded.h"
 #include "vm/vm.h"
 #include "developer/debug.h"
+#include "runtime/constants.h"
 
 /* --- Límite de seguridad para descompresión --- */
 #define MAX_DECOMPRESSED_SIZE (500 * 1024 * 1024)  // 500 MiB
@@ -40,6 +41,20 @@ void set_embedded_tmp_dir(const char *dir) {
 
 char *get_var_string(const char *name) {
     VarEntry *e = scope_find(current_scope, name);
+    Value constant_value;
+    if (!e && constants_lookup(name, &constant_value)) {
+        char buf[256];
+        char *result = NULL;
+        switch (constant_value.type) {
+            case VAL_INT: snprintf(buf, sizeof(buf), "%d", constant_value.data.ival); result = strdup(buf); break;
+            case VAL_FLOAT: snprintf(buf, sizeof(buf), "%g", constant_value.data.fval); result = strdup(buf); break;
+            case VAL_BOOL: result = strdup(constant_value.data.bval ? "true" : "false"); break;
+            case VAL_STRING: result = strdup(constant_value.data.sval); break;
+            default: break;
+        }
+        value_free(&constant_value);
+        return result;
+    }
     if (!e) return NULL;
     Value *v = &e->value;
     char buf[256];
@@ -169,7 +184,23 @@ char *expand_command_with_locals(const char *cmd, char **names, Value *values, i
                         }
                     }
                 }
-                // 3) globales de la VM
+                // 3) constantes de Infernal
+                if (!val) {
+                    Value constant_value;
+                    if (constants_lookup(name, &constant_value)) {
+                        Value v = constant_value;
+                        char buf[256];
+                        switch (v.type) {
+                            case VAL_INT: snprintf(buf, sizeof(buf), "%d", v.data.ival); val = strdup(buf); break;
+                            case VAL_FLOAT: snprintf(buf, sizeof(buf), "%g", v.data.fval); val = strdup(buf); break;
+                            case VAL_BOOL: val = strdup(v.data.bval ? "true" : "false"); break;
+                            case VAL_STRING: val = strdup(v.data.sval); break;
+                            default: val = NULL;
+                        }
+                        value_free(&constant_value);
+                    }
+                }
+                // 4) globales de la VM
                 if (!val) {
                     int gidx = vm_find_global_index(name);
                     if (gidx >= 0) {

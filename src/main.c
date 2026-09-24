@@ -23,6 +23,7 @@
 #include "vm/vm.h"
 #include "vm/compiler.h"
 #include "developer/debug.h"
+#include "runtime/constants.h"
 #include "runtime/evaluator/evaluator.h"
 
 extern const char* get_metadata(const char *type);
@@ -64,6 +65,7 @@ void chunk_free(Chunk *ch) {
 }
 
 static void cleanup_runtime_state(void) {
+    constants_cleanup();
     scope_free_all();
     current_scope = NULL;
     global_scope = NULL;
@@ -179,11 +181,17 @@ int main(int argc, char **argv) {
     current_source_file = script_file;
 
     super_global_scope = scope_new(NULL, NULL);
+    register_all_constants();
+
     extern char **environ;
     for (char **env = environ; *env; env++) {
         if (strncmp(*env, "INFERNAL_VAR_", 13) == 0) {
             char *line = strdup(*env);
             char *name = line + 13;
+            if (constants_is_reserved(name)) {
+                free(line);
+                continue;
+            }
             char *eq = strchr(name, '=');
             if (eq) {
                 *eq = '\0';

@@ -255,6 +255,11 @@ static void ast_free_internal(ASTNode *node) {
             break;
         case NODE_UNARY: ast_free_internal(node->data.unary.operand); break;
         case NODE_POST_INC: case NODE_POST_DEC: ast_free_internal(node->data.post_op.var); break;
+        case NODE_DEFINE:
+            free(node->data.define.name);
+            ast_free_internal(node->data.define.value);
+            break;
+        case NODE_EMPTY_AMBIGUOUS: break;
         case NODE_BREAK: case NODE_CONTINUE: break;
     }
     free(node);

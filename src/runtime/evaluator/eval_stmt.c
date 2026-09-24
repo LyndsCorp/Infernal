@@ -15,6 +15,7 @@
 #include "core/ast.h"
 #include "runtime/scope.h"
 #include "runtime/globals.h"
+#include "runtime/constants.h"
 #include "runtime/command.h"
 #include "runtime/error.h"
 #include "lexer/lexer.h"
@@ -305,8 +306,18 @@ void exec_stmt(ASTNode *stmt) {
             break;
         }
 
+        case NODE_DEFINE: {
+            Value value = eval_expr(stmt->data.define.value);
+            constants_define(stmt->data.define.name, value, stmt->line);
+            DEBUG_INFO("Constante '%s' definida", stmt->data.define.name);
+            break;
+        }
+
         case NODE_ASSIGN: {
             DEBUG_INFO("ASIGNACION: nombre='%s', is_cmd=%d", stmt->data.assign.name, stmt->data.assign.is_cmd);
+
+            if (constants_is_reserved(stmt->data.assign.name))
+                error(stmt->line, "La constante '%s' no se puede sobreescribir", stmt->data.assign.name);
 
             Value val = val_make_null();
 
@@ -1070,6 +1081,8 @@ void exec_stmt(ASTNode *stmt) {
         }
 
         case NODE_EXECUTE: {
+            bool saved_constants_definition_allowed = constants_definition_allowed();
+            constants_set_definition_allowed(false);
             ASTNode *path_node = stmt->data.execute.path_expr;
             Value path_val;
 
@@ -1174,6 +1187,7 @@ void exec_stmt(ASTNode *stmt) {
 
             exec_block_impl(&script_block);
 
+            constants_set_definition_allowed(saved_constants_definition_allowed);
             current_scope = old_scope;
             scope_free(child_scope);
 

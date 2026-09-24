@@ -12,6 +12,7 @@
 #include "runtime/scope.h"
 #include "runtime/globals.h"
 #include "runtime/error.h"
+#include "runtime/constants.h"
 #include "developer/debug.h"
 #include <string.h>
 #include <stdlib.h>
@@ -47,6 +48,11 @@ Value eval_var(ASTNode *expr) {
 
     VarEntry *e = scope_find(current_scope, name);
     if (!e) {
+        Value constant_value;
+        if (constants_lookup(name, &constant_value)) {
+            DEBUG_INFO("eval_var: constante '%s' encontrada, valor tipo %d", name, constant_value.type);
+            return constant_value;
+        }
         error(expr->line, "Variable '%s' no definida", name);
     }
     DEBUG_INFO("eval_var: variable '%s' encontrada, valor tipo %d", name, e->value.type);
