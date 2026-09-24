@@ -11,6 +11,7 @@
 #include <ctype.h>
 #include <stdint.h>
 #include <unistd.h>
+#include <limits.h>
 #include "parser.h"
 #include "core/ast.h"
 #include "lexer/lexer.h"
@@ -20,6 +21,7 @@
 #include "runtime/scope.h"
 #include "runtime/globals.h"
 #include "runtime/error.h"
+#include "runtime/lava.h"
 #include "embedded/embedded.h"
 #include "vm/compiler.h"
 #include "developer/debug.h"
@@ -136,67 +138,32 @@ static ASTNode *parse_typed_empty_collection(int vtype, int line) {
     return node;
 }
 
+/*
+ * Un nombre de módulo puede contener subdirectorios separados por '/'
+ * (p. ej. "build/lava/ejemplo.lava"). Se prohíben rutas absolutas y
+ * segmentos ".." para evitar escapes del directorio de módulos.
+ */
 static bool valid_module_name(const char *name) {
-    if (!name || !*name || strcmp(name, ".") == 0 || strcmp(name, "..") == 0)
-        return false;
-    for (const char *p = name; *p; p++) {
-        if (!(isalnum((unsigned char)*p) || *p == '_' || *p == '-')) return false;
-    }
-    return true;
-}
-
-/* Conservada para uso futuro; hoy no se invoca desde este archivo. */
-static bool __attribute__((unused)) command_exists(const char *name) {
     if (!name || !*name) return false;
+    if (name[0] == '/') return false;
 
-    /* Los comandos con una ruta explícita se comprueban directamente. */
-    if (strchr(name, '/') != NULL)
-        return access(name, X_OK) == 0;
-
-    const char *path = getenv("PATH");
-    if (!path) return false;
-
-    char *copy = strdup(path);
-    if (!copy) return false;
-
-    bool found = false;
-    for (char *part = copy; ; ) {
-        char *next = strchr(part, ':');
-        if (next) *next = '\0';
-
-        const char *dir = (*part != '\0') ? part : ".";
-        size_t len = strlen(dir) + 1 + strlen(name) + 1;
-        char *candidate = malloc(len);
-        if (candidate) {
-            snprintf(candidate, len, "%s/%s", dir, name);
-            if (access(candidate, X_OK) == 0) {
-                found = true;
-                free(candidate);
-                break;
-            }
-            free(candidate);
-        }
-
-        if (!next) break;
-        part = next + 1;
-    }
-
-    free(copy);
-    return found;
-}
-
-static bool safe_module_path(const char *path) {
-    if (!path || !*path || strchr(path, '\n') || strchr(path, '\r'))
-        return false;
-
-    const char *p = path;
+    const char *p = name;
     while (*p) {
-        while (*p == '/' || *p == '\\') p++;
-        const char *start = p;
-        while (*p && *p != '/' && *p != '\\') p++;
-        size_t len = (size_t)(p - start);
-        if (len == 2 && start[0] == '.' && start[1] == '.')
-            return false;
+        const char *seg_start = p;
+        while (*p && *p != '/') p++;
+        size_t seg_len = (size_t)(p - seg_start);
+
+        /* Segmentos vacíos: "//" o "/" al final. */
+        if (seg_len == 0) return false;
+        /* "." y ".." prohibidos. */
+        if (seg_len == 1 && seg_start[0] == '.') return false;
+        if (seg_len == 2 && seg_start[0] == '.' && seg_start[1] == '.') return false;
+
+        for (size_t i = 0; i < seg_len; i++) {
+            unsigned char c = (unsigned char)seg_start[i];
+            if (!(isalnum(c) || c == '_' || c == '-' || c == '.')) return false;
+        }
+        if (*p == '/') p++;
     }
     return true;
 }
@@ -814,15 +781,15 @@ NodeList parse_block(const char *terminator) {
                     error(t.line, "Se esperaba nombre de variable después de ',' en for-in");
                 }
                 char *second = clean_var_name(ts_advance().lexeme);
-                validate_var_name(second, t.line);
-                ts_advance();  /* consumir 'in' */
-                if (!is_expression_start(ts_peek().type)) {
-                    error_at(ts_peek().line, ts_peek().start_col > 0 ? ts_peek().start_col : 1,
-                             "Se esperaba una expresión después de 'in'");
-                }
-                ASTNode *list_expr = parse_expression(0);
-                if (!ts_match(TOK_THEN)) error_missing_then(t.line, "for-in");
-                fi_block_nesting++;
+            validate_var_name(second, t.line);
+            ts_advance();  /* consumir 'in' */
+            if (!is_expression_start(ts_peek().type)) {
+                error_at(ts_peek().line, ts_peek().start_col > 0 ? ts_peek().start_col : 1,
+                         "Se esperaba una expresión después de 'in'");
+            }
+            ASTNode *list_expr = parse_expression(0);
+            if (!ts_match(TOK_THEN)) error_missing_then(t.line, "for-in");
+            fi_block_nesting++;
                 NodeList body = parse_block("fi");
                 if (!ts_match(TOK_FI)) error(t.line, "Se esperaba 'fi'");
                 fi_block_nesting--;
@@ -835,112 +802,112 @@ NodeList parse_block(const char *terminator) {
                 DEBUG_INFO("parse_block: añadido NODE_FOR_IN con índice en línea %d", stmt->line);
                 ts_skip_newlines();
                 continue;
-            }
+                }
 
-            // FOR-IN
-            if (ts_peek().type == TOK_IN) {
-                ts_advance();
+                // FOR-IN
+                if (ts_peek().type == TOK_IN) {
+                    ts_advance();
+                    if (!is_expression_start(ts_peek().type)) {
+                        error_at(ts_peek().line, ts_peek().start_col > 0 ? ts_peek().start_col : 1,
+                                 "Se esperaba una expresión después de 'in'");
+                    }
+                    ASTNode *list_expr = parse_expression(0);
+                    if (!ts_match(TOK_THEN)) error_missing_then(t.line, "for-in");
+                    fi_block_nesting++;
+                    NodeList body = parse_block("fi");
+                    if (!ts_match(TOK_FI)) error(t.line, "Se esperaba 'fi'");
+                    fi_block_nesting--;
+                    stmt = node_create(NODE_FOR_IN, t.line);
+                    stmt->data.for_in.index_var = NULL;
+                    stmt->data.for_in.var = varname;
+                    stmt->data.for_in.list_expr = list_expr;
+                    stmt->data.for_in.body = body;
+                    nodelist_add(&block, stmt);
+                    DEBUG_INFO("parse_block: añadido NODE_FOR_IN en línea %d", stmt->line);
+                    ts_skip_newlines();
+                    continue;
+                }
+
+                // FOR tradicional
+                //
+                // Formas válidas:
+                //   for i = 0, cond, incr then              → init explícito
+                //   for local int i, cond, incr then        → init = valor por defecto de int (0)
+                //   for float f, cond, incr then            → init = 0.0
+                //   for string s, cond, incr then           → init = ""
+                //   etc.
+                //
+                // El valor por defecto solo se aplica si hay un tipo declarado
+                // (vtype != 0). Sin tipo, el valor inicial es obligatorio, porque
+                // no hay forma de saber qué tipo de valor por defecto usar.
+                ASTNode *init_expr = NULL;
+                if (ts_match(TOK_EQ)) {
+                    if (!is_expression_start(ts_peek().type)) {
+                        error_at(ts_peek().line, ts_peek().start_col > 0 ? ts_peek().start_col : 1,
+                                 "Se esperaba el valor inicial del for después de '='");
+                    }
+                    init_expr = parse_expression(0);
+                } else if (vtype != 0 && ts_peek().type == TOK_COMMA) {
+                    /* El tipo ya determina el valor inicial. init_expr queda NULL
+                     * y eval_stmt usará el valor por defecto del tipo. */
+                    init_expr = NULL;
+                } else if (is_local || is_global) {
+                    /* 'for local i, ...' sin tipo y sin '=' es ambiguo:
+                     * no se puede decidir el tipo de la variable. */
+                    error_at(ts_peek().line, ts_peek().start_col > 0 ? ts_peek().start_col : 1,
+                             "La declaración 'for %s %s' es ambigua.\n"
+                             "    No se indicó ni un tipo ni un valor inicial, así que no se puede\n"
+                             "    determinar el tipo de '%s'.\n"
+                             "    Especifica un tipo o asígnale un valor:\n"
+                             "        for %s int %s, condición, incremento then      (usa el valor por defecto de int)\n"
+                             "        for %s %s = 0, condición, incremento then      (infiere el tipo del valor)",
+                             is_local ? "local" : "global", varname,
+                             varname,
+                             is_local ? "local" : "global", varname,
+                             is_local ? "local" : "global", varname);
+                } else {
+                    error_at(ts_peek().line, ts_peek().start_col > 0 ? ts_peek().start_col : 1,
+                             "Se esperaba '=' después de la variable del for.\n"
+                             "    La sintaxis del for tradicional es:\n"
+                             "        for variable = inicio, condición, incremento then\n"
+                             "        for tipo variable, condición, incremento then   (usa el valor por defecto del tipo)\n"
+                             "    Por ejemplo:  for i = 0, i <= 3, i++ then\n"
+                             "                  for local int i, i <= 3, i++ then\n"
+                             "    Para recorrer una lista usa for-in:\n"
+                             "        for elemento in lista then\n"
+                             "        for i, elemento in lista then");
+                }
+
+                ASTNode *init = node_create(NODE_ASSIGN, t.line);
+                init->data.assign.name = varname;
+                init->data.assign.value = init_expr;
+                init->data.assign.vtype = vtype;
+                init->data.assign.is_local = is_local;
+                init->data.assign.is_global = is_global;
+                init->data.assign.is_cmd = false;
+                init->data.assign.cmd_str = NULL;
+                init->data.assign.lhs_index = NULL;
+
+                if (!ts_match(TOK_COMMA)) {
+                    error_at(ts_peek().line, ts_peek().start_col > 0 ? ts_peek().start_col : 1,
+                             "Se esperaba ',' después de la inicialización del for");
+                }
+
                 if (!is_expression_start(ts_peek().type)) {
                     error_at(ts_peek().line, ts_peek().start_col > 0 ? ts_peek().start_col : 1,
-                             "Se esperaba una expresión después de 'in'");
+                             "Se esperaba la condición del for después de la primera ','");
                 }
-                ASTNode *list_expr = parse_expression(0);
-                if (!ts_match(TOK_THEN)) error_missing_then(t.line, "for-in");
-                fi_block_nesting++;
-                NodeList body = parse_block("fi");
-                if (!ts_match(TOK_FI)) error(t.line, "Se esperaba 'fi'");
-                fi_block_nesting--;
-                stmt = node_create(NODE_FOR_IN, t.line);
-                stmt->data.for_in.index_var = NULL;
-                stmt->data.for_in.var = varname;
-                stmt->data.for_in.list_expr = list_expr;
-                stmt->data.for_in.body = body;
-                nodelist_add(&block, stmt);
-                DEBUG_INFO("parse_block: añadido NODE_FOR_IN en línea %d", stmt->line);
-                ts_skip_newlines();
-                continue;
-            }
+                ASTNode *cond = parse_expression(0);
 
-            // FOR tradicional
-            //
-            // Formas válidas:
-            //   for i = 0, cond, incr then              → init explícito
-            //   for local int i, cond, incr then        → init = valor por defecto de int (0)
-            //   for float f, cond, incr then            → init = 0.0
-            //   for string s, cond, incr then           → init = ""
-            //   etc.
-            //
-            // El valor por defecto solo se aplica si hay un tipo declarado
-            // (vtype != 0). Sin tipo, el valor inicial es obligatorio, porque
-            // no hay forma de saber qué tipo de valor por defecto usar.
-            ASTNode *init_expr = NULL;
-            if (ts_match(TOK_EQ)) {
-                if (!is_expression_start(ts_peek().type)) {
+                if (!ts_match(TOK_COMMA)) {
                     error_at(ts_peek().line, ts_peek().start_col > 0 ? ts_peek().start_col : 1,
-                             "Se esperaba el valor inicial del for después de '='");
+                             "Se esperaba ',' después de la condición del for");
                 }
-                init_expr = parse_expression(0);
-            } else if (vtype != 0 && ts_peek().type == TOK_COMMA) {
-                /* El tipo ya determina el valor inicial. init_expr queda NULL
-                 * y eval_stmt usará el valor por defecto del tipo. */
-                init_expr = NULL;
-            } else if (is_local || is_global) {
-                /* 'for local i, ...' sin tipo y sin '=' es ambiguo:
-                 * no se puede decidir el tipo de la variable. */
-                error_at(ts_peek().line, ts_peek().start_col > 0 ? ts_peek().start_col : 1,
-                         "La declaración 'for %s %s' es ambigua.\n"
-                         "    No se indicó ni un tipo ni un valor inicial, así que no se puede\n"
-                         "    determinar el tipo de '%s'.\n"
-                         "    Especifica un tipo o asígnale un valor:\n"
-                         "        for %s int %s, condición, incremento then      (usa el valor por defecto de int)\n"
-                         "        for %s %s = 0, condición, incremento then      (infiere el tipo del valor)",
-                         is_local ? "local" : "global", varname,
-                         varname,
-                         is_local ? "local" : "global", varname,
-                         is_local ? "local" : "global", varname);
-            } else {
-                error_at(ts_peek().line, ts_peek().start_col > 0 ? ts_peek().start_col : 1,
-                         "Se esperaba '=' después de la variable del for.\n"
-                         "    La sintaxis del for tradicional es:\n"
-                         "        for variable = inicio, condición, incremento then\n"
-                         "        for tipo variable, condición, incremento then   (usa el valor por defecto del tipo)\n"
-                         "    Por ejemplo:  for i = 0, i <= 3, i++ then\n"
-                         "                  for local int i, i <= 3, i++ then\n"
-                         "    Para recorrer una lista usa for-in:\n"
-                         "        for elemento in lista then\n"
-                         "        for i, elemento in lista then");
-            }
 
-            ASTNode *init = node_create(NODE_ASSIGN, t.line);
-            init->data.assign.name = varname;
-            init->data.assign.value = init_expr;
-            init->data.assign.vtype = vtype;
-            init->data.assign.is_local = is_local;
-            init->data.assign.is_global = is_global;
-            init->data.assign.is_cmd = false;
-            init->data.assign.cmd_str = NULL;
-            init->data.assign.lhs_index = NULL;
-
-            if (!ts_match(TOK_COMMA)) {
-                error_at(ts_peek().line, ts_peek().start_col > 0 ? ts_peek().start_col : 1,
-                         "Se esperaba ',' después de la inicialización del for");
-            }
-
-            if (!is_expression_start(ts_peek().type)) {
-                error_at(ts_peek().line, ts_peek().start_col > 0 ? ts_peek().start_col : 1,
-                         "Se esperaba la condición del for después de la primera ','");
-            }
-            ASTNode *cond = parse_expression(0);
-
-            if (!ts_match(TOK_COMMA)) {
-                error_at(ts_peek().line, ts_peek().start_col > 0 ? ts_peek().start_col : 1,
-                         "Se esperaba ',' después de la condición del for");
-            }
-
-            ASTNode *incr = NULL;
-            Token next_tok = ts_peek();
-            if (next_tok.type == TOK_IDENT && next_tok.lexeme[0] == '$')
-                error(t.line, "En el incremento de un for debes usar 'i++' o 'i--', sin '$'");
+                ASTNode *incr = NULL;
+                Token next_tok = ts_peek();
+                if (next_tok.type == TOK_IDENT && next_tok.lexeme[0] == '$')
+                    error(t.line, "En el incremento de un for debes usar 'i++' o 'i--', sin '$'");
             if (next_tok.type == TOK_IDENT) {
                 int pos = ts.pos + 1;
                 if (pos < ts.count) {
@@ -1150,21 +1117,26 @@ NodeList parse_block(const char *terminator) {
             int use_embedded = 0;
             const unsigned char *emb_data = NULL;
             size_t emb_size = 0;
+            bool is_quoted_path = false;
 
             if (nt.type == TOK_IDENT) {
+                /* Identificador desnudo: es SIEMPRE un nombre de módulo,
+                 * aunque contenga '/' o '.' (p. ej. build/lava/ejemplo.lava). */
                 module_name = strdup(nt.lexeme);
                 ts_advance();
                 if (embedded_find(module_name, &emb_data, &emb_size, NULL)) {
                     use_embedded = 1;
                 }
             } else if (nt.type == TOK_STRING_LITERAL) {
+                /* Entre comillas: es una ruta directa. */
                 ts_advance();
                 module_name = strdup(nt.lexeme);
+                is_quoted_path = true;
             } else {
                 error(t.line, "Se esperaba nombre o ruta en import");
             }
 
-            if (nt.type == TOK_IDENT && !valid_module_name(module_name)) {
+            if (!is_quoted_path && !valid_module_name(module_name)) {
                 free(module_name);
                 error(t.line, "Nombre de módulo inválido: %s", nt.lexeme);
             }
@@ -1187,108 +1159,176 @@ NodeList parse_block(const char *terminator) {
             TokenStream old_ts = ts;
             char **old_source_lines = source_lines;
             int old_source_line_count = source_line_count;
-            ts_init();
-            source_lines = NULL;
-            source_line_count = 0;
 
-            if (use_embedded) {
-                tokenize_buffer((const char*)emb_data, emb_size);
-            } else {
-                char *path = NULL;
-                if (nt.type == TOK_IDENT) {
-                    int found = 0;
-                    const char *home = getenv("HOME");
-                    if (home) {
-                        if (asprintf(&path, "%s/.infernal/fire/%s.fire", home, module_name) < 0) {
-                            free(module_name);
-                            free(module_alias);
-                            error(t.line, "Memoria insuficiente al construir la ruta local");
-                        }
-                        FILE *fp = fopen(path, "r");
-                        if (fp) {
-                            tokenize_file(fp);
-                            fclose(fp);
-                            found = 1;
-                        }
-                        free(path);
-                        path = NULL;
-                    }
-                    if (!found) {
-                        if (asprintf(&path, "/usr/share/infernal/fire/%s.fire", module_name) < 0) {
-                            free(module_name);
-                            free(module_alias);
-                            error(t.line, "Memoria insuficiente al construir la ruta global");
-                        }
-                        FILE *fp = fopen(path, "r");
-                        if (fp) {
-                            tokenize_file(fp);
-                            fclose(fp);
-                            found = 1;
-                        } else {
-                            char module_error_name[256];
-                            snprintf(module_error_name, sizeof(module_error_name), "%s", module_name);
-                            free(path);
-                            free(module_name);
-                            free(module_alias);
-                            error(t.line, "No se pudo abrir módulo '%s'", module_error_name);
-                        }
-                        free(path);
-                    }
+            /* ============================================================
+             * CASO A: ruta entre comillas → ruta directa.
+             * ============================================================ */
+            if (is_quoted_path && !use_embedded) {
+                char tried[2048] = "";
+                const char *prefix = module_alias ? module_alias : NULL;
+
+                if (lava_try_import_path(module_name, prefix, tried, sizeof(tried))) {
+                    stmt = node_create(NODE_IMPORT, t.line);
+                    stmt->data.import.path = NULL;
+                    stmt->data.import.alias = module_alias;
+                    stmt->data.import.module_block = (NodeList){NULL, 0, 0};
+                    nodelist_add(&block, stmt);
+
+                    DEBUG_INFO("parse_block: módulo Lava '%s' cargado por ruta en línea %d",
+                               module_name, stmt->line);
+                    free(module_name);
+                    ts_skip_newlines();
+                    continue;
+                }
+
+                FILE *fp = fopen(module_name, "r");
+                if (!fp) {
+                    free(module_name);
+                    free(module_alias);
+                    error(t.line,
+                          "No se pudo importar '%s'.\n"
+                          "    No existe como librería Lava ni como archivo .fire legible.\n"
+                          "    Rutas probadas (Lava):\n%s",
+                          nt.lexeme,
+                          tried[0] ? tried : "        (ninguna)\n");
+                }
+
+                ts_init();
+                source_lines = NULL;
+                source_line_count = 0;
+                tokenize_file(fp);
+                fclose(fp);
+            }
+            /* ============================================================
+             * CASO B: nombre embebido.
+             * ============================================================ */
+            else if (use_embedded) {
+                ts_init();
+                source_lines = NULL;
+                source_line_count = 0;
+                tokenize_buffer((const char *)emb_data, emb_size);
+            }
+            /* ============================================================
+             * CASO C: nombre de módulo.
+             *   Orden:
+             *     1. ~/.infernal/fire/<name>.fire
+             *     2. /usr/share/infernal/fire/<name>.fire
+             *     3. ~/.infernal/lava/<name>.lava
+             *     4. /usr/share/infernal/lava/<name>.lava
+             * ============================================================ */
+            else {
+                FILE *fire_fp = NULL;
+                char fire_local[PATH_MAX];
+                char fire_global[PATH_MAX];
+                const char *home = getenv("HOME");
+
+                fire_local[0]  = '\0';
+                fire_global[0] = '\0';
+
+                if (home && *home) {
+                    snprintf(fire_local, sizeof(fire_local),
+                             "%s/.infernal/fire/%s.fire", home, module_name);
+                    fire_fp = fopen(fire_local, "r");
+                }
+                if (!fire_fp) {
+                    snprintf(fire_global, sizeof(fire_global),
+                             "/usr/share/infernal/fire/%s.fire", module_name);
+                    fire_fp = fopen(fire_global, "r");
+                }
+
+                if (fire_fp) {
+                    ts_init();
+                    source_lines = NULL;
+                    source_line_count = 0;
+                    tokenize_file(fire_fp);
+                    fclose(fire_fp);
                 } else {
-                    if (!safe_module_path(nt.lexeme)) {
+                    /* No hay .fire: probar Lava. Prefijo por defecto =
+                     * basename sin extensión (o el alias, si se dio). */
+                    char prefix_buf[PATH_MAX];
+                    const char *base = module_name;
+                    const char *slash = strrchr(module_name, '/');
+                    if (slash) base = slash + 1;
+                    snprintf(prefix_buf, sizeof(prefix_buf), "%s", base);
+                    char *dot = strrchr(prefix_buf, '.');
+                    if (dot) *dot = '\0';
+
+                    const char *prefix = module_alias ? module_alias : prefix_buf;
+                    char tried[2048] = "";
+
+                    if (lava_try_import(module_name, prefix, tried, sizeof(tried))) {
+                        stmt = node_create(NODE_IMPORT, t.line);
+                        stmt->data.import.path = NULL;
+                        stmt->data.import.alias = module_alias;
+                        stmt->data.import.module_block = (NodeList){NULL, 0, 0};
+                        nodelist_add(&block, stmt);
+
+                        DEBUG_INFO("parse_block: módulo Lava '%s' cargado en línea %d",
+                                   prefix, stmt->line);
                         free(module_name);
-                        free(module_alias);
-                        error(t.line, "Ruta de módulo inválida o insegura: %s", nt.lexeme);
+                        ts_skip_newlines();
+                        continue;
                     }
-                    path = strdup(nt.lexeme);
-                    FILE *fp = fopen(path, "r");
-                    if (!fp) {
-                        free(path);
-                        free(module_name);
-                        free(module_alias);
-                        error(t.line, "No se pudo abrir módulo: %s", nt.lexeme);
-                    }
-                    tokenize_file(fp);
-                    fclose(fp);
-                    free(path);
+
+                    /* Error completo con TODAS las rutas probadas. */
+                    const char *fire_local_msg = (fire_local[0] != '\0')
+                    ? fire_local
+                    : "(HOME no definido)";
+                    const char *fire_global_msg = (fire_global[0] != '\0')
+                    ? fire_global
+                    : "(ruta global no construida)";
+
+                    free(module_name);
+                    free(module_alias);
+                    error(t.line,
+                          "No se pudo importar '%s'.\n"
+                          "    Ni es un módulo Fire ni una librería Lava. Si quieres usar una ruta relativa al script, tienes que poner la ruta entre comillas.\n\n"
+                          "    Rutas probadas como Fire:\n"
+                          "        %s\n"
+                          "        %s\n"
+                          "    Rutas probadas como Lava:\n%s",
+                          nt.lexeme,
+                          fire_local_msg,
+                          fire_global_msg,
+                          tried[0] ? tried : "        (ninguna)\n");
                 }
             }
 
-            char *prefix_base = module_name;
-            char *slash = strrchr(module_name, '/');
-            if (slash) prefix_base = slash + 1;
-            char *dot = strrchr(prefix_base, '.');
-            if (dot) *dot = '\0';
+            /* ============================================================
+             * Cuerpo del .fire (común a los tres caminos anteriores).
+             * ============================================================ */
+            {
+                char *prefix_base = module_name;
+                char *slash = strrchr(module_name, '/');
+                if (slash) prefix_base = slash + 1;
+                char *dot = strrchr(prefix_base, '.');
+                if (dot) *dot = '\0';
 
-            char *old_prefix = current_import_prefix;
-            current_import_prefix = module_alias ? module_alias : prefix_base;
-            NodeList module_block = parse_block(NULL);
-            current_import_prefix = old_prefix;
+                char *old_prefix = current_import_prefix;
+                current_import_prefix = module_alias ? module_alias : prefix_base;
+                NodeList module_block = parse_block(NULL);
+                current_import_prefix = old_prefix;
 
-            /* El stream del módulo ya no se necesita después del parseo.
-             *              Liberarlo evita que cada import embebido pierda sus tokens. */
-            for (int i = 0; i < ts.count; i++) free(ts.tokens[i].lexeme);
-            free(ts.tokens);
-            ts = old_ts;
+                for (int i = 0; i < ts.count; i++) free(ts.tokens[i].lexeme);
+                free(ts.tokens);
+                ts = old_ts;
 
-            /* tokenize_file() mantiene sus propias source_lines. Restauramos
-             *              las del script principal para que los comandos posteriores y
-             *              los mensajes de error sigan apuntando al archivo correcto. */
-            for (int i = 0; i < source_line_count; i++) free(source_lines[i]);
-            free(source_lines);
-            source_lines = old_source_lines;
-            source_line_count = old_source_line_count;
+                for (int i = 0; i < source_line_count; i++) free(source_lines[i]);
+                free(source_lines);
+                source_lines = old_source_lines;
+                source_line_count = old_source_line_count;
 
-            free(module_name);
-            require_statement_end("la instrucción import");
-            stmt = node_create(NODE_IMPORT, t.line);
-            stmt->data.import.path = NULL;
-            stmt->data.import.alias = module_alias;
-            stmt->data.import.module_block = module_block;
-            nodelist_add(&block, stmt);
-            DEBUG_INFO("parse_block: añadido NODE_IMPORT en línea %d", stmt->line);
-            ts_skip_newlines();
-            continue;
+                free(module_name);
+                require_statement_end("la instrucción import");
+                stmt = node_create(NODE_IMPORT, t.line);
+                stmt->data.import.path = NULL;
+                stmt->data.import.alias = module_alias;
+                stmt->data.import.module_block = module_block;
+                nodelist_add(&block, stmt);
+                DEBUG_INFO("parse_block: añadido NODE_IMPORT en línea %d", stmt->line);
+                ts_skip_newlines();
+                continue;
+            }
         }
 
         /* --- TRY --- */
@@ -1314,17 +1354,19 @@ NodeList parse_block(const char *terminator) {
             ts_advance();
 
             Token name_tok = ts_peek();
-            if (name_tok.type != TOK_IDENT)
+            if (name_tok.type != TOK_IDENT) {
                 error_at(name_tok.line, name_tok.start_col > 0 ? name_tok.start_col : 1,
                          "Se esperaba el nombre de la constante después de 'define'");
+            }
 
             ts_advance();
             char *name = clean_var_name(name_tok.lexeme);
             validate_var_name(name, t.line);
 
-            if (!is_expression_start(ts_peek().type))
+            if (!is_expression_start(ts_peek().type)) {
                 error_at(ts_peek().line, ts_peek().start_col > 0 ? ts_peek().start_col : 1,
                          "Se esperaba un valor después del nombre de la constante '%s'", name);
+            }
 
             ASTNode *value = parse_expression(0);
             if (!value) {

@@ -19,6 +19,7 @@
 #include "runtime/globals.h"
 #include "runtime/error.h"
 #include "runtime/command.h"
+#include "runtime/lava.h"
 #include "stdlib/builtins.h"
 #include "vm/vm.h"
 #include "vm/compiler.h"
@@ -65,6 +66,7 @@ void chunk_free(Chunk *ch) {
 }
 
 static void cleanup_runtime_state(void) {
+    lava_cleanup();
     constants_cleanup();
     scope_free_all();
     current_scope = NULL;

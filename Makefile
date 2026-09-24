@@ -15,7 +15,7 @@
 CC       := gcc
 # Por defecto: con debug info, sin logs
 CFLAGS   := -Wall -Wextra -g -std=c11 -D_GNU_SOURCE
-LDFLAGS  := -ldl -lm
+LDFLAGS  := -ldl -lm -lffi -rdynamic
 INCDIRS  := -Isrc
 
 SRCDIR       := src
@@ -24,11 +24,15 @@ FIRE_SRC_DIR := config/infernal/fire
 BIN_SRC_DIR  := config/infernal/bins
 FIRE_GEN_DIR := $(BUILDDIR)/gen_fire
 BIN_GEN_DIR  := $(BUILDDIR)/gen_bins
+LAVA_DIR     := lava
+LAVA_BUILD   := $(BUILDDIR)/lava
 META_DIR     := src/metadata
 TARGET       := infernal
 
 PREFIX ?= /
 BINDIR ?= $(PREFIX)usr/bin
+LAVA_SYSDIR ?= $(PREFIX)usr/share/infernal/lava
+LAVA_USERDIR := $$HOME/.infernal/lava
 
 # --------------------------------------------------------------------
 # Valores por defecto
@@ -78,6 +82,10 @@ BIN_FILES    := $(wildcard $(BIN_SRC_DIR)/*)
 BIN_GEN_SRCS := $(patsubst $(BIN_SRC_DIR)/%, $(BIN_GEN_DIR)/%.c, $(BIN_FILES))
 BIN_GEN_OBJS := $(BIN_GEN_SRCS:.c=.o)
 
+# Librerías Lava
+LAVA_FILES := $(wildcard $(LAVA_DIR)/*.c)
+LAVA_SOS   := $(patsubst $(LAVA_DIR)/%.c, $(LAVA_BUILD)/%.lava, $(LAVA_FILES))
+
 # Tabla de módulos embebidos (auto-generada)
 EMBED_TABLE_SRC := $(BUILDDIR)/embedded_table.c
 EMBED_TABLE_OBJ := $(EMBED_TABLE_SRC:.c=.o)
@@ -104,9 +112,9 @@ DEPS := $(ALL_OBJS:.o=.d)
 # --------------------------------------------------------------------
 # Reglas principales
 # --------------------------------------------------------------------
-.PHONY: all clean help test sanitize debug release config install
+.PHONY: all clean help test sanitize debug release config install re lava
 
-all: $(TARGET)
+all: $(TARGET) $(LAVA_SOS)
 
 debug:
 	$(MAKE) CFLAGS='$(CFLAGS) -DDEBUG'
@@ -169,6 +177,16 @@ $(BIN_GEN_DIR)/%.o: $(BIN_GEN_DIR)/%.c
 	@mkdir -p $(dir $@)
 	@echo " [CC] $< (embedded)"
 	$(CC) $(CFLAGS) -c $< -o $@
+endif
+
+# --------------------------------------------------------------------
+# Reglas para librerías Lava (C de usuario, .lava)
+# --------------------------------------------------------------------
+ifneq ($(LAVA_FILES),)
+$(LAVA_BUILD)/%.lava: $(LAVA_DIR)/%.c
+	@mkdir -p $(dir $@)
+	@echo " [LAVA] $< -> $@"
+	$(CC) $(CFLAGS) -fPIC -shared -I$(LAVA_DIR) -o $@ $<
 endif
 
 # --------------------------------------------------------------------
@@ -294,6 +312,7 @@ help:
 	@echo "  config     : crea o edita los metadatos (VERSION, HELP, WELCOME, EDITION)"
 	@echo "  test       : compila Infernal si es necesario y ejecuta los demos uno por uno"
 	@echo "  sanitize   : compila Infernal con AddressSanitizer y UBSan"
+	@echo "  lava       : compila solo las librerías Lava (lava/*.c -> build/lava/*.lava)"
 	@echo "  help       : muestra esta ayuda"
 	@echo
 	@echo
@@ -311,6 +330,7 @@ help:
 	@printf "  Archivos fuente (.c): %d\n" $(words $(SOURCES))
 	@printf "  Módulos .fire embebidos: %d\n" $(words $(FIRE_FILES))
 	@printf "  Binarios embebidos: %d\n" $(words $(BIN_FILES))
+	@printf "  Librerías Lava (.c): %d\n" $(words $(LAVA_FILES))
 	@printf "  Versión: "
 	@cat src/metadata/VERSION || echo "No disponible"
 
@@ -326,16 +346,30 @@ sanitize:
 	        LDFLAGS='$(LDFLAGS) -fsanitize=address,undefined' all
 	$(MAKE) test
 
+lava: $(LAVA_SOS)
+
 install:
 	$(MAKE) release
 	@if [ "$$(id -u)" -eq 0 ]; then \
 		echo " [INSTALL ROOT] $(BINDIR)/$(TARGET)"; \
 		install -Dm755 $(TARGET) $(BINDIR)/$(TARGET); \
+		echo " [INSTALL ROOT] $(LAVA_SYSDIR)/"; \
+		mkdir -p $(LAVA_SYSDIR); \
+		install -Dm644 $(LAVA_DIR)/lava.h $(LAVA_SYSDIR)/lava.h; \
+		for so in $(LAVA_SOS); do \
+			install -Dm644 $$so $(LAVA_SYSDIR)/$$(basename $$so); \
+		done; \
 		echo "Infernal instalado para el sistema."; \
 	else \
 		echo " [INSTALL USER] $$HOME/.local/bin/$(TARGET)"; \
 		mkdir -p "$$HOME/.local/bin"; \
 		install -Dm755 $(TARGET) "$$HOME/.local/bin/$(TARGET)"; \
+		echo " [INSTALL USER] $$HOME/.infernal/lava/"; \
+		mkdir -p "$$HOME/.infernal/lava"; \
+		install -Dm644 $(LAVA_DIR)/lava.h "$$HOME/.infernal/lava/lava.h"; \
+		for so in $(LAVA_SOS); do \
+			install -Dm644 $$so "$$HOME/.infernal/lava/$$(basename $$so)"; \
+		done; \
 		echo "Infernal instalado para el usuario."; \
 		echo "Asegúrate de que $$HOME/.local/bin está en tu PATH."; \
 	fi
