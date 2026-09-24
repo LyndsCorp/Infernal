@@ -18,7 +18,8 @@
  *  Funciones de la biblioteca
  * ================================================ */
 
-/* --- keys() --- */
+/* --- keys() ---
+ * Devuelve una lista con las claves del mapa, en orden de inserción. */
 static Value builtin_keys(int argc, Value *args) {
     if (argc != 1) error(0, "keys() espera exactamente 1 argumento");
     if (args[0].type != VAL_MAP) error(0, "keys() espera un mapa");
@@ -31,7 +32,9 @@ static Value builtin_keys(int argc, Value *args) {
     return list;
 }
 
-/* --- values() --- */
+/* --- values() ---
+ * Devuelve una lista con los valores del mapa, en orden de inserción
+ * (el mismo orden que devuelve keys()). */
 static Value builtin_values(int argc, Value *args) {
     if (argc != 1) error(0, "values() espera exactamente 1 argumento");
     if (args[0].type != VAL_MAP) error(0, "values() espera un mapa");
@@ -44,7 +47,10 @@ static Value builtin_values(int argc, Value *args) {
     return list;
 }
 
-/* --- delete() --- */
+/* --- delete() ---
+ * Elimina la clave indicada del mapa y devuelve una copia del mapa
+ * resultante. Si la clave no existe, no hace nada y devuelve una copia
+ * del mapa tal cual estaba. */
 static Value builtin_delete(int argc, Value *args) {
     if (argc != 2) error(0, "delete() espera exactamente 2 argumentos");
     if (args[0].type != VAL_MAP) error(0, "delete() espera un mapa como primer argumento");
@@ -54,35 +60,17 @@ static Value builtin_delete(int argc, Value *args) {
     return copy_value_secure(args[0]);
 }
 
-/* --- size() --- */
-static Value builtin_size(int argc, Value *args) {
-    if (argc != 1) error(0, "size() espera exactamente 1 argumento");
-
-    Value v = args[0];
-    if (v.type == VAL_MAP) {
-        MapData *md = v.data.map;
-        return val_int(md->count);
-    } else if (v.type == VAL_LIST) {
-        return val_int(v.data.list.count);
-    } else {
-        error(0, "size() espera un mapa o una lista");
-    }
-    return val_make_null();
-}
-
 
 /* ================================================
  *  Registro de funciones
  * ================================================ */
 
 void register_map_builtins(void) {
-    func_register_builtin("keys", builtin_keys);
+    func_register_builtin("keys",   builtin_keys);
     func_register_builtin("values", builtin_values);
     func_register_builtin("delete", builtin_delete);
-    func_register_builtin("size", builtin_size);
 
-    vm_register_builtin("keys", builtin_keys);
+    vm_register_builtin("keys",   builtin_keys);
     vm_register_builtin("values", builtin_values);
     vm_register_builtin("delete", builtin_delete);
-    vm_register_builtin("size", builtin_size);
 }
