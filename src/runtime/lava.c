@@ -4,6 +4,20 @@
  * Apache 2.0 — Código fuente de Infernal: runtime/lava.c
  *
  * Runtime de librerías Lava.
+ *
+ * Soporta tres formas de carga de módulos Lava:
+ *
+ *   1. Módulos EMBEBIDOS en el binario: se cargan directamente desde
+ *      memoria con memfd_create() + dlopen("/proc/self/fd/N") en Linux,
+ *      sin escribir nunca a disco. En otros sistemas se usa un tempfile
+ *      efímero como fallback. Tienen PRIORIDAD sobre los módulos de
+ *      usuario/sistema.
+ *
+ *   2. Módulos del USUARIO:  ~/.infernal/lava/<name>.lava
+ *
+ *   3. Módulos del SISTEMA:  /usr/share/infernal/lava/<name>.lava
+ *
+ * El orden de búsqueda es: embebido → usuario → sistema.
 */
 
 #include "runtime/lava.h"
@@ -14,6 +28,7 @@
 #include "runtime/error.h"
 #include "runtime/constants.h"
 #include "vm/vm.h"
+#include "embedded/embedded.h"
 
 #include <dlfcn.h>
 #include <ffi.h>
@@ -25,6 +40,14 @@
 #include <unistd.h>
 #include <limits.h>
 #include <stdint.h>
+#include <errno.h>
+#include <fcntl.h>
+
+#if defined(__linux__) && defined(SYS_memfd_create)
+#  ifndef MFD_CLOEXEC
+#    define MFD_CLOEXEC 0x0001U
+#  endif
+#endif
 
 typedef Value lava_list;
 
@@ -870,25 +893,31 @@ static Value lava_dispatch(int slot, int argc, Value *args) {
  * Carga de módulos
  * ================================================================== */
 
-static int lava_load_from_path(const char *path, const char *prefix) {
-    void *h = dlopen(path, RTLD_NOW | RTLD_LOCAL);
-    if (!h) {
-        fprintf(stderr, "Lava: dlopen('%s') falló: %s\n", path, dlerror());
-        return 0;
-    }
-
+/*
+ * Inicializa un handle ya abierto: registra el handle en g_handles,
+ * llama a infernal_lava_register() con el prefijo activo, y maneja los
+ * errores con longjmp.
+ *
+ * `display_path` se usa solo para mensajes de error y para el campo
+ * informativo `module_path` de cada LavaEntry. Para módulos embebidos
+ * será algo como "<embedded:make>".
+ *
+ * Si algo falla, hace dlclose(h) y devuelve 0. Si reg() lanza un error
+ * via longjmp, se restaura el estado de carga y se re-propaga.
+ */
+static int lava_init_handle(void *h, const char *display_path, const char *prefix) {
     void (*reg)(void) = (void (*)(void))dlsym(h, "infernal_lava_register");
     if (!reg) {
         fprintf(stderr,
                 "Lava: '%s' no exporta infernal_lava_register() "
-                "(¿olvidaste LAVA_MODULE?)\n", path);
+                "(¿olvidaste LAVA_MODULE?)\n", display_path);
         dlclose(h);
         return 0;
     }
 
     LavaHandle *entry = calloc(1, sizeof(LavaHandle));
     if (entry) {
-        entry->path   = strdup(path);
+        entry->path   = strdup(display_path);
         entry->handle = h;
         entry->next   = g_handles;
         g_handles     = entry;
@@ -896,7 +925,7 @@ static int lava_load_from_path(const char *path, const char *prefix) {
 
     const char *saved_path   = g_loading_module_path;
     const char *saved_prefix = g_loading_prefix;
-    g_loading_module_path    = path;
+    g_loading_module_path    = display_path;
     g_loading_prefix         = prefix;
 
     /* Si la inicialización del módulo lanza un error vía longjmp,
@@ -925,6 +954,95 @@ static int lava_load_from_path(const char *path, const char *prefix) {
     return 1;
 }
 
+/* Carga un módulo Lava desde una ruta en disco. */
+static int lava_load_from_path(const char *path, const char *prefix) {
+    void *h = dlopen(path, RTLD_NOW | RTLD_LOCAL);
+    if (!h) {
+        fprintf(stderr, "Lava: dlopen('%s') falló: %s\n", path, dlerror());
+        return 0;
+    }
+    return lava_init_handle(h, path, prefix);
+}
+
+/*
+ * Carga un módulo Lava desde memoria.
+ *
+ * En Linux usamos memfd_create() + /proc/self/fd/N para evitar escribir
+ * NUNCA a disco: el kernel respalda el contenido en memoria anónima y
+ * expone un "archivo" virtual que dlopen() puede mapear. Cerramos el fd
+ * en cuanto dlopen() devuelve: el .so queda mapeado y el fd deja de ser
+ * necesario.
+ *
+ * En otros sistemas (macOS, BSD) caemos a un tempfile efímero en /tmp
+ * que se desenlaza inmediatamente después de dlopen() para que el
+ * sistema lo recoja al cerrar el proceso.
+ */
+static int lava_load_from_memory(const unsigned char *data, size_t len,
+                                 const char *name, const char *prefix) {
+#if defined(__linux__) && defined(SYS_memfd_create)
+    int fd = (int)syscall(SYS_memfd_create, "infernal_lava", MFD_CLOEXEC);
+    if (fd >= 0) {
+        /* Escribir todos los bytes. */
+        size_t off = 0;
+        int write_err = 0;
+        while (off < len) {
+            ssize_t w = write(fd, data + off, len - off);
+            if (w < 0) {
+                if (errno == EINTR) continue;
+                write_err = 1;
+                break;
+            }
+            off += (size_t)w;
+        }
+
+        if (!write_err) {
+            char path[64];
+            snprintf(path, sizeof(path), "/proc/self/fd/%d", fd);
+            void *h = dlopen(path, RTLD_NOW | RTLD_LOCAL);
+            /* El .so ya está mapeado; el fd puede cerrarse ya. */
+            close(fd);
+
+            if (h) {
+                char display[160];
+                snprintf(display, sizeof(display), "<embedded:%s>", name);
+                return lava_init_handle(h, display, prefix);
+            }
+
+            fprintf(stderr,
+                    "Lava: dlopen('%s') desde memoria falló: %s\n",
+                    path, dlerror());
+            return 0;
+        }
+
+        close(fd);
+        /* Si falló la escritura, intentamos el fallback portable. */
+    }
+#endif
+
+    /* Fallback portable: tempfile efímero desenlazado tras dlopen(). */
+    char tmpl[] = "/tmp/infernal_lava_XXXXXX";
+    int fd = mkstemp(tmpl);
+    if (fd < 0) return 0;
+
+    size_t off = 0;
+    while (off < len) {
+        ssize_t w = write(fd, data + off, len - off);
+        if (w < 0) {
+            if (errno == EINTR) continue;
+            close(fd);
+            unlink(tmpl);
+            return 0;
+        }
+        off += (size_t)w;
+    }
+    close(fd);
+
+    int ok = lava_load_from_path(tmpl, prefix);
+    /* El .so ya está mapeado en memoria; el archivo puede borrarse. */
+    unlink(tmpl);
+    return ok;
+}
+
 static void append_tried(char *tried, size_t tried_size, size_t *used,
                          const char *path) {
     if (!tried || tried_size == 0) return;
@@ -943,8 +1061,13 @@ static int try_load_at(const char *path, const char *prefix,
 }
 
 /*
- * Busca `name` como librería Lava en los directorios estándar. `name`
- * puede contener subdirectorios (p. ej. "build/lava/ejemplo.lava");
+ * Busca `name` como librería Lava. Orden de prioridad:
+ *
+ *   1. Módulo EMBEBIDO en el binario (carga desde memoria, sin I/O).
+ *   2. ~/.infernal/lava/<name>.lava  (módulo del usuario).
+ *   3. /usr/share/infernal/lava/<name>.lava  (módulo del sistema).
+ *
+ * `name` puede contener subdirectorios (p. ej. "build/lava/ejemplo.lava");
  * simplemente se usa tal cual dentro del directorio base, y se le
  * añade siempre la extensión ".lava".
  */
@@ -958,12 +1081,27 @@ int lava_try_import(const char *name, const char *prefix,
     const char *home = getenv("HOME");
     const char *use_prefix = prefix ? prefix : name;
 
+    /* 1. Módulo embebido: máxima prioridad, cero I/O a disco. */
+    {
+        const unsigned char *emb_data = NULL;
+        size_t emb_size = 0;
+        if (embedded_lava_find(name, &emb_data, &emb_size)) {
+            if (tried && tried_size > 0) {
+                append_tried(tried, tried_size, &used, "<embedded>");
+            }
+            if (lava_load_from_memory(emb_data, emb_size, name, use_prefix))
+                return 1;
+        }
+    }
+
+    /* 2. Módulo del usuario. */
     if (home && *home) {
         snprintf(path, sizeof(path),
                  "%s/.infernal/lava/%s.lava", home, name);
         if (try_load_at(path, use_prefix, tried, tried_size, &used)) return 1;
     }
 
+    /* 3. Módulo del sistema. */
     snprintf(path, sizeof(path),
              "/usr/share/infernal/lava/%s.lava", name);
     if (try_load_at(path, use_prefix, tried, tried_size, &used)) return 1;
@@ -975,6 +1113,10 @@ int lava_try_import(const char *name, const char *prefix,
  * Carga desde una RUTA concreta (para imports entre comillas).
  * Prueba la ruta tal cual y, si no termina en ".lava", también con la
  * extensión añadida.
+ *
+ * Nota: a diferencia de lava_try_import, aquí NO consultamos la tabla
+ * embebida, porque el usuario ha especificado una ruta explícita y debe
+ * respetarse tal cual.
  */
 int lava_try_import_path(const char *path, const char *prefix,
                          char *tried, size_t tried_size) {
