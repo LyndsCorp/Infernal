@@ -634,6 +634,27 @@ int lava_register_fn(const char *name, void (*fn)(void), const char *sig) {
         fprintf(stderr, "Error Lava: lava_register_fn() con name/fn inválido\n");
         return -1;
     }
+
+    /*
+     * Un módulo Lava SIEMPRE debe cargarse a través de `import` con un
+     * nombre de módulo o un alias. Sus funciones se registran solo como
+     * "prefijo.funcion", nunca como "funcion" desnuda.
+     *
+     * Esto evita que dos módulos distintos colisionen al exportar el
+     * mismo nombre (p. ej. varios módulos con una función `init()`), y
+     * hace explícito en el código Infernal de qué módulo viene cada
+     * función: `random.randint(...)` en lugar de `randint(...)`.
+     */
+    if (!g_loading_prefix || !*g_loading_prefix) {
+        fprintf(stderr,
+                "Error Lava: el módulo '%s' intentó registrar '%s' sin prefijo.\n"
+                "    Los módulos Lava deben importarse con un nombre de módulo o\n"
+                "    un alias, de forma que sus funciones queden accesibles como\n"
+                "    'prefijo.%s'. El nombre desnudo '%s' está prohibido.\n",
+                g_loading_module_path, name, name, name);
+        return -1;
+    }
+
     if (!sig) sig = "";
 
     if (g_slot_count >= LAVA_MAX_SLOTS) {
@@ -675,34 +696,41 @@ int lava_register_fn(const char *name, void (*fn)(void), const char *sig) {
     e->arg_types   = types;
 
     if (ffi_prep_cif(&e->cif, FFI_DEFAULT_ABI,
-                     (unsigned)nargs, &ffi_type_void, types) != FFI_OK) {
+        (unsigned)nargs, &ffi_type_void, types) != FFI_OK) {
         fprintf(stderr, "Error Lava: ffi_prep_cif falló para '%s'\n", name);
-        free(e->arg_types); free(e->name); free(e->signature);
-        free(e->module_path); free(e);
-        return -1;
-    }
+    free(e->arg_types); free(e->name); free(e->signature);
+    free(e->module_path); free(e);
+    return -1;
+        }
 
-    int slot = g_slot_count++;
-    g_slots[slot] = e;
-
-    extern Value (*lava_thunk_table[LAVA_MAX_SLOTS])(int, Value *);
-    Value (*thunk)(int, Value *) = lava_thunk_table[slot];
-
-    /* Nombre base. */
-    func_register_builtin(name, thunk);
-    vm_register_builtin(strdup(name), thunk);
-
-    /* Nombre con prefijo (módulo o alias). */
-    if (g_loading_prefix && *g_loading_prefix) {
+        /* Construir el nombre prefijado ANTES de tocar g_slots, para que un
+         * fallo de malloc no deje un slot huérfano en la tabla. */
         size_t plen = strlen(g_loading_prefix) + 1 + strlen(name) + 1;
         char *prefixed = malloc(plen);
-        if (prefixed) {
-            snprintf(prefixed, plen, "%s.%s", g_loading_prefix, name);
-            func_register_builtin(prefixed, thunk);
-            vm_register_builtin(prefixed, thunk);
+        if (!prefixed) {
+            free(e->arg_types); free(e->name); free(e->signature);
+            free(e->module_path); free(e);
+            return -1;
         }
-    }
-    return 0;
+        snprintf(prefixed, plen, "%s.%s", g_loading_prefix, name);
+
+        int slot = g_slot_count++;
+        g_slots[slot] = e;
+
+        extern Value (*lava_thunk_table[LAVA_MAX_SLOTS])(int, Value *);
+        Value (*thunk)(int, Value *) = lava_thunk_table[slot];
+
+        /*
+         * Solo el nombre con prefijo. El nombre desnudo NO se registra.
+         *
+         * func_register_builtin() copia internamente el nombre con strdup(),
+         * mientras que vm_register_builtin() toma propiedad del puntero que
+         * se le pasa. Por eso pasamos el mismo `prefixed` a ambas: la primera
+         * lo copia, la segunda se queda con el original.
+         */
+        func_register_builtin(prefixed, thunk);
+        vm_register_builtin(prefixed, thunk);
+        return 0;
 }
 
 /* ==================================================================
