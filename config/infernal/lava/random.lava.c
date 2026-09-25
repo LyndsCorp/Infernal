@@ -1,10 +1,11 @@
 /*
- * Librería Lava: random
- * Números aleatorios al estilo del módulo `random` de Python.
+ * Librería Lava para Infernal base: random
+ * Este software se distribuye bajo la licencia Apache 2.0
+ * Copyright (C) 2026, David Baña Szymaniak
  *
  * Uso desde Infernal:
  *
- *   import "lava/random.lava" as random
+ *   import random
  *
  *   random.seed(42)                           # fija la semilla (opcional)
  *
