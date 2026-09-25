@@ -88,6 +88,22 @@ static void cleanup_runtime_state(void) {
         free(entry);
     }
 
+    // liberar la tabla superglobal de funciones
+    while (super_func_table) {
+        FuncEntry *entry = super_func_table;
+        super_func_table = entry->next;
+        FuncObject *obj = entry->obj;
+        if (obj) {
+            if (obj->kind == FUNC_USER && obj->code) {
+                chunk_free(obj->code);
+                obj->code = NULL;
+            }
+            free(obj);
+        }
+        free(entry->name);
+        free(entry);
+    }
+
     value_free(&return_value);
     if (infernal_shell) { free(infernal_shell); infernal_shell = NULL; }
 }

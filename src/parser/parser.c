@@ -1017,11 +1017,15 @@ NodeList parse_block(const char *terminator) {
             if (!ts_match(TOK_FI)) error(t.line, "Se esperaba 'fi'");
             fi_block_nesting--;
 
-            func_register(stmt->data.func.name, stmt);
             if (current_import_prefix) {
+                /* Dentro de un import: solo nombre prefijado. */
                 char prefixed[512];
-                snprintf(prefixed, sizeof(prefixed), "%s.%s", current_import_prefix, stmt->data.func.name);
+                snprintf(prefixed, sizeof(prefixed), "%s.%s",
+                         current_import_prefix, stmt->data.func.name);
                 func_register(prefixed, stmt);
+            } else {
+                /* Script principal (o futuro 'source'): nombre desnudo. */
+                func_register(stmt->data.func.name, stmt);
             }
 
             /* NO compilar aquí. La compilación se hará en compile_program */
@@ -1382,6 +1386,97 @@ NodeList parse_block(const char *terminator) {
             ts_skip_newlines();
             continue;
         }
+
+        /* --- GLOBAL FUNCTION ---
+         *
+         * Sintaxis:
+         *     global function nombre(params) then
+         *         ...
+         *     fi
+         *
+         * Registra la función en super_func_table, de modo que queda
+         * accesible desde cualquier script (script principal, módulos .fire
+         * importados y scripts ejecutados con 'execute'). No se aplica el
+         * prefijo de importación: estas funciones son globales por diseño. */
+        if (t.type == TOK_GLOBAL &&
+            ts.pos + 1 < ts.count &&
+            ts.tokens[ts.pos + 1].type == TOK_FUNCTION) {
+
+            ts_advance();   /* consumir 'global'  */
+            ts_advance();   /* consumir 'function' */
+
+            stmt = node_create(NODE_FUNC_DEF, t.line);
+        stmt->data.func.is_global = true;
+
+        if (ts_peek().type != TOK_IDENT) {
+            ast_free(stmt);
+            stmt = NULL;
+            error(t.line, "Se esperaba nombre de función después de 'global function'");
+        }
+        stmt->data.func.name = strdup(ts_advance().lexeme);
+        stmt->data.func.params = NULL;
+        stmt->data.func.ptypes = NULL;
+        stmt->data.func.param_count = 0;
+        stmt->data.func.body = (NodeList){NULL, 0, 0};
+        nodelist_add(&block, stmt);
+
+        if (func_lookup(stmt->data.func.name) != NULL)
+            error(t.line, "'%s' ya existe como función y no puede ser redefinida.", stmt->data.func.name);
+
+            if (!ts_match(TOK_LPAREN)) {
+                error_at(ts_peek().line, ts_peek().start_col > 0 ? ts_peek().start_col : 1,
+                         "Se esperaba '(' después del nombre de la función '%s'", stmt->data.func.name);
+            }
+            if (!ts_match(TOK_RPAREN)) {
+                do {
+                    int ptype = 0;
+                    TokenType tt = ts_peek().type;
+                    if (tt == TOK_INT || tt == TOK_FLOAT || tt == TOK_BOOL ||
+                        tt == TOK_STRING || tt == TOK_LIST || tt == TOK_MAP)
+                        ptype = ts_advance().type;
+                    if (ts_peek().type != TOK_IDENT)
+                        error(t.line, "Se esperaba nombre de parámetro");
+                    char *pname = clean_var_name(ts_advance().lexeme);
+                    validate_var_name(pname, t.line);
+                    for (int i = 0; i < stmt->data.func.param_count; i++) {
+                        if (strcmp(stmt->data.func.params[i], pname) == 0)
+                            error(t.line, "El parámetro '%s' está repetido", pname);
+                    }
+                    int pcount = stmt->data.func.param_count;
+                    stmt->data.func.params = realloc(stmt->data.func.params, (pcount + 1) * sizeof(char*));
+                    stmt->data.func.ptypes = realloc(stmt->data.func.ptypes, (pcount + 1) * sizeof(int));
+                    stmt->data.func.params[pcount] = pname;
+                    stmt->data.func.ptypes[pcount] = ptype;
+                    stmt->data.func.param_count = pcount + 1;
+                    Token sep = ts_peek();
+                    if (sep.type != TOK_COMMA && sep.type != TOK_RPAREN)
+                        error_at(sep.line, sep.start_col > 0 ? sep.start_col : 1,
+                                 "Falta ',' entre parámetros de la función '%s'", stmt->data.func.name);
+                } while (ts_match(TOK_COMMA) && ts_peek().type != TOK_RPAREN);
+                if (ts_peek().type == TOK_RPAREN && ts.pos > 0 &&
+                    ts.tokens[ts.pos - 1].type == TOK_COMMA) {
+                    error_at(ts_peek().line, ts_peek().start_col,
+                             "No puede haber una coma al final de los parámetros de '%s'", stmt->data.func.name);
+                    }
+                    if (!ts_match(TOK_RPAREN)) {
+                        error_at(ts_peek().line, ts_peek().start_col > 0 ? ts_peek().start_col : 1,
+                                 "Se esperaba ')' para cerrar la declaración de '%s'", stmt->data.func.name);
+                    }
+            }
+
+            fi_block_nesting++;
+            stmt->data.func.body = parse_block("fi");
+            if (!ts_match(TOK_FI)) error(t.line, "Se esperaba 'fi'");
+            fi_block_nesting--;
+
+            /* Registrar SOLO en la tabla superglobal, sin prefijo de importación. */
+            func_register_global(stmt->data.func.name, stmt);
+
+            DEBUG_INFO("parse_block: añadida función GLOBAL '%s' en línea %d",
+                       stmt->data.func.name, stmt->line);
+            ts_skip_newlines();
+            continue;
+            }
 
         /* --- LOCAL / GLOBAL / TIPO: declaraciones de variables --- */
         if (t.type == TOK_LOCAL || t.type == TOK_GLOBAL) {

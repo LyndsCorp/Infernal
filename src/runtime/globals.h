@@ -75,4 +75,19 @@ extern int flags_arg_index;   /* <-- NUEVO: índice global para argumentos en mo
 #define MAX_FLAGS_MODES 256
 extern int defined_flags_modes[MAX_FLAGS_MODES];  /* 1 si el modo ya fue definido */
 
+/* --- Function table -------------------------------------- */
+typedef struct FuncEntry {
+    char *name;
+    FuncObject *obj;
+    struct FuncEntry *next;
+} FuncEntry;
+
+extern FuncEntry *func_table;
+extern FuncEntry *super_func_table;    /* <-- NUEVO */
+
+void func_register(const char *name, ASTNode *def);
+void func_register_builtin(const char *name, BuiltinFunc fn);
+void func_register_global(const char *name, ASTNode *def);   /* <-- NUEVO */
+FuncObject *func_lookup(const char *name);
+
 #endif

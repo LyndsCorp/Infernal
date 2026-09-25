@@ -166,7 +166,7 @@ struct ASTNode {
                 ASTNode *init, *cond, *incr;
                 NodeList body;
             } for_stmt;
-            struct { char *name; char **params; int *ptypes; int param_count; NodeList body; } func;
+            struct { char *name; char **params; int *ptypes; int param_count; NodeList body; bool is_global; } func;
             struct { ASTNode *expr; int rtype; } ret;
             struct { char *path; char *alias; NodeList module_block; } import;
             struct { NodeList try_block, catch_block; } try_stmt;
