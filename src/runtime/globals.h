@@ -3,7 +3,7 @@
  * Copyright (C) 2026, David Baña Szymaniak
  * Este software se distribuye bajo la licencia Apache 2.0
  * Código fuente de Infernal: runtime/globals.h
-*/
+// */
 
 #ifndef RUNTIME_GLOBALS_H
 #define RUNTIME_GLOBALS_H
@@ -32,9 +32,11 @@ typedef struct FuncEntry {
 } FuncEntry;
 
 extern FuncEntry *func_table;
+extern FuncEntry *super_func_table;
 
 void func_register(const char *name, ASTNode *def);
 void func_register_builtin(const char *name, BuiltinFunc fn);
+void func_register_global(const char *name, ASTNode *def);
 FuncObject *func_lookup(const char *name);
 
 /* --- Import prefix y límite de iteraciones --------------- */
@@ -69,25 +71,10 @@ void load_infernal_config(void);
 void show_shell_info(void);
 
 extern int current_eval_line;
-extern int flags_arg_index;   /* <-- NUEVO: índice global para argumentos en modo 1 */
+extern int flags_arg_index;
 
 /* --- Registro de modos de flags definidos ------------------ */
 #define MAX_FLAGS_MODES 256
 extern int defined_flags_modes[MAX_FLAGS_MODES];  /* 1 si el modo ya fue definido */
-
-/* --- Function table -------------------------------------- */
-typedef struct FuncEntry {
-    char *name;
-    FuncObject *obj;
-    struct FuncEntry *next;
-} FuncEntry;
-
-extern FuncEntry *func_table;
-extern FuncEntry *super_func_table;    /* <-- NUEVO */
-
-void func_register(const char *name, ASTNode *def);
-void func_register_builtin(const char *name, BuiltinFunc fn);
-void func_register_global(const char *name, ASTNode *def);   /* <-- NUEVO */
-FuncObject *func_lookup(const char *name);
 
 #endif
