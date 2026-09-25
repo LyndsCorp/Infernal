@@ -168,6 +168,30 @@ static bool valid_module_name(const char *name) {
     return true;
 }
 
+/*
+ * Un alias de módulo debe ser un identificador simple: letra o '_' al
+ * principio, y luego letras, dígitos o '_'. NO se permiten puntos,
+ * guiones ni barras.
+ *
+ * El alias actúa como prefijo de los nombres de función registrados
+ * (p. ej. `r.randint`, `util.sumar`). Si se admitieran puntos, el
+ * resultado sería ambiguo: `import x as a.b` produciría funciones
+ * llamadas `a.b.func`, y el parser de llamadas no sabría si `a` es un
+ * módulo o una variable con un campo. Si se admitieran guiones, el
+ * lexer los partiría como TOK_DEC ('--') y rompería el nombre.
+ *
+ * Por eso el alias debe ser exactamente un identificador válido de
+ * Infernal, igual que cualquier nombre de variable o función.
+*/
+static bool valid_module_alias(const char *name) {
+    if (!name || !*name) return false;
+    if (!(isalpha((unsigned char)name[0]) || name[0] == '_')) return false;
+    for (const char *p = name + 1; *p; p++) {
+        if (!(isalnum((unsigned char)*p) || *p == '_')) return false;
+    }
+    return true;
+}
+
 static void command_append(char **cmd, size_t *len, size_t *cap, const char *text) {
     if (!text) return;
     size_t add = strlen(text);
@@ -1153,11 +1177,36 @@ NodeList parse_block(const char *terminator) {
                     error(t.line, "Se esperaba un alias después de 'as'");
                 }
                 module_alias = strdup(ts_advance().lexeme);
-                if (!valid_module_name(module_alias)) {
-                    free(module_name);
-                    free(module_alias);
-                    error(t.line, "Alias de módulo inválido: %s", ts_peek().lexeme);
+                if (!valid_module_alias(module_alias)) {
+                    error(t.line,
+                          "Alias de módulo inválido: '%s'.\n"
+                          "    Un alias debe ser un identificador simple: empieza por letra o '_'\n"
+                          "    y continúa con letras, dígitos o '_'. No puede contener puntos,\n"
+                          "    guiones ni barras, porque se usa como prefijo de las funciones\n"
+                          "    del módulo (p. ej. 'alias.funcion').",
+                          module_alias);
                 }
+            }
+
+            /*
+             * Un import con ruta entre comillas SIEMPRE debe llevar alias.
+             *
+             * Cuando el usuario escribe `import "build/lava/mi_mod.lava"`, el
+             * nombre del archivo no es un identificador válido para actuar de
+             * prefijo (contiene '/', '.' y posiblemente '-' que el lexer
+             * tokeniza como TOK_DEC). Sin alias, el parser acabaría usando el
+             * path completo como prefijo, lo cual es feo e invita a errores.
+             * Forzamos un alias explícito para que el programador decida el
+             * nombre bajo el que quedan expuestas las funciones del módulo.
+             */
+            if (is_quoted_path && !module_alias) {
+                error(t.line,
+                      "El import de una ruta entre comillas requiere un alias con 'as'.\n"
+                      "    Escribiste: import \"%s\"\n"
+                      "    El nombre del archivo no es un identificador válido como prefijo, así que\n"
+                      "    debes indicar bajo qué nombre quedarán accesibles sus funciones:\n"
+                      "        import \"%s\" as nombre",
+                      nt.lexeme, nt.lexeme);
             }
 
             TokenStream old_ts = ts;
