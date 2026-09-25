@@ -309,7 +309,21 @@ void tokenize_file(FILE *fp) {
                     p++;
                     while (isdigit(*p)) p++;
                 }
-                size_t len = (size_t)(p - start);
+                /* Notación científica: 1.5e2, 3E-4, 2.5e+10, 1.0e29.
+                 * Solo consume la 'e'/'E' si va seguida de un dígito
+                 * (o de un signo + un dígito). Así evitamos romper
+                 * identificadores como `error` cuando aparecen tras un
+                 * número, por ejemplo en `3error` (que sigue siendo un
+                 * error de sintaxis, pero no un error del lexer). */
+                if ((*p == 'e' || *p == 'E') &&
+                    (isdigit((unsigned char)*(p + 1)) ||
+                    ((*(p + 1) == '+' || *(p + 1) == '-') &&
+                    isdigit((unsigned char)*(p + 2))))) {
+                    p++;                              /* consumir 'e' o 'E' */
+                    if (*p == '+' || *p == '-') p++;  /* consumir signo */
+                        while (isdigit((unsigned char)*p)) p++;
+                    }
+                    size_t len = (size_t)(p - start);
                 char *lexeme = strndup(start, len);
                 if (!lexeme) error(lineno, "Memoria insuficiente para número");
                 Token t = {TOK_NUMBER, lexeme, lineno, start_col, (int)(p - line)};

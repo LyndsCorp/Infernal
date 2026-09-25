@@ -1,7 +1,8 @@
 /*
  * Infernal: el intérprete de Aro Infernal.
  * Copyright (C) 2026, David Baña Szymaniak
- * Apache 2.0 — Código fuente de Infernal: runtime/lava.h
+ * Este software se distribuye bajo la licencia Apache 2.0
+ * Código fuente de Infernal: runtime/lava.h
 */
 
 #ifndef RUNTIME_LAVA_H

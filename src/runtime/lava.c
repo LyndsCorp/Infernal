@@ -1,7 +1,8 @@
 /*
  * Infernal: el intérprete de Aro Infernal.
  * Copyright (C) 2026, David Baña Szymaniak
- * Apache 2.0 — Código fuente de Infernal: runtime/lava.c
+ * Este software se distribuye bajo la licencia Apache 2.0
+ * Código fuente de Infernal: runtime/lava.c
  *
  * Runtime de librerías Lava.
  *
@@ -50,6 +51,7 @@
 #endif
 
 typedef Value lava_list;
+typedef Value lava_map;
 
 #ifndef PATH_MAX
 #  define PATH_MAX 4096
@@ -90,7 +92,7 @@ static const char *g_loading_prefix      = NULL;
 /* Contexto activo durante la llamada a una función Lava. */
 typedef struct {
     bool   type_set;
-    int    type;      /* TOK_INT, TOK_FLOAT, TOK_STRING, TOK_BOOL, TOK_LIST */
+    int    type;      /* TOK_INT, TOK_FLOAT, TOK_STRING, TOK_BOOL, TOK_LIST, TOK_MAP */
     bool   value_set;
     Value  value;
     int    argc;
@@ -223,10 +225,11 @@ void infernal_return_type(const char *type) {
     else if (strcmp(type, "string") == 0) t = TOK_STRING;
     else if (strcmp(type, "bool")   == 0) t = TOK_BOOL;
     else if (strcmp(type, "list")   == 0) t = TOK_LIST;
+    else if (strcmp(type, "map")    == 0) t = TOK_MAP;
     else {
         fprintf(stderr,
                 "Error Lava: tipo inválido '%s'. "
-                "Usa \"int\", \"float\", \"string\", \"bool\" o \"list\".\n", type);
+                "Usa \"int\", \"float\", \"string\", \"bool\", \"list\" o \"map\".\n", type);
         abort();
     }
     g_ctx->type     = t;
@@ -266,6 +269,11 @@ void infernal_return_value(const char *fmt, ...) {
             /* Para listas usa infernal_return_list(); si alguien llega aquí
              * con TOK_LIST, devolvemos lista vacía. */
             g_ctx->value = val_list_empty();
+            break;
+        case TOK_MAP:
+            /* Para mapas usa infernal_return_map(); si alguien llega aquí
+             * con TOK_MAP, devolvemos mapa vacío. */
+            g_ctx->value = val_map_empty();
             break;
         default:
             g_ctx->value = val_make_null();
@@ -498,6 +506,251 @@ void infernal_return_list(lava_list *l) {
 }
 
 /* ==================================================================
+ * API de mapas
+ * ================================================================== */
+
+lava_map *lava_arg_map(int index) {
+    if (!g_ctx || index < 0 || index >= g_ctx->argc) return NULL;
+    Value *v = &g_ctx->args[index];
+    if (v->type != VAL_MAP) return NULL;
+    return (lava_map *)v;
+}
+
+/* Lookup interno: devuelve el MapPair o NULL. No copia. */
+static MapPair *lava_map_lookup(lava_map *m, const char *key) {
+    if (!m || !key) return NULL;
+    Value *v = (Value *)m;
+    if (v->type != VAL_MAP || !v->data.map) return NULL;
+    MapData *md = v->data.map;
+    for (int i = 0; i < md->count; i++) {
+        if (strcmp(md->pairs[i].key, key) == 0)
+            return &md->pairs[i];
+    }
+    return NULL;
+}
+
+int lava_map_len(lava_map *m) {
+    if (!m) return 0;
+    Value *v = (Value *)m;
+    if (v->type != VAL_MAP || !v->data.map) return 0;
+    return v->data.map->count;
+}
+
+const char *lava_map_key_at(lava_map *m, int index) {
+    if (!m) return NULL;
+    Value *v = (Value *)m;
+    if (v->type != VAL_MAP || !v->data.map) return NULL;
+    if (index < 1 || index > v->data.map->count) return NULL;
+    return v->data.map->pairs[index - 1].key;
+}
+
+int lava_map_has(lava_map *m, const char *key) {
+    return lava_map_lookup(m, key) != NULL;
+}
+
+const char *lava_map_element_type(lava_map *m, const char *key) {
+    MapPair *p = lava_map_lookup(m, key);
+    if (!p) return NULL;
+    switch (p->value.type) {
+        case VAL_NULL:   return "null";
+        case VAL_INT:    return "int";
+        case VAL_FLOAT:  return "float";
+        case VAL_BOOL:   return "bool";
+        case VAL_STRING: return "string";
+        case VAL_LIST:   return "list";
+        case VAL_MAP:    return "map";
+        default:         return NULL;
+    }
+}
+
+int lava_map_get_int(lava_map *m, const char *key) {
+    MapPair *p = lava_map_lookup(m, key);
+    if (!p) return 0;
+    switch (p->value.type) {
+        case VAL_INT:    return p->value.data.ival;
+        case VAL_FLOAT:  return (int)p->value.data.fval;
+        case VAL_BOOL:   return p->value.data.bval ? 1 : 0;
+        case VAL_STRING: return (int)strtol(
+            p->value.data.sval ? p->value.data.sval : "0", NULL, 10);
+        default:         return 0;
+    }
+}
+
+double lava_map_get_float(lava_map *m, const char *key) {
+    MapPair *p = lava_map_lookup(m, key);
+    if (!p) return 0.0;
+    switch (p->value.type) {
+        case VAL_INT:    return (double)p->value.data.ival;
+        case VAL_FLOAT:  return p->value.data.fval;
+        case VAL_BOOL:   return p->value.data.bval ? 1.0 : 0.0;
+        case VAL_STRING: return p->value.data.sval
+                                ? atof(p->value.data.sval) : 0.0;
+        default:         return 0.0;
+    }
+}
+
+const char *lava_map_get_string(lava_map *m, const char *key) {
+    MapPair *p = lava_map_lookup(m, key);
+    if (!p) return NULL;
+    if (p->value.type == VAL_STRING)
+        return p->value.data.sval ? p->value.data.sval : "";
+
+    static char bufs[4][64];
+    static int  slot = 0;
+    char *buf = bufs[slot];
+    slot = (slot + 1) & 3;
+    switch (p->value.type) {
+        case VAL_INT:   snprintf(buf, 64, "%d", p->value.data.ival); break;
+        case VAL_FLOAT: snprintf(buf, 64, "%g", p->value.data.fval); break;
+        case VAL_BOOL:  snprintf(buf, 64, "%s",
+                                 p->value.data.bval ? "true" : "false"); break;
+        default:        buf[0] = '\0'; break;
+    }
+    return buf;
+}
+
+int lava_map_get_bool(lava_map *m, const char *key) {
+    MapPair *p = lava_map_lookup(m, key);
+    if (!p) return 0;
+    switch (p->value.type) {
+        case VAL_BOOL:   return p->value.data.bval ? 1 : 0;
+        case VAL_INT:    return p->value.data.ival != 0;
+        case VAL_FLOAT:  return p->value.data.fval != 0.0;
+        case VAL_STRING: return p->value.data.sval && p->value.data.sval[0];
+        default:         return 0;
+    }
+}
+
+lava_list *lava_map_get_list(lava_map *m, const char *key) {
+    MapPair *p = lava_map_lookup(m, key);
+    if (!p || p->value.type != VAL_LIST) return NULL;
+    return (lava_list *)&p->value;   /* prestada, vive dentro del mapa */
+}
+
+lava_map *lava_map_get_map(lava_map *m, const char *key) {
+    MapPair *p = lava_map_lookup(m, key);
+    if (!p || p->value.type != VAL_MAP) return NULL;
+    return (lava_map *)&p->value;    /* prestada, vive dentro del mapa */
+}
+
+lava_map *lava_map_create(void) {
+    Value *v = malloc(sizeof(Value));
+    if (!v) return NULL;
+    *v = val_map_empty();
+    return (lava_map *)v;
+}
+
+void lava_map_set_int(lava_map *m, const char *key, int x) {
+    if (!m || !key) return;
+    Value *v = (Value *)m;
+    if (v->type != VAL_MAP) return;
+    val_map_set(v, key, val_int(x));
+}
+
+void lava_map_set_float(lava_map *m, const char *key, double x) {
+    if (!m || !key) return;
+    Value *v = (Value *)m;
+    if (v->type != VAL_MAP) return;
+    val_map_set(v, key, val_float(x));
+}
+
+void lava_map_set_string(lava_map *m, const char *key, const char *s) {
+    if (!m || !key) return;
+    Value *v = (Value *)m;
+    if (v->type != VAL_MAP) return;
+    val_map_set(v, key, val_string(s ? s : ""));
+}
+
+void lava_map_set_bool(lava_map *m, const char *key, int x) {
+    if (!m || !key) return;
+    Value *v = (Value *)m;
+    if (v->type != VAL_MAP) return;
+    val_map_set(v, key, val_bool(x != 0));
+}
+
+void lava_map_set_list(lava_map *m, const char *key, lava_list *sub) {
+    if (!m || !key || !sub) return;
+    Value *v = (Value *)m;
+    Value *s = (Value *)sub;
+    if (v->type != VAL_MAP || s->type != VAL_LIST) return;
+    val_map_set(v, key, copy_value_secure(*s));   /* copia profunda */
+}
+
+void lava_map_set_map(lava_map *m, const char *key, lava_map *sub) {
+    if (!m || !key || !sub) return;
+    Value *v = (Value *)m;
+    Value *s = (Value *)sub;
+    if (v->type != VAL_MAP || s->type != VAL_MAP) return;
+    val_map_set(v, key, copy_value_secure(*s));   /* copia profunda */
+}
+
+void lava_map_delete(lava_map *m, const char *key) {
+    if (!m || !key) return;
+    Value *v = (Value *)m;
+    if (v->type != VAL_MAP) return;
+    val_map_delete(v, key);
+}
+
+void lava_map_free(lava_map *m) {
+    if (!m) return;
+    Value *v = (Value *)m;
+    value_free(v);
+    free(v);
+}
+
+void infernal_return_map(lava_map *m) {
+    if (!g_ctx) {
+        fprintf(stderr,
+                "Error Lava: infernal_return_map() fuera de una función Lava\n");
+        abort();
+    }
+    if (g_ctx->type_set) {
+        fprintf(stderr,
+                "Error Lava: tipo de retorno ya fijado antes de "
+                "infernal_return_map()\n");
+        abort();
+    }
+    if (g_ctx->value_set) {
+        fprintf(stderr, "Error Lava: valor de retorno ya fijado\n");
+        abort();
+    }
+    g_ctx->type     = TOK_MAP;
+    g_ctx->type_set = true;
+
+    if (!m) {
+        g_ctx->value = val_map_empty();
+    } else {
+        Value *v = (Value *)m;
+        g_ctx->value = *v;    /* transferimos el contenido */
+        free(v);              /* liberamos solo el wrapper */
+    }
+    g_ctx->value_set = true;
+}
+
+/* ==================================================================
+ * API "any" — devolver un Value de cualquier tipo
+ * ================================================================== */
+
+void infernal_return_value_raw(Value v) {
+    if (!g_ctx) {
+        fprintf(stderr,
+                "Error Lava: infernal_return_value_raw() fuera de una función "
+                "Lava\n");
+        abort();
+    }
+    if (g_ctx->type_set || g_ctx->value_set) {
+        fprintf(stderr,
+                "Error Lava: valor de retorno ya fijado antes de "
+                "infernal_return_value_raw()\n");
+        abort();
+    }
+    g_ctx->value     = copy_value_secure(v);
+    g_ctx->type      = valtype_to_tokentype(v.type);
+    g_ctx->type_set  = true;
+    g_ctx->value_set = true;
+}
+
+/* ==================================================================
  * Helpers UTF-8 para strings
  * ================================================================== */
 
@@ -676,10 +929,12 @@ int lava_register_fn(const char *name, void (*fn)(void), const char *sig) {
                 case 's': types[i] = &ffi_type_pointer; break;
                 case 'b': types[i] = &ffi_type_sint;    break;
                 case 'l': types[i] = &ffi_type_pointer; break;
+                case 'm': types[i] = &ffi_type_pointer; break;
+                case 'a': types[i] = &ffi_type_pointer; break;
                 default:
                     fprintf(stderr,
                             "Error Lava: firma '%s' inválida para '%s'. "
-                            "Solo i, f, s, b, l.\n", sig, name);
+                            "Solo i, f, s, b, l, m, a.\n", sig, name);
                     free(types);
                     return -1;
             }
@@ -834,6 +1089,7 @@ static Value lava_dispatch(int slot, int argc, Value *args) {
                 case 'i': *(int *)values[i] = value_to_c_int(args[i]); break;
                 case 'f': *(double *)values[i] = value_to_c_double(args[i]); break;
                 case 'b': *(int *)values[i] = value_to_c_bool(args[i]); break;
+
                 case 'l':
                     /* Pasamos la dirección del Value en args[]. Vive
                      * durante toda la llamada, así que es seguro desde
@@ -841,6 +1097,19 @@ static Value lava_dispatch(int slot, int argc, Value *args) {
                     *(Value **)values[i] = (args[i].type == VAL_LIST)
                                            ? &args[i] : NULL;
                     break;
+
+                case 'm':
+                    /* Igual que 'l' pero para mapas. */
+                    *(Value **)values[i] = (args[i].type == VAL_MAP)
+                                           ? &args[i] : NULL;
+                    break;
+
+                case 'a':
+                    /* "any": pasamos &args[i] sin comprobar el tipo.
+                     * La función Lava se encarga de inspeccionarlo. */
+                    *(Value **)values[i] = &args[i];
+                    break;
+
                 case 's': {
                     if (args[i].type == VAL_STRING) {
                         *(const char **)values[i] =
@@ -890,8 +1159,9 @@ static Value lava_dispatch(int slot, int argc, Value *args) {
 
         if (!ctx.type_set) {
             snprintf(err_buf, sizeof(err_buf),
-                     "Lava: '%s' no llamó a infernal_return_type() "
-                     "ni a infernal_return_list()", e->name);
+                     "Lava: '%s' no llamó a infernal_return_type(), "
+                     "infernal_return_list(), infernal_return_map() "
+                     "ni infernal_return_value_raw()", e->name);
             err_msg = err_buf;
         } else if (ctx.value_set) {
             result = ctx.value;
@@ -902,6 +1172,7 @@ static Value lava_dispatch(int slot, int argc, Value *args) {
                 case TOK_BOOL:   result = val_bool(false);    break;
                 case TOK_STRING: result = val_string("");     break;
                 case TOK_LIST:   result = val_list_empty();   break;
+                case TOK_MAP:    result = val_map_empty();    break;
                 default:         result = val_make_null();    break;
             }
         }
@@ -1191,4 +1462,8 @@ void lava_cleanup(void) {
         g_slots[i] = NULL;
     }
     g_slot_count = 0;
+}
+
+int lava_current_line(void) {
+    return current_eval_line;
 }
