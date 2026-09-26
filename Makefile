@@ -467,13 +467,19 @@ config:
 	$$EDITOR $(META_DIR)/VERSION $(META_DIR)/EDITION $(META_DIR)/HELP $(META_DIR)/WELCOME
 
 # --------------------------------------------------------------------
-# Limpieza (respeta config/)
+# Limpieza
 # --------------------------------------------------------------------
 clean:
 	@printf "$(RED)[CLEAN]$(RESET)\n"
 	@rm -rf $(BUILDDIR) $(TARGET)
 	@echo "rm -rf build infernal"
 	@printf "$(GREEN)✓$(RESET) Objetos y binario eliminados.\n"
+
+clean-lava:
+	@printf "$(RED)[CLEAN]$(RESET)\n"
+	@rm -rf build/lava/ $(TARGET)
+	@echo "rm -rf build/lava/"
+	@printf "$(GREEN)✓$(RESET) Lava limpiados.\n"
 
 # --------------------------------------------------------------------
 # Ayuda
