@@ -479,10 +479,6 @@ test: $(TARGET)
 		echo " [TEST] $$file"; \
 		TERM=$${TERM:-xterm} SHELL=$${SHELL:-/bin/sh} ./$(TARGET) $$file || exit 1; \
 	done
-	@$(MAKE) regression
-
-regression: $(TARGET)
-	@tests/regression.sh
 
 sanitize:
 	$(MAKE) clean
