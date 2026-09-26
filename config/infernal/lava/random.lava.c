@@ -24,7 +24,7 @@
  *   print(random.shuffle([1, 2, 3, 4, 5]))    # nueva lista barajada
  *   print(random.sample([1, 2, 3, 4, 5], 3))  # 3 elementos sin repetir
  *
-*/
+ */
 
 #include "lava.h"
 
@@ -229,26 +229,29 @@ LAVA_EXPORT void lava_randint(int a, int b) {
  * Lanza error si el rango está vacío o step == 0. */
 LAVA_EXPORT void lava_randrange(int start, int stop, int step) {
     ensure_seeded();
+
     if (step == 0)
         raise("random.randrange(): step no puede ser 0");
+
     if (step > 0 && start >= stop)
         raise("random.randrange(): rango vacío (start=%d >= stop=%d, step=%d)",
               start, stop, step);
-        if (step < 0 && start <= stop)
-            raise("random.randrange(): rango vacío (start=%d <= stop=%d, step=%d)",
-                  start, stop, step);
 
-            int64_t n;
-        if (step > 0) {
-            n = ((int64_t)stop - (int64_t)start + step - 1) / step;
-        } else {
-            int64_t abs_step = -(int64_t)step;
-            n = ((int64_t)start - (int64_t)stop + abs_step - 1) / abs_step;
-        }
+    if (step < 0 && start <= stop)
+        raise("random.randrange(): rango vacío (start=%d <= stop=%d, step=%d)",
+              start, stop, step);
 
-        int64_t idx = (int64_t)prng_bounded((uint64_t)n);
-        infernal_return_type("int");
-        infernal_return_value("%d", start + (int)(idx * step));
+    int64_t n;
+    if (step > 0) {
+        n = ((int64_t)stop - (int64_t)start + step - 1) / step;
+    } else {
+        int64_t abs_step = -(int64_t)step;
+        n = ((int64_t)start - (int64_t)stop + abs_step - 1) / abs_step;
+    }
+
+    int64_t idx = (int64_t)prng_bounded((uint64_t)n);
+    infernal_return_type("int");
+    infernal_return_value("%d", start + (int)(idx * step));
 }
 
 /* uniform(a, b) — float uniforme en [a, b). */
