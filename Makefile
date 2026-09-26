@@ -9,7 +9,8 @@
 #   make test     - compila Infernal si es necesario y ejecuta los demos uno por uno
 #   make clean    - elimina objetos y ejecutable (NO borra nada en config/)
 #   make sanitize - compila Infernal con AddressSanitizer y UBSan
-#   make install  - instala Infernal
+#   make install      - instala el binario de Infernal
+#   make install-lava - instala los módulos Lava (cabecera + .so)
 #   make help     - muestra esta ayuda
 # --------------------------------------------------------------------
 # Configuración
@@ -50,6 +51,30 @@ MIN ?= 0
 # Valores por defecto
 # --------------------------------------------------------------------
 GZIP_EMBEDDED := 1
+
+# --------------------------------------------------------------------
+# Colores ANSI (respeta NO_COLOR; si está definida, aunque sea vacía,
+# se desactivan los colores)
+# --------------------------------------------------------------------
+ifeq ($(origin NO_COLOR), undefined)
+  RED    := \033[1;31m
+  GREEN  := \033[1;32m
+  YELLOW := \033[1;33m
+  BLUE   := \033[1;34m
+  MAGENTA:= \033[1;35m
+  CYAN   := \033[1;36m
+  BOLD   := \033[1m
+  RESET  := \033[0m
+else
+  RED    :=
+  GREEN  :=
+  YELLOW :=
+  BLUE   :=
+  MAGENTA:=
+  CYAN   :=
+  BOLD   :=
+  RESET  :=
+endif
 
 # --------------------------------------------------------------------
 # Leer configuración solo si estamos compilando (no en clean/help/...)
@@ -144,7 +169,7 @@ DEPS := $(ALL_OBJS:.o=.d)
 # --------------------------------------------------------------------
 # Reglas principales
 # --------------------------------------------------------------------
-.PHONY: all check-tools check-ffi clean help test regression sanitize debug release config install re lava min minrelease
+.PHONY: all check-tools check-ffi clean help test regression sanitize debug release config install re lava min minrelease install-lava
 
 all: check-tools check-ffi $(TARGET)
 
@@ -154,36 +179,46 @@ min:
 minrelease:
 	$(MAKE) MIN=1 CFLAGS='$(CFLAGS) -O2 -DNDEBUG' LDFLAGS='$(LDFLAGS) -s'
 
+# --------------------------------------------------------------------
+# Comprobación de herramientas y libffi
+#
+# Se rodean de una línea en blanco al principio y al final para que
+# queden visualmente separados del resto de la salida de compilación.
+# --------------------------------------------------------------------
 check-tools:
-	@printf " [CHECK] herramientas... "
+	@echo ""
+	@printf "$(CYAN)[CHECK]$(RESET) herramientas... "
 	@for tool in $(firstword $(CC)) od sed tr mkdir basename cat; do \
 		if ! command -v $$tool >/dev/null 2>&1; then \
-			echo "FALTA: $$tool"; \
-			echo "Error: falta la herramienta '$$tool' necesaria para compilar."; \
+			printf "$(RED)FALTA$(RESET)\n"; \
+			printf "$(RED)Error: falta la herramienta '$$tool' necesaria para compilar.$(RESET)\n"; \
 			exit 1; \
 		fi; \
 	done; \
 	if [ "$(GZIP_EMBEDDED)" = "1" ]; then \
 		if ! command -v gzip >/dev/null 2>&1; then \
-			echo "FALTA: gzip"; \
-			echo "Error: gzip es necesario para comprimir los binarios embebidos."; \
-			echo "Puedes desactivar la compresión con GZIP_EMBEDDED=0 o instalando gzip."; \
+			printf "$(RED)FALTA$(RESET)\n"; \
+			printf "$(RED)Error: gzip es necesario para comprimir los binarios embebidos.$(RESET)\n"; \
+			printf "$(YELLOW)Puedes desactivar la compresión con GZIP_EMBEDDED=0 o instalando gzip.$(RESET)\n"; \
 			exit 1; \
 		fi; \
 	fi; \
-	echo "OK"
+	printf "$(GREEN)OK$(RESET)\n"
 
 check-ffi:
-	@printf " [CHECK] libffi... "
+	@printf "$(CYAN)[CHECK]$(RESET) libffi... "
 	@mkdir -p $(BUILDDIR)
 	@tmp=$(BUILDDIR)/.ffi-check-$$$$; \
 	if printf '#include <ffi.h>\nint main(void){return 0;}\n' | $(CC) $(CFLAGS) -x c - $(FFI_LIBS) -o $$tmp >/dev/null 2>&1; then \
-		rm -f $$tmp; echo "OK"; \
+		rm -f $$tmp; \
+		printf "$(GREEN)OK$(RESET)\n"; \
+		echo ""; \
 	else \
-		rm -f $$tmp; echo "FALTA"; \
-		echo "Error: Infernal necesita libffi con sus cabeceras de desarrollo (ffi.h) y biblioteca enlazable."; \
-		echo "Instálalo con el paquete de desarrollo de libffi de tu distribución."; \
-		echo "Si libffi está en una ruta no estándar, exporta FFI_CFLAGS y FFI_LIBS."; \
+		rm -f $$tmp; \
+		printf "$(RED)FALTA$(RESET)\n"; \
+		printf "$(RED)Error: Infernal necesita libffi con sus cabeceras de desarrollo (ffi.h) y biblioteca enlazable.$(RESET)\n"; \
+		printf "$(RED)Instálalo con el paquete de desarrollo de libffi de tu distribución.$(RESET)\n"; \
+		printf "$(YELLOW)Si libffi está en una ruta no estándar, exporta FFI_CFLAGS y FFI_LIBS.$(RESET)\n"; \
 		exit 1; \
 	fi
 
@@ -194,14 +229,15 @@ release:
 	$(MAKE) CFLAGS='$(CFLAGS) -O2 -DNDEBUG' LDFLAGS='$(LDFLAGS) -s'
 
 $(TARGET): $(ALL_OBJS)
-	@echo " [LD] $@"
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+	@printf "$(CYAN)[LD]$(RESET)   $@\n"
+	@$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+	@printf "$(GREEN)✓$(RESET) Binario generado: $(BOLD)$@$(RESET)\n"
 
 # Compilación de fuentes del proyecto
 $(BUILDDIR)/%.o: $(SRCDIR)/%.c
 	@mkdir -p $(dir $@)
-	@echo " [CC] $<"
-	$(CC) $(CFLAGS) $(INCDIRS) -MMD -MP -c $< -o $@
+	@printf "$(CYAN)[CC]$(RESET)   $<\n"
+	@$(CC) $(CFLAGS) $(INCDIRS) -MMD -MP -c $< -o $@
 
 # --------------------------------------------------------------------
 # Reglas para módulos .fire (sin comprimir)
@@ -209,7 +245,7 @@ $(BUILDDIR)/%.o: $(SRCDIR)/%.c
 ifneq ($(FIRE_FILES),)
 $(FIRE_GEN_DIR)/%.fire.c: $(FIRE_SRC_DIR)/%.fire
 	@mkdir -p $(dir $@)
-	@echo " [OD] $< -> $@"
+	@printf "$(BLUE)[OD]$(RESET)   $< $(BOLD)→$(RESET) $@\n"
 	@name=$$(basename $@ .fire.c); \
 	sanename=$$(echo $${name} | tr '-' '_'); \
 	echo "unsigned char config_infernal_fire_$${sanename}[] = {" > $@; \
@@ -219,8 +255,8 @@ $(FIRE_GEN_DIR)/%.fire.c: $(FIRE_SRC_DIR)/%.fire
 
 $(FIRE_GEN_DIR)/%.o: $(FIRE_GEN_DIR)/%.c
 	@mkdir -p $(dir $@)
-	@echo " [CC] $< (embedded)"
-	$(CC) $(CFLAGS) -c $< -o $@
+	@printf "$(CYAN)[CC]$(RESET)   $< $(MAGENTA)(embedded fire)$(RESET)\n"
+	@$(CC) $(CFLAGS) -c $< -o $@
 endif
 
 # --------------------------------------------------------------------
@@ -229,7 +265,7 @@ endif
 ifneq ($(BIN_FILES),)
 $(BIN_GEN_DIR)/%.c: $(BIN_SRC_DIR)/%
 	@mkdir -p $(dir $@)
-	@echo " [BIN] $< -> $@"
+	@printf "$(BLUE)[BIN]$(RESET)  $< $(BOLD)→$(RESET) $@\n"
 	@name=$$(basename $<); \
 	sanename=$$(echo $${name} | tr '-' '_'); \
 	if [ $(GZIP_EMBEDDED) -eq 1 ]; then \
@@ -246,8 +282,8 @@ $(BIN_GEN_DIR)/%.c: $(BIN_SRC_DIR)/%
 
 $(BIN_GEN_DIR)/%.o: $(BIN_GEN_DIR)/%.c
 	@mkdir -p $(dir $@)
-	@echo " [CC] $< (embedded)"
-	$(CC) $(CFLAGS) -c $< -o $@
+	@printf "$(CYAN)[CC]$(RESET)   $< $(MAGENTA)(embedded bin)$(RESET)\n"
+	@$(CC) $(CFLAGS) -c $< -o $@
 endif
 
 # --------------------------------------------------------------------
@@ -271,11 +307,11 @@ ifneq ($(MIN),1)
 ifneq ($(LAVA_EMBED_SRCS),)
 $(LAVA_GEN_DIR)/%.lava: $(LAVA_EMBED_DIR)/%.lava.c
 	@mkdir -p $(dir $@)
-	@echo " [LAVA-EMB] $< -> $@"
-	$(CC) $(CFLAGS) -fPIC -shared -I$(LAVA_DIR) -o $@ $<
+	@printf "$(MAGENTA)[LAVA-EMB]$(RESET) $< $(BOLD)→$(RESET) $@\n"
+	@$(CC) $(CFLAGS) -fPIC -shared -I$(LAVA_DIR) -o $@ $<
 
 $(LAVA_GEN_DIR)/%.lava.c: $(LAVA_GEN_DIR)/%.lava
-	@echo " [LAVA-GEN] $< -> $@"
+	@printf "$(MAGENTA)[LAVA-GEN]$(RESET) $< $(BOLD)→$(RESET) $@\n"
 	@name=$$(basename $@ .lava.c); \
 	sanename=$$(echo $${name} | tr '-' '_'); \
 	echo "unsigned char config_infernal_lava_$${sanename}[] = {" > $@; \
@@ -284,12 +320,12 @@ $(LAVA_GEN_DIR)/%.lava.c: $(LAVA_GEN_DIR)/%.lava
 	echo "unsigned int config_infernal_lava_$${sanename}_len = sizeof(config_infernal_lava_$${sanename});" >> $@
 
 $(LAVA_GEN_DIR)/%.o: $(LAVA_GEN_DIR)/%.c
-	@echo " [CC] $< (lava-emb)"
-	$(CC) $(CFLAGS) $(INCDIRS) -c $< -o $@
+	@printf "$(CYAN)[CC]$(RESET)   $< $(MAGENTA)(lava-emb)$(RESET)\n"
+	@$(CC) $(CFLAGS) $(INCDIRS) -c $< -o $@
 
 $(LAVA_EMBED_TABLE_SRC): $(LAVA_EMBED_SOS)
 	@mkdir -p $(dir $@)
-	@echo " [GEN] $@"
+	@printf "$(BLUE)[GEN]$(RESET)  $@\n"
 	@echo '// Auto-generated embedded Lava module table' > $@
 	@echo '#include <stddef.h>' >> $@
 	@echo '#include "embedded/embedded.h"' >> $@
@@ -310,8 +346,8 @@ $(LAVA_EMBED_TABLE_SRC): $(LAVA_EMBED_SOS)
 	@echo '};' >> $@
 
 $(LAVA_EMBED_TABLE_OBJ): $(LAVA_EMBED_TABLE_SRC)
-	@echo " [CC] $<"
-	$(CC) $(CFLAGS) $(INCDIRS) -c $< -o $@
+	@printf "$(CYAN)[CC]$(RESET)   $<\n"
+	@$(CC) $(CFLAGS) $(INCDIRS) -c $< -o $@
 endif
 endif
 
@@ -321,8 +357,8 @@ endif
 ifneq ($(LAVA_FILES),)
 $(LAVA_BUILD)/%.lava: $(LAVA_DIR)/%.c
 	@mkdir -p $(dir $@)
-	@echo " [LAVA] $< -> $@"
-	$(CC) $(CFLAGS) -fPIC -shared -I$(LAVA_DIR) -o $@ $<
+	@printf "$(MAGENTA)[LAVA]$(RESET) $< $(BOLD)→$(RESET) $@\n"
+	@$(CC) $(CFLAGS) -fPIC -shared -I$(LAVA_DIR) -o $@ $<
 endif
 
 # --------------------------------------------------------------------
@@ -330,7 +366,7 @@ endif
 # --------------------------------------------------------------------
 $(EMBED_TABLE_SRC): $(FIRE_FILES) $(BIN_FILES)
 	@mkdir -p $(dir $@)
-	@echo " [GEN] $@"
+	@printf "$(BLUE)[GEN]$(RESET)  $@\n"
 	@echo '// Auto-generated embedded module table' > $@
 	@echo '#include <stddef.h>' >> $@
 	@echo '#include "embedded/embedded.h"' >> $@
@@ -362,15 +398,15 @@ $(EMBED_TABLE_SRC): $(FIRE_FILES) $(BIN_FILES)
 	@echo '};' >> $@
 
 $(EMBED_TABLE_OBJ): $(EMBED_TABLE_SRC)
-	@echo " [CC] $<"
-	$(CC) $(CFLAGS) $(INCDIRS) -c $< -o $@
+	@printf "$(CYAN)[CC]$(RESET)   $<\n"
+	@$(CC) $(CFLAGS) $(INCDIRS) -c $< -o $@
 
 # --------------------------------------------------------------------
 # Reglas para metadatos
 # --------------------------------------------------------------------
 $(BUILDDIR)/metadata_%.c: $(META_DIR)/%
 	@mkdir -p $(dir $@)
-	@echo " [META] $<"
+	@printf "$(BLUE)[META]$(RESET) $<\n"
 	@name=$*; \
 	sanename=$$(echo $${name} | tr '-' '_'); \
 	echo "unsigned char metadata_$${sanename}[] = {" > $@; \
@@ -379,12 +415,12 @@ $(BUILDDIR)/metadata_%.c: $(META_DIR)/%
 	echo "unsigned int metadata_$${sanename}_len = sizeof(metadata_$${sanename}) - 1;" >> $@
 
 $(BUILDDIR)/metadata_%.o: $(BUILDDIR)/metadata_%.c
-	@echo " [CC] $< (metadata)"
-	$(CC) $(CFLAGS) -c $< -o $@
+	@printf "$(CYAN)[CC]$(RESET)   $< $(MAGENTA)(metadata)$(RESET)\n"
+	@$(CC) $(CFLAGS) -c $< -o $@
 
 $(META_HUB_SRC): $(patsubst %, $(META_DIR)/%, $(META_FILES))
 	@mkdir -p $(dir $@)
-	@echo " [GEN] $@"
+	@printf "$(BLUE)[GEN]$(RESET)  $@\n"
 	@echo '// Auto-generated embedded metadata hub' > $@
 	@echo '#include <string.h>' >> $@
 	@echo '#include <stddef.h>' >> $@
@@ -404,8 +440,8 @@ $(META_HUB_SRC): $(patsubst %, $(META_DIR)/%, $(META_FILES))
 	@echo '}' >> $@
 
 $(META_HUB_OBJ): $(META_HUB_SRC)
-	@echo " [CC] $<"
-	$(CC) $(CFLAGS) $(INCDIRS) -c $< -o $@
+	@printf "$(CYAN)[CC]$(RESET)   $<\n"
+	@$(CC) $(CFLAGS) $(INCDIRS) -c $< -o $@
 
 # Incluir dependencias automáticas si existen
 -include $(DEPS)
@@ -417,7 +453,7 @@ config:
 	@mkdir -p $(META_DIR)
 	@for f in $(META_FILES); do \
 		if [ ! -f $(META_DIR)/$$f ]; then \
-			echo "Creando $(META_DIR)/$$f con contenido por defecto..."; \
+			printf "$(YELLOW)Creando $(META_DIR)/$$f con contenido por defecto...$(RESET)\n"; \
 			case $$f in \
 				VERSION) echo "1.x" > $(META_DIR)/$$f ;; \
 				EDITION) echo "Infernal 1.x (Rama)\n──────────────────────────────────────────────\n\nVersión:           1.x\nEdición:           Para tu app\nArquitectura:      La de tu PC (puedes verlo con uname -m)\nSistema operativo: POSIX (Linux, macOS)\n\nDistribuido por:   Tu Nombre O Apodo\nProyecto:          Tu proyecto\nLicencia:          GPL v3+\n\nCódigo fuente:        https://github.com/tu-user/tu-repo-fork/tree/rama-release\nRepositorio:          https://github.com/tu-user/tu-repo-fork\nRepositorio oficial:  https://github.com/LyndsCorp/Infernal\nDocumentación:        https://github.com/LyndsCorp/Infernal-Documentation\n\nCopyright (C) AÑO Tu empresa/organizacion/nombre" > $(META_DIR)/$$f ;; \
@@ -426,7 +462,7 @@ config:
 			esac; \
 		fi; \
 	done
-	@echo "Abriendo metadatos para editar..."
+	@printf "$(CYAN)Abriendo metadatos para editar...$(RESET)\n"
 	@if [ -z "$$EDITOR" ]; then EDITOR=nano; fi; \
 	$$EDITOR $(META_DIR)/VERSION $(META_DIR)/EDITION $(META_DIR)/HELP $(META_DIR)/WELCOME
 
@@ -434,38 +470,45 @@ config:
 # Limpieza (respeta config/)
 # --------------------------------------------------------------------
 clean:
-	@echo " [CLEAN]"
-	rm -rf $(BUILDDIR) $(TARGET)
+	@printf "$(RED)[CLEAN]$(RESET)\n"
+	@rm -rf $(BUILDDIR) $(TARGET)
+	@echo "rm -rf build infernal"
+	@printf "$(GREEN)✓$(RESET) Objetos y binario eliminados.\n"
 
+# --------------------------------------------------------------------
+# Ayuda
+# --------------------------------------------------------------------
 help:
-	@echo "Infernal Makefile"
-	@echo "-----------------"
-	@echo "Objetivos:"
-	@echo "             : (vacío; solo ejecuta 'make') hace lo mismo que 'make all'"
-	@echo "  all        : compila el intérprete (por defecto)"
-	@echo "  min        : igual que 'all' pero sin las Lava embebidas"
-	@echo "  clean      : elimina objetos (build/) y el ejecutable (infernal) (no toca config/)"
-	@echo "  debug      : compila con soporte de depuración (-DDEBUG)"
-	@echo "  release    : compila optimizado para distribución (-O2, sin debug)"
-	@echo "  minrelease : igual que 'release' pero sin las Lava embebidas"
-	@echo "  config     : crea o edita los metadatos (VERSION, HELP, WELCOME, EDITION)"
-	@echo "  test       : compila Infernal si es necesario y ejecuta los demos uno por uno"
-	@echo "  sanitize   : compila Infernal con AddressSanitizer y UBSan"
-	@echo "  lava       : compila solo las librerías Lava de desarrollo (lava/*.c -> build/lava/*.lava)"
-	@echo "  help       : muestra esta ayuda"
+	@printf "$(BOLD)Infernal Makefile$(RESET)\n"
+	@printf "$(BOLD)-----------------$(RESET)\n"
+	@printf "$(BOLD)Objetivos:$(RESET)\n"
+	@printf "             : (vacío; solo ejecuta 'make') hace lo mismo que 'make all'\n"
+	@printf "  $(GREEN)all$(RESET)        : compila el intérprete (por defecto)\n"
+	@printf "  $(GREEN)min$(RESET)        : igual que 'all' pero sin las Lava embebidas\n"
+	@printf "  $(GREEN)clean$(RESET)      : elimina objetos (build/) y el ejecutable (infernal) (no toca config/)\n"
+	@printf "  $(GREEN)debug$(RESET)      : compila con soporte de depuración (-DDEBUG)\n"
+	@printf "  $(GREEN)release$(RESET)    : compila optimizado para distribución (-O2, sin debug)\n"
+	@printf "  $(GREEN)minrelease$(RESET) : igual que 'release' pero sin las Lava embebidas\n"
+	@printf "  $(GREEN)config$(RESET)     : crea o edita los metadatos (VERSION, HELP, WELCOME, EDITION)\n"
+	@printf "  $(GREEN)test$(RESET)       : compila Infernal si es necesario y ejecuta los demos uno por uno\n"
+	@printf "  $(GREEN)sanitize$(RESET)   : compila Infernal con AddressSanitizer y UBSan\n"
+	@printf "  $(GREEN)lava$(RESET)       : compila solo las librerías Lava de desarrollo (lava/*.c -> build/lava/*.lava)\n"
+	@printf "  $(GREEN)help$(RESET)       : muestra esta ayuda\n"
 	@echo
 	@echo
-	@echo "Instalación:"
-	@echo "  make install                       : instala Infernal para el usuario"
-	@echo "  sudo make install                  : instala Infernal para el sistema"
-	@echo "  sudo make install PREFIX=/mnt/ROOT/: instala Infernal en un sitio personalizado"
+	@printf "$(BOLD)Instalación:$(RESET)\n"
+	@printf "  $(GREEN)make install$(RESET)                       : instala el binario de Infernal para el usuario\n"
+	@printf "  $(GREEN)sudo make install$(RESET)                  : instala el binario de Infernal para el sistema\n"
+	@printf "  $(GREEN)make install-lava$(RESET)                  : instala los módulos Lava (cabecera + .so) para el usuario\n"
+	@printf "  $(GREEN)sudo make install-lava$(RESET)             : instala los módulos Lava (cabecera + .so) para el sistema\n"
+	@printf "  $(GREEN)sudo make install PREFIX=/mnt/ROOT/$(RESET): instala Infernal en un sitio personalizado\n"
 	@echo
-	@echo "· Sin sudo, se instala para el usuario."
-	@echo "· Con sudo, se instala para el sistema o el PREFIX indicado."
-	@echo "· Recuerda poner la / final en PREFIX."
+	@printf "· Sin sudo, se instala para el usuario.\n"
+	@printf "· Con sudo, se instala para el sistema o el PREFIX indicado.\n"
+	@printf "· Recuerda poner la / final en PREFIX.\n"
 	@echo
 	@echo
-	@echo "Estadísticas:"
+	@printf "$(BOLD)Estadísticas:$(RESET)\n"
 	@printf "  Archivos fuente (.c): %d\n" $(words $(SOURCES))
 	@printf "  Módulos .fire embebidos: %d\n" $(words $(FIRE_FILES))
 	@printf "  Binarios embebidos: %d\n" $(words $(BIN_FILES))
@@ -473,10 +516,11 @@ help:
 	@printf "  Librerías Lava embebidas (.lava.c): %d\n" $(words $(LAVA_EMBED_SRCS))
 	@printf "  Versión: "
 	@cat src/metadata/VERSION || echo "No disponible"
+	@echo
 
 test: $(TARGET)
 	@for file in demos/*.inf; do \
-		echo " [TEST] $$file"; \
+		printf "$(CYAN)[TEST]$(RESET) $$file\n"; \
 		TERM=$${TERM:-xterm} SHELL=$${SHELL:-/bin/sh} ./$(TARGET) $$file || exit 1; \
 	done
 
@@ -488,32 +532,74 @@ sanitize:
 
 lava: $(LAVA_SOS)
 
+# --------------------------------------------------------------------
+# Instalación del binario de Infernal (sin Lava)
+# --------------------------------------------------------------------
 install:
 	$(MAKE) release
 	@if [ "$$(id -u)" -eq 0 ]; then \
-		echo " [INSTALL ROOT] $(BINDIR)/$(TARGET)"; \
+		printf "$(YELLOW)[INSTALL ROOT]$(RESET) $(BINDIR)/$(TARGET)\n"; \
 		install -Dm755 $(TARGET) $(BINDIR)/$(TARGET); \
-		echo " [INSTALL ROOT] $(LAVA_SYSDIR)/"; \
+		printf "$(GREEN)✓ Infernal instalado para el sistema.$(RESET)\n"; \
+	else \
+		printf "$(GREEN)[INSTALL USER]$(RESET) $$HOME/.local/bin/$(TARGET)\n"; \
+		mkdir -p "$$HOME/.local/bin"; \
+		install -Dm755 $(TARGET) "$$HOME/.local/bin/$(TARGET)"; \
+		printf "$(GREEN)✓ Infernal instalado para el usuario.$(RESET)\n"; \
+		printf "$(YELLOW)Asegúrate de que $$HOME/.local/bin está en tu PATH.$(RESET)\n"; \
+	fi
+
+# --------------------------------------------------------------------
+# Instalación de los módulos Lava (cabecera + .so)
+#
+# Antes de tocar nada, verificamos que TODOS los $(LAVA_SOS) existan.
+# Si falta alguno, mostramos un error rojo llamativo y abortamos sin
+# instalar nada. Así evitamos el feo 'install: cannot stat' a mitad.
+# --------------------------------------------------------------------
+install-lava:
+	@missing=""; \
+	for so in $(LAVA_SOS); do \
+		if [ ! -f "$$so" ]; then \
+			missing="$$missing $$so"; \
+		fi; \
+	done; \
+	if [ -n "$$missing" ]; then \
+		printf "\n$(RED)════════════════════════════════════════════════════════════════$(RESET)\n"; \
+		printf "$(RED)  ✗  ERROR: faltan módulos Lava para instalar$(RESET)\n"; \
+		printf "$(RED)════════════════════════════════════════════════════════════════$(RESET)\n\n"; \
+		printf "Los siguientes archivos no existen:\n\n"; \
+		for f in $$missing; do \
+			printf "    $(RED)✗$(RESET)  %s\n" "$$f"; \
+		done; \
+		printf "\nCompila Infernal primero para generarlos:\n\n"; \
+		printf "    $(YELLOW)make$(RESET)                       # compila el binario y los módulos\n"; \
+		printf "    sudo $(YELLOW)make install-lava$(RESET)     # luego instálalos\n\n"; \
+		exit 1; \
+	fi; \
+	if [ "$$(id -u)" -eq 0 ]; then \
+		printf "$(YELLOW)[INSTALL ROOT]$(RESET) $(LAVA_SYSDIR)/\n"; \
 		mkdir -p $(LAVA_SYSDIR); \
 		install -Dm644 $(LAVA_DIR)/lava.h $(LAVA_SYSDIR)/lava.h; \
 		for so in $(LAVA_SOS); do \
+			printf "$(YELLOW)[INSTALL ROOT]$(RESET) $(LAVA_SYSDIR)/$$(basename $$so)\n"; \
 			install -Dm644 $$so $(LAVA_SYSDIR)/$$(basename $$so); \
 		done; \
-		echo "Infernal instalado para el sistema."; \
+		printf "$(GREEN)✓ Módulos Lava instalados para el sistema.$(RESET)\n"; \
 	else \
-		echo " [INSTALL USER] $$HOME/.local/bin/$(TARGET)"; \
-		mkdir -p "$$HOME/.local/bin"; \
-		install -Dm755 $(TARGET) "$$HOME/.local/bin/$(TARGET)"; \
-		echo " [INSTALL USER] $$HOME/.infernal/lava/"; \
+		printf "$(GREEN)[INSTALL USER]$(RESET) $$HOME/.infernal/lava/\n"; \
 		mkdir -p "$$HOME/.infernal/lava"; \
 		install -Dm644 $(LAVA_DIR)/lava.h "$$HOME/.infernal/lava/lava.h"; \
 		for so in $(LAVA_SOS); do \
+			printf "$(GREEN)[INSTALL USER]$(RESET) $$HOME/.infernal/lava/$$(basename $$so)\n"; \
 			install -Dm644 $$so "$$HOME/.infernal/lava/$$(basename $$so)"; \
 		done; \
-		echo "Infernal instalado para el usuario."; \
-		echo "Asegúrate de que $$HOME/.local/bin está en tu PATH."; \
+		printf "$(GREEN)✓ Módulos Lava instalados para el usuario.$(RESET)\n"; \
 	fi
 
 re:
 	$(MAKE) clean
 	$(MAKE)
+
+rerelease:
+	$(MAKE) clean
+	$(MAKE) release
