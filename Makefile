@@ -3,19 +3,20 @@
 #   make          - compila el intérprete y sus módulos .fire / bins / lava embebidos
 #   make debug    - compila con logs de depuración (-DDEBUG)
 #   make release  - compila optimizado para distribución (-O2, sin debug)
+#   make min      - igual que 'make' pero sin las Lava embebidas
+#   make minrelease - igual que 'make release' pero sin las Lava embebidas
 #   make config   - crea/edita los metadatos (VERSION, HELP, WELCOME, EDITION)
 #   make test     - compila Infernal si es necesario y ejecuta los demos uno por uno
 #   make clean    - elimina objetos y ejecutable (NO borra nada en config/)
 #   make sanitize - compila Infernal con AddressSanitizer y UBSan
 #   make install  - instala Infernal
 #   make help     - muestra esta ayuda
-
-
 # --------------------------------------------------------------------
 # Configuración
 # --------------------------------------------------------------------
 CC       := gcc
 
+# libffi: sin pkg-config. Se pueden sobrescribir desde el entorno o la línea de comandos.
 FFI_CFLAGS ?=
 FFI_LIBS   ?= -lffi
 
@@ -41,6 +42,9 @@ PREFIX ?= /
 BINDIR ?= $(PREFIX)usr/bin
 LAVA_SYSDIR ?= $(PREFIX)usr/share/infernal/lava
 LAVA_USERDIR := $$HOME/.infernal/lava
+
+# MIN=1 desactiva la inclusión de Lava embebidas
+MIN ?= 0
 
 # --------------------------------------------------------------------
 # Valores por defecto
@@ -72,7 +76,11 @@ ifeq ($(filter clean distclean help config,$(MAKECMDGOALS)),)
   else
     $(info Compresión gzip de binarios embebidos: DESACTIVADA)
   endif
-  $(info Lava embebidas detectadas: $(words $(wildcard $(LAVA_EMBED_DIR)/*.lava.c)) módulo(s))
+  ifneq ($(MIN),1)
+    $(info Lava embebidas detectadas: $(words $(wildcard $(LAVA_EMBED_DIR)/*.lava.c)) módulo(s))
+  else
+    $(info Lava embebidas: DESACTIVADAS (modo MIN))
+  endif
 endif
 
 # --------------------------------------------------------------------
@@ -95,13 +103,15 @@ BIN_GEN_OBJS := $(BIN_GEN_SRCS:.c=.o)
 LAVA_FILES := $(wildcard $(LAVA_DIR)/*.c)
 LAVA_SOS   := $(patsubst $(LAVA_DIR)/%.c, $(LAVA_BUILD)/%.lava, $(LAVA_FILES))
 
-# Lava embebidas (fuente .lava.c -> .lava -> bytes -> .lava.c -> .o)
+# Lava embebidas (solo si MIN != 1)
+ifneq ($(MIN),1)
 LAVA_EMBED_SRCS   := $(wildcard $(LAVA_EMBED_DIR)/*.lava.c)
 LAVA_EMBED_SOS    := $(patsubst $(LAVA_EMBED_DIR)/%.lava.c, $(LAVA_GEN_DIR)/%.lava, $(LAVA_EMBED_SRCS))
 LAVA_EMBED_GEN    := $(LAVA_EMBED_SOS:.lava=.lava.c)
 LAVA_EMBED_OBJS   := $(LAVA_EMBED_GEN:.c=.o)
 LAVA_EMBED_TABLE_SRC := $(BUILDDIR)/embedded_lava_table.c
 LAVA_EMBED_TABLE_OBJ := $(LAVA_EMBED_TABLE_SRC:.c=.o)
+endif
 
 # Tabla de módulos embebidos Fire+Bins (auto-generada)
 EMBED_TABLE_SRC := $(BUILDDIR)/embedded_table.c
@@ -122,8 +132,10 @@ endif
 ifneq ($(BIN_FILES),)
 ALL_OBJS += $(BIN_GEN_OBJS)
 endif
+ifneq ($(MIN),1)
 ifneq ($(LAVA_EMBED_SRCS),)
 ALL_OBJS += $(LAVA_EMBED_OBJS) $(LAVA_EMBED_TABLE_OBJ)
+endif
 endif
 
 # Archivos de dependencias automáticas
@@ -132,9 +144,15 @@ DEPS := $(ALL_OBJS:.o=.d)
 # --------------------------------------------------------------------
 # Reglas principales
 # --------------------------------------------------------------------
-.PHONY: all check-tools check-ffi clean help test regression sanitize debug release config install re lava
+.PHONY: all check-tools check-ffi clean help test regression sanitize debug release config install re lava min minrelease
 
 all: check-tools check-ffi $(TARGET)
+
+min:
+	$(MAKE) MIN=1
+
+minrelease:
+	$(MAKE) MIN=1 CFLAGS='$(CFLAGS) -O2 -DNDEBUG' LDFLAGS='$(LDFLAGS) -s'
 
 check-tools:
 	@printf " [CHECK] herramientas... "
@@ -249,6 +267,7 @@ endif
 #
 # En runtime se cargan con memfd_create + /proc/self/fd/N (Linux).
 # --------------------------------------------------------------------
+ifneq ($(MIN),1)
 ifneq ($(LAVA_EMBED_SRCS),)
 $(LAVA_GEN_DIR)/%.lava: $(LAVA_EMBED_DIR)/%.lava.c
 	@mkdir -p $(dir $@)
@@ -293,6 +312,7 @@ $(LAVA_EMBED_TABLE_SRC): $(LAVA_EMBED_SOS)
 $(LAVA_EMBED_TABLE_OBJ): $(LAVA_EMBED_TABLE_SRC)
 	@echo " [CC] $<"
 	$(CC) $(CFLAGS) $(INCDIRS) -c $< -o $@
+endif
 endif
 
 # --------------------------------------------------------------------
@@ -423,9 +443,11 @@ help:
 	@echo "Objetivos:"
 	@echo "             : (vacío; solo ejecuta 'make') hace lo mismo que 'make all'"
 	@echo "  all        : compila el intérprete (por defecto)"
+	@echo "  min        : igual que 'all' pero sin las Lava embebidas"
 	@echo "  clean      : elimina objetos (build/) y el ejecutable (infernal) (no toca config/)"
 	@echo "  debug      : compila con soporte de depuración (-DDEBUG)"
 	@echo "  release    : compila optimizado para distribución (-O2, sin debug)"
+	@echo "  minrelease : igual que 'release' pero sin las Lava embebidas"
 	@echo "  config     : crea o edita los metadatos (VERSION, HELP, WELCOME, EDITION)"
 	@echo "  test       : compila Infernal si es necesario y ejecuta los demos uno por uno"
 	@echo "  sanitize   : compila Infernal con AddressSanitizer y UBSan"
