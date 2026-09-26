@@ -9,6 +9,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdarg.h>
+#include <stdint.h>
+#include <limits.h>
+#include <math.h>
 #include "eval_index.h"
 #include "eval_slice.h"
 #include "helpers.h"
@@ -26,6 +29,46 @@ static void eval_index_error(Value *base, Value *idx, int line, const char *fmt,
     value_free(base);
     value_free(idx);
     error(line, "%s", message);
+}
+
+/* Devuelve el carácter UTF-8 de índice 1-based como string independiente.
+ * Las secuencias malformadas se tratan byte a byte para no leer fuera de la
+ * cadena ni devolver fragmentos de un carácter multibyte. */
+static char *utf8_char_at(const char *s, size_t wanted, size_t *char_count) {
+    size_t index = 0;
+    const unsigned char *p = (const unsigned char *)s;
+
+    while (*p) {
+        const unsigned char *start = p;
+        size_t width = 1;
+        if (*p < 0x80) {
+            width = 1;
+        } else if ((*p & 0xE0) == 0xC0 && p[1] &&
+                   (p[1] & 0xC0) == 0x80) {
+            width = 2;
+        } else if ((*p & 0xF0) == 0xE0 && p[1] && p[2] &&
+                   (p[1] & 0xC0) == 0x80 && (p[2] & 0xC0) == 0x80) {
+            width = 3;
+        } else if ((*p & 0xF8) == 0xF0 && p[1] && p[2] && p[3] &&
+                   (p[1] & 0xC0) == 0x80 && (p[2] & 0xC0) == 0x80 &&
+                   (p[3] & 0xC0) == 0x80) {
+            width = 4;
+        }
+
+        index++;
+        if (index == wanted) {
+            char *out = malloc(width + 1);
+            if (!out) error(current_eval_line, "Memoria insuficiente al indexar string");
+            memcpy(out, start, width);
+            out[width] = '\0';
+            if (char_count) *char_count = index;
+            return out;
+        }
+        p += width;
+    }
+
+    if (char_count) *char_count = index;
+    return NULL;
 }
 
 Value eval_index(ASTNode *expr) {
@@ -63,10 +106,10 @@ Value eval_index(ASTNode *expr) {
                 !expr->data.idx.list->data.var.clone) {
                 if (idx.type == VAL_FLOAT) {
                     double f = idx.data.fval;
-                    int i = (int)f;
-                    if ((double)i != f) eval_index_error(&base, &idx, line, "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
+                    if (!isfinite(f) || f < 1.0 || f > (double)base.data.list.count || trunc(f) != f)
+                        eval_index_error(&base, &idx, line, "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
                     idx.type = VAL_INT;
-                    idx.data.ival = i;
+                    idx.data.ival = (int)f;
                 }
                 if (idx.type != VAL_INT || idx.data.ival < 1 || idx.data.ival > base.data.list.count)
                     eval_index_error(&base, &idx, line, "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
@@ -79,17 +122,13 @@ Value eval_index(ASTNode *expr) {
                 if (idx.type != VAL_INT) {
                     if (idx.type == VAL_FLOAT) {
                         double f = idx.data.fval;
-                        int i = (int)f;
-                        if ((double)i == f) {
-                            if (i < 1 || i > base.data.list.count)
-                                eval_index_error(&base, &idx, line, "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
-                            if (base.data.list.items == NULL)
-                                eval_index_error(&base, &idx, line, "Lista corrupta: items es NULL");
-                            result = copy_value_secure(base.data.list.items[i-1]);
-                            break;
-                        } else {
+                        if (!isfinite(f) || f < 1.0 || f > (double)base.data.list.count || trunc(f) != f)
                             eval_index_error(&base, &idx, line, "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
-                        }
+                        int i = (int)f;
+                        if (base.data.list.items == NULL)
+                            eval_index_error(&base, &idx, line, "Lista corrupta: items es NULL");
+                        result = copy_value_secure(base.data.list.items[i-1]);
+                        break;
                     } else {
                         eval_index_error(&base, &idx, line, "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
                     }
@@ -103,30 +142,30 @@ Value eval_index(ASTNode *expr) {
             break;
         }
         case VAL_STRING: {
-            if (idx.type != VAL_INT) {
-                if (idx.type == VAL_FLOAT) {
-                    double f = idx.data.fval;
-                    int i = (int)f;
-                    if ((double)i == f) {
-                        size_t length = strlen(base.data.sval);
-                        if (i < 1 || (size_t)i > length)
-                            eval_index_error(&base, &idx, line, "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
-                        char character[2] = {base.data.sval[i-1], '\0'};
-                        result = val_string(character);
-                        break;
-                    } else {
-                        eval_index_error(&base, &idx, line, "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
-                    }
-                } else {
+            int position;
+            if (idx.type == VAL_INT) {
+                position = idx.data.ival;
+            } else if (idx.type == VAL_FLOAT) {
+                double f = idx.data.fval;
+                if (!isfinite(f) || f < (double)INT_MIN || f > (double)INT_MAX)
                     eval_index_error(&base, &idx, line, "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
-                }
-            }
-            int position = idx.data.ival;
-            size_t length = strlen(base.data.sval);
-            if (position < 1 || (size_t)position > length)
+                position = (int)f;
+                if ((double)position != f)
+                    eval_index_error(&base, &idx, line, "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
+            } else {
                 eval_index_error(&base, &idx, line, "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
-            char character[2] = {base.data.sval[position - 1], '\0'};
+                return val_make_null();
+            }
+
+            if (position < 1)
+                eval_index_error(&base, &idx, line, "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
+
+            size_t count = 0;
+            char *character = utf8_char_at(base.data.sval, (size_t)position, &count);
+            if (!character)
+                eval_index_error(&base, &idx, line, "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
             result = val_string(character);
+            free(character);
             break;
         }
         case VAL_MAP: {

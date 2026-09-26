@@ -7,6 +7,8 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <limits.h>
+#include <stdint.h>
 #include "value.h"
 #include "memory.h"
 #include "runtime/error.h"
@@ -42,10 +44,20 @@ Value val_list_empty(void) {
 }
 
 void val_list_append(Value *list, Value item) {
+    if (list->type != VAL_LIST)
+        error(0, "val_list_append: el valor no es una lista");
+    if (list->data.list.count < 0 || list->data.list.cap < 0 ||
+        list->data.list.count > list->data.list.cap)
+        error(0, "val_list_append: estado interno de lista inválido");
     if (list->data.list.count >= list->data.list.cap) {
-        list->data.list.cap = list->data.list.cap == 0 ? 4 : list->data.list.cap * 2;
+        if (list->data.list.cap > INT_MAX / 2)
+            error(0, "La lista ha alcanzado el límite máximo de elementos");
+        int new_cap = list->data.list.cap == 0 ? 4 : list->data.list.cap * 2;
+        if ((size_t)new_cap > SIZE_MAX / sizeof(Value))
+            error(0, "La lista es demasiado grande para reservar memoria");
+        list->data.list.cap = new_cap;
         list->data.list.items = infernal_realloc(list->data.list.items,
-                                                 list->data.list.cap * sizeof(Value));
+                                                 (size_t)new_cap * sizeof(Value));
     }
     list->data.list.items[list->data.list.count++] = item;
 }
@@ -182,9 +194,16 @@ void val_map_set_typed(Value *map, const char *key, Value value, int value_type)
     }
     int expected = value_type != 0 ? value_type : valtype_to_tokentype(value.type);
     validate_map_value_type(key, value, expected);
+    if (md->count < 0 || md->cap < 0 || md->count > md->cap)
+        error(0, "val_map_set_typed: estado interno del mapa inválido");
     if (md->count >= md->cap) {
-        md->cap = md->cap == 0 ? 4 : md->cap * 2;
-        md->pairs = infernal_realloc(md->pairs, md->cap * sizeof(MapPair));
+        if (md->cap > INT_MAX / 2)
+            error(0, "El mapa ha alcanzado el límite máximo de elementos");
+        int new_cap = md->cap == 0 ? 4 : md->cap * 2;
+        if ((size_t)new_cap > SIZE_MAX / sizeof(MapPair))
+            error(0, "El mapa es demasiado grande para reservar memoria");
+        md->cap = new_cap;
+        md->pairs = infernal_realloc(md->pairs, (size_t)new_cap * sizeof(MapPair));
     }
     md->pairs[md->count].key = infernal_strdup(key);
     md->pairs[md->count].value = copy_value_secure(value);

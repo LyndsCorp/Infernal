@@ -9,13 +9,19 @@
 #   make sanitize - compila Infernal con AddressSanitizer y UBSan
 #   make install  - instala Infernal
 #   make help     - muestra esta ayuda
+
+
 # --------------------------------------------------------------------
 # Configuración
 # --------------------------------------------------------------------
 CC       := gcc
+
+FFI_CFLAGS ?=
+FFI_LIBS   ?= -lffi
+
 # Por defecto: con debug info, sin logs
-CFLAGS   := -Wall -Wextra -g -std=c11 -D_GNU_SOURCE
-LDFLAGS  := -ldl -lm -lffi -rdynamic
+CFLAGS   := -Wall -Wextra -g -std=c11 -D_GNU_SOURCE $(FFI_CFLAGS)
+LDFLAGS  := $(FFI_LIBS) -ldl -lm -rdynamic
 INCDIRS  := -Isrc
 
 SRCDIR       := src
@@ -126,9 +132,42 @@ DEPS := $(ALL_OBJS:.o=.d)
 # --------------------------------------------------------------------
 # Reglas principales
 # --------------------------------------------------------------------
-.PHONY: all clean help test sanitize debug release config install re lava
+.PHONY: all check-tools check-ffi clean help test regression sanitize debug release config install re lava
 
-all: $(TARGET)
+all: check-tools check-ffi $(TARGET)
+
+check-tools:
+	@printf " [CHECK] herramientas... "
+	@for tool in $(firstword $(CC)) od sed tr mkdir basename cat; do \
+		if ! command -v $$tool >/dev/null 2>&1; then \
+			echo "FALTA: $$tool"; \
+			echo "Error: falta la herramienta '$$tool' necesaria para compilar."; \
+			exit 1; \
+		fi; \
+	done; \
+	if [ "$(GZIP_EMBEDDED)" = "1" ]; then \
+		if ! command -v gzip >/dev/null 2>&1; then \
+			echo "FALTA: gzip"; \
+			echo "Error: gzip es necesario para comprimir los binarios embebidos."; \
+			echo "Puedes desactivar la compresión con GZIP_EMBEDDED=0 o instalando gzip."; \
+			exit 1; \
+		fi; \
+	fi; \
+	echo "OK"
+
+check-ffi:
+	@printf " [CHECK] libffi... "
+	@mkdir -p $(BUILDDIR)
+	@tmp=$(BUILDDIR)/.ffi-check-$$$$; \
+	if printf '#include <ffi.h>\nint main(void){return 0;}\n' | $(CC) $(CFLAGS) -x c - $(FFI_LIBS) -o $$tmp >/dev/null 2>&1; then \
+		rm -f $$tmp; echo "OK"; \
+	else \
+		rm -f $$tmp; echo "FALTA"; \
+		echo "Error: Infernal necesita libffi con sus cabeceras de desarrollo (ffi.h) y biblioteca enlazable."; \
+		echo "Instálalo con el paquete de desarrollo de libffi de tu distribución."; \
+		echo "Si libffi está en una ruta no estándar, exporta FFI_CFLAGS y FFI_LIBS."; \
+		exit 1; \
+	fi
 
 debug:
 	$(MAKE) CFLAGS='$(CFLAGS) -DDEBUG'
@@ -416,8 +455,12 @@ help:
 test: $(TARGET)
 	@for file in demos/*.inf; do \
 		echo " [TEST] $$file"; \
-		./$(TARGET) $$file || exit 1; \
+		TERM=$${TERM:-xterm} SHELL=$${SHELL:-/bin/sh} ./$(TARGET) $$file || exit 1; \
 	done
+	@$(MAKE) regression
+
+regression: $(TARGET)
+	@tests/regression.sh
 
 sanitize:
 	$(MAKE) clean

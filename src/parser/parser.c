@@ -235,14 +235,14 @@ char *build_command_from_tokens(int start_pos, int end_pos) {
         if (i > start_pos) {
             int prev_end = ts.tokens[i-1].end_col;
             if (t->start_col > prev_end) {
-                cmd = realloc(cmd, len + 2);
+                cmd = infernal_realloc(cmd, len + 2);
                 cmd[len++] = ' ';
                 cmd[len] = '\0';
             }
         }
 
         size_t tlen = strlen(t->lexeme);
-        cmd = realloc(cmd, len + tlen + 1);
+        cmd = infernal_realloc(cmd, len + tlen + 1);
         memcpy(cmd + len, t->lexeme, tlen);
         len += tlen;
         cmd[len] = '\0';
@@ -709,7 +709,7 @@ NodeList parse_block(const char *terminator) {
             while (ts_peek().type != TOK_NEWLINE && ts_peek().type != TOK_EOF) {
                 Token tok = ts_advance();
                 char *arg = (tok.type == TOK_STRING_LITERAL) ? strip_quotes(tok.lexeme) : strdup(tok.lexeme);
-                args = realloc(args, (argc + 1) * sizeof(char*));
+                args = infernal_realloc(args, (size_t)(argc + 1) * sizeof(char*));
                 args[argc++] = arg;
             }
             stmt = node_create(NODE_EXECUTE, t.line);
@@ -1015,8 +1015,8 @@ NodeList parse_block(const char *terminator) {
                             error(t.line, "El parámetro '%s' está repetido", pname);
                     }
                     int pcount = stmt->data.func.param_count;
-                    stmt->data.func.params = realloc(stmt->data.func.params, (pcount + 1) * sizeof(char*));
-                    stmt->data.func.ptypes = realloc(stmt->data.func.ptypes, (pcount + 1) * sizeof(int));
+                    stmt->data.func.params = infernal_realloc(stmt->data.func.params, (size_t)(pcount + 1) * sizeof(char*));
+                    stmt->data.func.ptypes = infernal_realloc(stmt->data.func.ptypes, (size_t)(pcount + 1) * sizeof(int));
                     stmt->data.func.params[pcount] = pname;
                     stmt->data.func.ptypes[pcount] = ptype;
                     stmt->data.func.param_count = pcount + 1;
@@ -1454,22 +1454,22 @@ NodeList parse_block(const char *terminator) {
             ts_advance();   /* consumir 'global'  */
             ts_advance();   /* consumir 'function' */
 
-            stmt = node_create(NODE_FUNC_DEF, t.line);
-        stmt->data.func.is_global = true;
+                stmt = node_create(NODE_FUNC_DEF, t.line);
+            stmt->data.func.is_global = true;
 
-        if (ts_peek().type != TOK_IDENT) {
-            ast_free(stmt);
+            if (ts_peek().type != TOK_IDENT) {
+                ast_free(stmt);
             stmt = NULL;
-            error(t.line, "Se esperaba nombre de función después de 'global function'");
-        }
-        stmt->data.func.name = strdup(ts_advance().lexeme);
-        stmt->data.func.params = NULL;
-        stmt->data.func.ptypes = NULL;
-        stmt->data.func.param_count = 0;
-        stmt->data.func.body = (NodeList){NULL, 0, 0};
+                error(t.line, "Se esperaba nombre de función después de 'global function'");
+            }
+            stmt->data.func.name = strdup(ts_advance().lexeme);
+            stmt->data.func.params = NULL;
+            stmt->data.func.ptypes = NULL;
+            stmt->data.func.param_count = 0;
+            stmt->data.func.body = (NodeList){NULL, 0, 0};
         nodelist_add(&block, stmt);
 
-        if (func_lookup(stmt->data.func.name) != NULL)
+            if (func_lookup(stmt->data.func.name) != NULL)
             error(t.line, "'%s' ya existe como función y no puede ser redefinida.", stmt->data.func.name);
 
             if (!ts_match(TOK_LPAREN)) {
@@ -1492,8 +1492,8 @@ NodeList parse_block(const char *terminator) {
                             error(t.line, "El parámetro '%s' está repetido", pname);
                     }
                     int pcount = stmt->data.func.param_count;
-                    stmt->data.func.params = realloc(stmt->data.func.params, (pcount + 1) * sizeof(char*));
-                    stmt->data.func.ptypes = realloc(stmt->data.func.ptypes, (pcount + 1) * sizeof(int));
+                    stmt->data.func.params = infernal_realloc(stmt->data.func.params, (size_t)(pcount + 1) * sizeof(char*));
+                    stmt->data.func.ptypes = infernal_realloc(stmt->data.func.ptypes, (size_t)(pcount + 1) * sizeof(int));
                     stmt->data.func.params[pcount] = pname;
                     stmt->data.func.ptypes[pcount] = ptype;
                     stmt->data.func.param_count = pcount + 1;

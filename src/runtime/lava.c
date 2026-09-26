@@ -35,6 +35,7 @@
 #include <ffi.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <math.h>
 #include <string.h>
 #include <stdarg.h>
 #include <setjmp.h>
@@ -126,7 +127,11 @@ Value *get_infernal_const(const char *name) {
 static int value_to_c_int(Value v) {
     switch (v.type) {
         case VAL_INT:    return v.data.ival;
-        case VAL_FLOAT:  return (int)v.data.fval;
+        case VAL_FLOAT:
+            if (!isfinite(v.data.fval) || v.data.fval < (double)INT_MIN ||
+                v.data.fval > (double)INT_MAX)
+                error(0, "Lava: el float no cabe en un int");
+            return (int)v.data.fval;
         case VAL_BOOL:   return v.data.bval ? 1 : 0;
         case VAL_STRING: {
             const char *s = v.data.sval ? v.data.sval : "";
@@ -357,7 +362,11 @@ int lava_list_int(lava_list *l, int index) {
     Value item = v->data.list.items[index - 1];
     switch (item.type) {
         case VAL_INT:    return item.data.ival;
-        case VAL_FLOAT:  return (int)item.data.fval;
+        case VAL_FLOAT:
+            if (!isfinite(item.data.fval) || item.data.fval < (double)INT_MIN ||
+                item.data.fval > (double)INT_MAX)
+                return 0;
+            return (int)item.data.fval;
         case VAL_BOOL:   return item.data.bval ? 1 : 0;
         case VAL_STRING: return (int)strtol(item.data.sval ? item.data.sval : "0", NULL, 10);
         default:         return 0;
@@ -568,7 +577,11 @@ int lava_map_get_int(lava_map *m, const char *key) {
     if (!p) return 0;
     switch (p->value.type) {
         case VAL_INT:    return p->value.data.ival;
-        case VAL_FLOAT:  return (int)p->value.data.fval;
+        case VAL_FLOAT:
+            if (!isfinite(p->value.data.fval) || p->value.data.fval < (double)INT_MIN ||
+                p->value.data.fval > (double)INT_MAX)
+                return 0;
+            return (int)p->value.data.fval;
         case VAL_BOOL:   return p->value.data.bval ? 1 : 0;
         case VAL_STRING: return (int)strtol(
             p->value.data.sval ? p->value.data.sval : "0", NULL, 10);
@@ -1278,6 +1291,7 @@ static int lava_load_from_path(const char *path, const char *prefix) {
  */
 static int lava_load_from_memory(const unsigned char *data, size_t len,
                                  const char *name, const char *prefix) {
+    (void)name;
 #if defined(__linux__) && defined(SYS_memfd_create)
     int fd = (int)syscall(SYS_memfd_create, "infernal_lava", MFD_CLOEXEC);
     if (fd >= 0) {

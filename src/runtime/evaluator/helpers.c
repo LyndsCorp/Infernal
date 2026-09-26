@@ -16,6 +16,9 @@
 #include <stdlib.h>
 #include <ctype.h>
 #include <strings.h>
+#include <errno.h>
+#include <limits.h>
+#include <math.h>
 
 bool val_is_truthy(Value v) {
     switch (v.type) {
@@ -125,24 +128,35 @@ Value resolve_reference(Value v, int line) {
     const char *container = v.data.ref.container_name ? v.data.ref.container_name : "";
     VarEntry *entry = scope_find(current_scope, container);
     if (!entry) {
+        value_free(&v);
         error(line, "La referencia apunta a una variable inexistente '%s'", container);
     }
 
     Value result = val_make_null();
     if (v.data.ref.is_map) {
         if (entry->value.type != VAL_MAP || !entry->value.data.map) {
-            error(line, "La referencia '%s[%s]' ya no apunta a un mapa", container, v.data.ref.map_key);
+            char message[1024];
+            snprintf(message, sizeof(message), "La referencia '%s[%s]' ya no apunta a un mapa",
+                     container, v.data.ref.map_key ? v.data.ref.map_key : "");
+            value_free(&v);
+            error(line, "%s", message);
         }
         if (!val_map_has(entry->value, v.data.ref.map_key)) {
-            error(line, "La clave '%s' ya no existe en el mapa '%s'", v.data.ref.map_key, container);
+            char message[1024];
+            snprintf(message, sizeof(message), "La clave '%s' ya no existe en el mapa '%s'",
+                     v.data.ref.map_key ? v.data.ref.map_key : "", container);
+            value_free(&v);
+            error(line, "%s", message);
         }
         result = val_map_get(entry->value, v.data.ref.map_key);
     } else {
         if (entry->value.type != VAL_LIST) {
+            value_free(&v);
             error(line, "La referencia apunta a una lista inexistente '%s'", container);
         }
         int idx = v.data.ref.index;
         if (idx < 1 || idx > entry->value.data.list.count) {
+            value_free(&v);
             error(line, "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
         }
         result = copy_value_secure(entry->value.data.list.items[idx - 1]);
@@ -187,8 +201,10 @@ int extract_integer_index(ASTNode *node, int line) {
 
     if (node->kind == NODE_INDEX) {
         Value idx_val = eval_expr(node->data.idx.index);
-        if (idx_val.type != VAL_INT)
+        if (idx_val.type != VAL_INT) {
+            value_free(&idx_val);
             error(line, "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
+        }
         return idx_val.data.ival;
     }
 
@@ -197,14 +213,21 @@ int extract_integer_index(ASTNode *node, int line) {
     }
 
     Value v = eval_expr(node);
-    if (v.type == VAL_INT)
-        return v.data.ival;
+    if (v.type == VAL_INT) {
+        int result = v.data.ival;
+        value_free(&v);
+        return result;
+    }
     if (v.type == VAL_LIST && v.data.list.count == 1) {
         Value item = v.data.list.items[0];
-        if (item.type == VAL_INT)
-            return item.data.ival;
+        if (item.type == VAL_INT) {
+            int result = item.data.ival;
+            value_free(&v);
+            return result;
+        }
     }
 
+    value_free(&v);
     error(line, "No se pudo extraer un índice entero para la eliminación");
     return -1;
 }
@@ -213,9 +236,10 @@ bool try_convert_value(Value *val, int target_tok_type) {
     if (val->type == VAL_STRING) {
         const char *s = val->data.sval;
         if (target_tok_type == TOK_INT) {
-            char *end;
+            char *end = NULL;
+            errno = 0;
             long n = strtol(s, &end, 10);
-            if (*end == '\0' && end != s) {
+            if (errno == 0 && end != s && *end == '\0' && n >= INT_MIN && n <= INT_MAX) {
                 free(val->data.sval);
                 val->type = VAL_INT;
                 val->data.ival = (int)n;
@@ -225,10 +249,13 @@ bool try_convert_value(Value *val, int target_tok_type) {
         }
         if (target_tok_type == TOK_FLOAT) {
             char *normalized = strdup(s);
+            if (!normalized) return false;
             for (char *p = normalized; *p; p++) if (*p == ',') *p = '.';
-            char *end;
+            char *end = NULL;
+            errno = 0;
             double f = strtod(normalized, &end);
-            if (*end == '\0' && end != normalized) {
+            bool ok = errno == 0 && end != normalized && *end == '\0' && isfinite(f);
+            if (ok) {
                 free(val->data.sval);
                 val->type = VAL_FLOAT;
                 val->data.fval = f;

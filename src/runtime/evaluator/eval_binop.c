@@ -17,6 +17,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include <stdint.h>
+#include <limits.h>
+#include <errno.h>
 #include <setjmp.h>
 
 /* ====================================================================
@@ -32,12 +35,22 @@
 static size_t utf8_char_count(const char *s) {
     size_t n = 0;
     while (*s) {
-        unsigned char c = (unsigned char)*s;
-        if (c < 0x80) s += 1;
-        else if ((c & 0xE0) == 0xC0) s += 2;
-        else if ((c & 0xF0) == 0xE0) s += 3;
-        else if ((c & 0xF8) == 0xF0) s += 4;
-        else s += 1;
+        const unsigned char *p = (const unsigned char *)s;
+        size_t width = 1;
+        if (*p < 0x80) {
+            width = 1;
+        } else if ((*p & 0xE0) == 0xC0 && p[1] &&
+                   (p[1] & 0xC0) == 0x80) {
+            width = 2;
+        } else if ((*p & 0xF0) == 0xE0 && p[1] && p[2] &&
+                   (p[1] & 0xC0) == 0x80 && (p[2] & 0xC0) == 0x80) {
+            width = 3;
+        } else if ((*p & 0xF8) == 0xF0 && p[1] && p[2] && p[3] &&
+                   (p[1] & 0xC0) == 0x80 && (p[2] & 0xC0) == 0x80 &&
+                   (p[3] & 0xC0) == 0x80) {
+            width = 4;
+        }
+        s += width;
         n++;
     }
     return n;
@@ -47,15 +60,73 @@ static size_t utf8_char_count(const char *s) {
  * Si la cadena es más corta, devuelve el puntero al terminador nulo. */
 static const char *utf8_advance(const char *s, size_t n) {
     while (*s && n > 0) {
-        unsigned char c = (unsigned char)*s;
-        if (c < 0x80) s += 1;
-        else if ((c & 0xE0) == 0xC0) s += 2;
-        else if ((c & 0xF0) == 0xE0) s += 3;
-        else if ((c & 0xF8) == 0xF0) s += 4;
-        else s += 1;
+        const unsigned char *p = (const unsigned char *)s;
+        size_t width = 1;
+        if (*p < 0x80) {
+            width = 1;
+        } else if ((*p & 0xE0) == 0xC0 && p[1] &&
+                   (p[1] & 0xC0) == 0x80) {
+            width = 2;
+        } else if ((*p & 0xF0) == 0xE0 && p[1] && p[2] &&
+                   (p[1] & 0xC0) == 0x80 && (p[2] & 0xC0) == 0x80) {
+            width = 3;
+        } else if ((*p & 0xF8) == 0xF0 && p[1] && p[2] && p[3] &&
+                   (p[1] & 0xC0) == 0x80 && (p[2] & 0xC0) == 0x80 &&
+                   (p[3] & 0xC0) == 0x80) {
+            width = 4;
+        }
+        s += width;
         n--;
     }
     return s;
+}
+
+static bool value_is_numeric(Value v) {
+    return v.type == VAL_INT || v.type == VAL_FLOAT || v.type == VAL_BOOL;
+}
+
+static int checked_i64_to_int(int64_t value, int line, const char *op) {
+    if (value < INT_MIN || value > INT_MAX)
+        error(line, "Desbordamiento de int en '%s': resultado fuera del rango [%d, %d]",
+              op, INT_MIN, INT_MAX);
+    return (int)value;
+}
+
+static int checked_int_add(int a, int b, int line) {
+    return checked_i64_to_int((int64_t)a + (int64_t)b, line, "+");
+}
+
+static int checked_int_sub(int a, int b, int line) {
+    return checked_i64_to_int((int64_t)a - (int64_t)b, line, "-");
+}
+
+static int checked_int_mul(int a, int b, int line) {
+    return checked_i64_to_int((int64_t)a * (int64_t)b, line, "*");
+}
+
+static int checked_int_pow(int base, int exponent, int line) {
+    int64_t result = 1;
+    int64_t factor = base;
+    int exp = exponent;
+    while (exp > 0) {
+        if (exp & 1) {
+            result *= factor;
+            if (result < INT_MIN || result > INT_MAX)
+                error(line, "Desbordamiento de int en '**': resultado fuera del rango [%d, %d]",
+                      INT_MIN, INT_MAX);
+        }
+        exp >>= 1;
+        if (exp == 0) break;
+        factor *= factor;
+        if (factor < INT_MIN || factor > INT_MAX) {
+            /* A partir de aquí solo necesitamos saber que el siguiente
+             * producto no puede caber si vuelve a utilizarse. */
+            if (exp > 0)
+                error(line, "Desbordamiento de int en '**': resultado fuera del rango [%d, %d]",
+                      INT_MIN, INT_MAX);
+        }
+    }
+    return (int)result;
 }
 
 /* Traduce un NODE_SLICE de string a un rango [lo, hi] de caracteres
@@ -229,7 +300,7 @@ Value eval_binop(ASTNode *expr) {
             pos = index_val.data.ival;
         } else if (index_val.type == VAL_FLOAT) {
             double f = index_val.data.fval;
-            if (f == (double)(int)f) {
+            if (isfinite(f) && f >= 1.0 && f <= (double)INT_MAX && trunc(f) == f) {
                 pos = (int)f;
             } else {
                 value_free(&base);
@@ -422,7 +493,8 @@ Value eval_binop(ASTNode *expr) {
             pos = index_val.data.ival;
         } else if (index_val.type == VAL_FLOAT) {
             double f = index_val.data.fval;
-            if (f == (double)(int)f) pos = (int)f;
+            if (isfinite(f) && f >= 1.0 && f <= (double)INT_MAX && trunc(f) == f)
+                pos = (int)f;
         }
 
         if (pos < 1) {
@@ -446,6 +518,24 @@ Value eval_binop(ASTNode *expr) {
      *  RESTO DE OPERADORES (AND, OR, comparaciones, POW, concat, aritmética)
      * ================================================================= */
 
+    /* and/or son de cortocircuito: si el lado izquierdo ya determina el
+     * resultado, no se evalúa el derecho. Además evita ejecutar efectos
+     * secundarios o lanzar errores innecesarios en la rama inalcanzable. */
+    if (expr->data.binop.op == TOK_AND || expr->data.binop.op == TOK_OR) {
+        if (left.type != VAL_BOOL) {
+            value_free(&left);
+            error(expr->line, "Los operadores lógicos 'and'/'or' requieren valores bool");
+        }
+        bool short_circuit =
+            (expr->data.binop.op == TOK_AND && !left.data.bval) ||
+            (expr->data.binop.op == TOK_OR && left.data.bval);
+        if (short_circuit) {
+            bool result = left.data.bval;
+            value_free(&left);
+            return val_bool(result);
+        }
+    }
+
     jmp_buf saved_env;
     memcpy(&saved_env, &exception_env, sizeof(jmp_buf));
     int saved_raised = exception_raised;
@@ -464,15 +554,14 @@ Value eval_binop(ASTNode *expr) {
     DEBUG_INFO("Tipo de right: %d", right.type);
 
     if (expr->data.binop.op == TOK_AND || expr->data.binop.op == TOK_OR) {
-        if (left.type != VAL_BOOL || right.type != VAL_BOOL) {
+        if (right.type != VAL_BOOL) {
             value_free(&left);
             value_free(&right);
             error(expr->line, "Los operadores lógicos 'and'/'or' requieren valores bool");
         }
-
         bool result = (expr->data.binop.op == TOK_AND)
-        ? (left.data.bval && right.data.bval)
-        : (left.data.bval || right.data.bval);
+                    ? (left.data.bval && right.data.bval)
+                    : (left.data.bval || right.data.bval);
         Value result_value = val_bool(result);
         value_free(&left);
         value_free(&right);
@@ -499,8 +588,20 @@ Value eval_binop(ASTNode *expr) {
 
     if (expr->data.binop.op == TOK_LT_OP || expr->data.binop.op == TOK_GT_OP ||
         expr->data.binop.op == TOK_LE || expr->data.binop.op == TOK_GE) {
-        double lv = (left.type == VAL_INT) ? left.data.ival : (left.type == VAL_FLOAT) ? left.data.fval : 0.0;
-        double rv = (right.type == VAL_INT) ? right.data.ival : (right.type == VAL_FLOAT) ? right.data.fval : 0.0;
+        if (!value_is_numeric(left) || !value_is_numeric(right)) {
+            const char *lt = value_type_name(left.type);
+            const char *rt = value_type_name(right.type);
+            value_free(&left);
+            value_free(&right);
+            error(expr->line, "Los operadores '<', '>', '<=' y '>=' requieren valores numéricos (se recibió %s y %s)",
+                  lt, rt);
+        }
+        double lv = (left.type == VAL_INT) ? left.data.ival
+                  : (left.type == VAL_FLOAT) ? left.data.fval
+                  : (left.data.bval ? 1.0 : 0.0);
+        double rv = (right.type == VAL_INT) ? right.data.ival
+                  : (right.type == VAL_FLOAT) ? right.data.fval
+                  : (right.data.bval ? 1.0 : 0.0);
         bool result = false;
         switch (expr->data.binop.op) {
             case TOK_LT_OP: result = (lv < rv); break;
@@ -517,16 +618,21 @@ Value eval_binop(ASTNode *expr) {
 
     if (expr->data.binop.op == TOK_POW) {
         if (left.type == VAL_INT && right.type == VAL_INT && right.data.ival >= 0) {
-            long result = 1;
-            for (long i = 0; i < right.data.ival; i++) result *= left.data.ival;
-            Value result_value = val_int((int)result);
+            int result = checked_int_pow(left.data.ival, right.data.ival, expr->line);
             value_free(&left);
             value_free(&right);
-            return result_value;
+            return val_int(result);
         }
         double lv = (left.type == VAL_INT) ? left.data.ival : left.data.fval;
         double rv = (right.type == VAL_INT) ? right.data.ival : right.data.fval;
-        Value result_value = val_float(pow(lv, rv));
+        errno = 0;
+        double powered = pow(lv, rv);
+        if (!isfinite(powered) && isfinite(lv) && isfinite(rv)) {
+            value_free(&left);
+            value_free(&right);
+            error(expr->line, "Resultado no finito en '**'");
+        }
+        Value result_value = val_float(powered);
         value_free(&left);
         value_free(&right);
         return result_value;
@@ -577,12 +683,28 @@ Value eval_binop(ASTNode *expr) {
         int lv = left.data.ival, rv = right.data.ival;
         Value result;
         switch (expr->data.binop.op) {
-            case TOK_PLUS:  result = val_int(lv + rv); break;
-            case TOK_MINUS: result = val_int(lv - rv); break;
-            case TOK_STAR:  result = val_int(lv * rv); break;
-            case TOK_SLASH: if (rv == 0) error(expr->line, "División por cero"); result = val_float((double)lv / rv); break;
-            case TOK_PERCENT: if (rv == 0) error(expr->line, "Módulo por cero"); result = val_int(lv % rv); break;
-            default: error(expr->line, "Operador no soportado");
+            case TOK_PLUS:
+                result = val_int(checked_int_add(lv, rv, expr->line));
+                break;
+            case TOK_MINUS:
+                result = val_int(checked_int_sub(lv, rv, expr->line));
+                break;
+            case TOK_STAR:
+                result = val_int(checked_int_mul(lv, rv, expr->line));
+                break;
+            case TOK_SLASH:
+                if (rv == 0) error(expr->line, "División por cero");
+                result = val_float((double)lv / (double)rv);
+                break;
+            case TOK_PERCENT:
+                if (rv == 0) error(expr->line, "Módulo por cero");
+                if (lv == INT_MIN && rv == -1)
+                    error(expr->line, "Desbordamiento de int en '%': resultado fuera del rango [%d, %d]",
+                          INT_MIN, INT_MAX);
+                result = val_int(lv % rv);
+                break;
+            default:
+                error(expr->line, "Operador no soportado");
         }
         value_free(&left);
         value_free(&right);
@@ -601,7 +723,10 @@ Value eval_binop(ASTNode *expr) {
         case TOK_MINUS: result = val_float(lv - rv); break;
         case TOK_STAR: result = val_float(lv * rv); break;
         case TOK_SLASH: if (rv == 0) error(expr->line, "División por cero"); result = val_float(lv / rv); break;
-        case TOK_PERCENT: if (rv == 0) error(expr->line, "Módulo por cero"); result = val_float((int)lv % (int)rv); break;
+        case TOK_PERCENT:
+            if (rv == 0.0) error(expr->line, "Módulo por cero");
+            result = val_float(fmod(lv, rv));
+            break;
         default: error(expr->line, "Operador no soportado");
     }
     value_free(&left);

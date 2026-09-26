@@ -9,6 +9,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
 
 static void allocation_failed(size_t size) {
     fprintf(stderr, "Infernal: no se pudo reservar memoria (%zu bytes)\n", size);
@@ -22,6 +23,8 @@ void *infernal_malloc(size_t size) {
 }
 
 void *infernal_calloc(size_t count, size_t size) {
+    if (count != 0 && size > SIZE_MAX / count)
+        allocation_failed(SIZE_MAX);
     void *ptr = calloc(count ? count : 1, size ? size : 1);
     if (!ptr) allocation_failed(count * size);
     return ptr;

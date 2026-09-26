@@ -36,11 +36,14 @@ static size_t utf8_len(const char *s) {
 
 /* --- devolver el inicio del siguiente caracter UTF-8 --- */
 static const char* utf8_next(const char *p) {
-    unsigned char c = (unsigned char)*p;
-    if (c < 0x80) return p + 1;
-    if ((c & 0xE0) == 0xC0) return p + 2;
-    if ((c & 0xF0) == 0xE0) return p + 3;
-    if ((c & 0xF8) == 0xF0) return p + 4;
+    const unsigned char *u = (const unsigned char *)p;
+    if (u[0] < 0x80) return p + 1;
+    if ((u[0] & 0xE0) == 0xC0 && u[1] && (u[1] & 0xC0) == 0x80) return p + 2;
+    if ((u[0] & 0xF0) == 0xE0 && u[1] && u[2] &&
+        (u[1] & 0xC0) == 0x80 && (u[2] & 0xC0) == 0x80) return p + 3;
+    if ((u[0] & 0xF8) == 0xF0 && u[1] && u[2] && u[3] &&
+        (u[1] & 0xC0) == 0x80 && (u[2] & 0xC0) == 0x80 &&
+        (u[3] & 0xC0) == 0x80) return p + 4;
     return p + 1;
 }
 

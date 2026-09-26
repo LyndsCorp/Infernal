@@ -19,8 +19,10 @@
 #include <pwd.h>
 #include <dlfcn.h>
 #include <sys/wait.h>
+#include <stdint.h>
 
 #include "command.h"
+#include "core/memory.h"
 #include "runtime/scope.h"
 #include "runtime/globals.h"
 #include "runtime/error.h"
@@ -36,7 +38,7 @@ static char *embedded_tmp_dir = NULL;
 
 void set_embedded_tmp_dir(const char *dir) {
     if (embedded_tmp_dir) free(embedded_tmp_dir);
-    embedded_tmp_dir = dir ? strdup(dir) : NULL;
+    embedded_tmp_dir = dir ? infernal_strdup(dir) : NULL;
 }
 
 char *get_var_string(const char *name) {
@@ -68,13 +70,32 @@ char *get_var_string(const char *name) {
     return strdup(buf);
 }
 
+static bool grow_text_buffer(char **buffer, size_t *cap, size_t needed) {
+    if (needed <= *cap) return true;
+    size_t new_cap = *cap ? *cap : 64;
+    while (new_cap < needed) {
+        if (new_cap > SIZE_MAX / 2) {
+            new_cap = needed;
+            break;
+        }
+        new_cap *= 2;
+    }
+    if (new_cap < needed) return false;
+    char *tmp = realloc(*buffer, new_cap);
+    if (!tmp) return false;
+    *buffer = tmp;
+    *cap = new_cap;
+    return true;
+}
+
 /* --- Función auxiliar para añadir '$' + nombre al buffer --- */
 static void append_dollar_name(char **result, size_t *len, size_t *cap, const char *name) {
     size_t nlen = strlen(name);
-    if (*len + 1 + nlen >= *cap) {
-        *cap = (*len + 1 + nlen) * 2;
-        *result = realloc(*result, *cap);
-    }
+    if (*len > SIZE_MAX - nlen - 2)
+        error(current_eval_line, "Comando expandido demasiado largo");
+    size_t needed = *len + nlen + 2;
+    if (!grow_text_buffer(result, cap, needed))
+        error(current_eval_line, "Memoria insuficiente al expandir comando");
     (*result)[(*len)++] = '$';
     memcpy(*result + *len, name, nlen);
     *len += nlen;
@@ -83,16 +104,20 @@ static void append_dollar_name(char **result, size_t *len, size_t *cap, const ch
 /* --- Expansión de comandos --- */
 char *expand_command(const char *cmd) {
     if (!cmd) return NULL;
-    size_t cap = strlen(cmd) * 2 + 64;
+    size_t cmd_len = strlen(cmd);
+    if (cmd_len > (SIZE_MAX - 65) / 2)
+        error(current_eval_line, "Comando demasiado largo");
+    size_t cap = cmd_len * 2 + 64;
     char *result = malloc(cap);
+    if (!result) error(current_eval_line, "Memoria insuficiente al expandir comando");
     size_t len = 0;
     const char *p = cmd;
 
     while (*p) {
-        if ((*p == '$' || *p == '?') && (isalpha(*(p+1)) || *(p+1) == '_')) {
+        if ((*p == '$' || *p == '?') && (isalpha((unsigned char)p[1]) || p[1] == '_')) {
             const char *start = p + 1;
-            while (isalnum(*start) || *start == '_') start++;
-            size_t nlen = start - (p + 1);
+            while (isalnum((unsigned char)*start) || *start == '_') start++;
+            size_t nlen = (size_t)(start - (p + 1));
             if (nlen > 127) nlen = 127;
             char name[128];
             memcpy(name, p + 1, nlen);
@@ -102,47 +127,63 @@ char *expand_command(const char *cmd) {
                 append_dollar_name(&result, &len, &cap, name);
                 p = start;
                 continue;
-            } else {
-                char *val = get_var_string(name);
-                if (val) {
-                    size_t vlen = strlen(val);
-                    if (len + vlen >= cap) {
-                        cap = (len + vlen) * 2;
-                        result = realloc(result, cap);
-                    }
-                    memcpy(result + len, val, vlen);
-                    len += vlen;
-                    free(val);
-                    p = start;
-                    continue;
-                }
+            }
+
+            char *val = get_var_string(name);
+            if (!val) {
                 free(result);
                 error(current_eval_line, "Variable '%s' no definida", name);
             }
+            size_t vlen = strlen(val);
+            if (len > SIZE_MAX - vlen - 1) {
+                free(val);
+                free(result);
+                error(current_eval_line, "Comando expandido demasiado largo");
+            }
+            if (!grow_text_buffer(&result, &cap, len + vlen + 1)) {
+                free(val);
+                free(result);
+                error(current_eval_line, "Memoria insuficiente al expandir comando");
+            }
+            memcpy(result + len, val, vlen);
+            len += vlen;
+            free(val);
+            p = start;
+            continue;
         }
-        if (len + 1 >= cap) {
-            cap *= 2;
-            result = realloc(result, cap);
+        if (len > SIZE_MAX - 2) {
+            free(result);
+            error(current_eval_line, "Comando expandido demasiado largo");
+        }
+        if (!grow_text_buffer(&result, &cap, len + 2)) {
+            free(result);
+            error(current_eval_line, "Memoria insuficiente al expandir comando");
         }
         result[len++] = *p++;
     }
     result[len] = '\0';
-    return realloc(result, len + 1);
+    char *tmp = realloc(result, len + 1);
+    return tmp ? tmp : result;
 }
 
 /* --- Expansión de comandos usando arrays de locales (para la VM) --- */
 char *expand_command_with_locals(const char *cmd, char **names, Value *values, int count) {
     if (!cmd) return NULL;
-    size_t cap = strlen(cmd) * 2 + 64;
+    size_t cmd_len = strlen(cmd);
+    if (cmd_len > (SIZE_MAX - 65) / 2)
+        error(current_eval_line, "Comando demasiado largo");
+    size_t cap = cmd_len * 2 + 64;
     char *result = malloc(cap);
+    if (!result) error(current_eval_line, "Memoria insuficiente al expandir comando");
     size_t len = 0;
     const char *p = cmd;
 
     while (*p) {
-        if ((*p == '$' || *p == '?') && (isalpha(*(p+1)) || *(p+1) == '_')) {
+        if ((*p == '$' || *p == '?') &&
+            (isalpha((unsigned char)p[1]) || p[1] == '_')) {
             const char *start = p + 1;
-            while (isalnum(*start) || *start == '_') start++;
-            size_t nlen = start - (p + 1);
+            while (isalnum((unsigned char)*start) || *start == '_') start++;
+            size_t nlen = (size_t)(start - (p + 1));
             if (nlen > 127) nlen = 127;
             char name[128];
             memcpy(name, p + 1, nlen);
@@ -152,93 +193,97 @@ char *expand_command_with_locals(const char *cmd, char **names, Value *values, i
                 append_dollar_name(&result, &len, &cap, name);
                 p = start;
                 continue;
-            } else {
-                char *val = NULL;
-                // 1) locales de la VM
-                for (int i = 0; i < count; i++) {
-                    if (names[i] && strcmp(names[i], name) == 0) {
-                        Value v = values[i];
-                        char buf[256];
-                        switch (v.type) {
-                            case VAL_INT: snprintf(buf, sizeof(buf), "%d", v.data.ival); val = strdup(buf); break;
-                            case VAL_FLOAT: snprintf(buf, sizeof(buf), "%g", v.data.fval); val = strdup(buf); break;
-                            case VAL_BOOL: val = strdup(v.data.bval ? "true" : "false"); break;
-                            case VAL_STRING: val = strdup(v.data.sval); break;
-                            default: val = NULL;
-                        }
-                        break;
-                    }
-                }
-                // 2) scopes de Infernal
-                if (!val) {
-                    VarEntry *e = scope_find(current_scope, name);
-                    if (e) {
-                        Value v = e->value;
-                        char buf[256];
-                        switch (v.type) {
-                            case VAL_INT: snprintf(buf, sizeof(buf), "%d", v.data.ival); val = strdup(buf); break;
-                            case VAL_FLOAT: snprintf(buf, sizeof(buf), "%g", v.data.fval); val = strdup(buf); break;
-                            case VAL_BOOL: val = strdup(v.data.bval ? "true" : "false"); break;
-                            case VAL_STRING: val = strdup(v.data.sval); break;
-                            default: val = NULL;
-                        }
-                    }
-                }
-                // 3) constantes de Infernal
-                if (!val) {
-                    Value constant_value;
-                    if (constants_lookup(name, &constant_value)) {
-                        Value v = constant_value;
-                        char buf[256];
-                        switch (v.type) {
-                            case VAL_INT: snprintf(buf, sizeof(buf), "%d", v.data.ival); val = strdup(buf); break;
-                            case VAL_FLOAT: snprintf(buf, sizeof(buf), "%g", v.data.fval); val = strdup(buf); break;
-                            case VAL_BOOL: val = strdup(v.data.bval ? "true" : "false"); break;
-                            case VAL_STRING: val = strdup(v.data.sval); break;
-                            default: val = NULL;
-                        }
-                        value_free(&constant_value);
-                    }
-                }
-                // 4) globales de la VM
-                if (!val) {
-                    int gidx = vm_find_global_index(name);
-                    if (gidx >= 0) {
-                        Value v = vm_globals[gidx];
-                        char buf[256];
-                        switch (v.type) {
-                            case VAL_INT: snprintf(buf, sizeof(buf), "%d", v.data.ival); val = strdup(buf); break;
-                            case VAL_FLOAT: snprintf(buf, sizeof(buf), "%g", v.data.fval); val = strdup(buf); break;
-                            case VAL_BOOL: val = strdup(v.data.bval ? "true" : "false"); break;
-                            case VAL_STRING: val = strdup(v.data.sval); break;
-                            default: val = NULL;
-                        }
-                    }
-                }
-                if (val) {
-                    size_t vlen = strlen(val);
-                    if (len + vlen >= cap) {
-                        cap = (len + vlen) * 2;
-                        result = realloc(result, cap);
-                    }
-                    memcpy(result + len, val, vlen);
-                    len += vlen;
-                    free(val);
-                    p = start;
-                    continue;
-                }
-                free(result);
-                error(current_eval_line, "Variable '%s' no definida", name);
             }
+
+            char *val = NULL;
+            for (int i = 0; i < count; i++) {
+                if (names[i] && strcmp(names[i], name) == 0) {
+                    Value v = values[i];
+                    char buf[256];
+                    switch (v.type) {
+                        case VAL_INT: snprintf(buf, sizeof(buf), "%d", v.data.ival); val = strdup(buf); break;
+                        case VAL_FLOAT: snprintf(buf, sizeof(buf), "%g", v.data.fval); val = strdup(buf); break;
+                        case VAL_BOOL: val = strdup(v.data.bval ? "true" : "false"); break;
+                        case VAL_STRING: val = strdup(v.data.sval); break;
+                        default: val = NULL;
+                    }
+                    break;
+                }
+            }
+            if (!val) {
+                VarEntry *e = scope_find(current_scope, name);
+                if (e) {
+                    Value v = e->value;
+                    char buf[256];
+                    switch (v.type) {
+                        case VAL_INT: snprintf(buf, sizeof(buf), "%d", v.data.ival); val = strdup(buf); break;
+                        case VAL_FLOAT: snprintf(buf, sizeof(buf), "%g", v.data.fval); val = strdup(buf); break;
+                        case VAL_BOOL: val = strdup(v.data.bval ? "true" : "false"); break;
+                        case VAL_STRING: val = strdup(v.data.sval); break;
+                        default: val = NULL;
+                    }
+                }
+            }
+            if (!val) {
+                Value constant_value;
+                if (constants_lookup(name, &constant_value)) {
+                    Value v = constant_value;
+                    char buf[256];
+                    switch (v.type) {
+                        case VAL_INT: snprintf(buf, sizeof(buf), "%d", v.data.ival); val = strdup(buf); break;
+                        case VAL_FLOAT: snprintf(buf, sizeof(buf), "%g", v.data.fval); val = strdup(buf); break;
+                        case VAL_BOOL: val = strdup(v.data.bval ? "true" : "false"); break;
+                        case VAL_STRING: val = strdup(v.data.sval); break;
+                        default: val = NULL;
+                    }
+                    value_free(&constant_value);
+                }
+            }
+            if (!val) {
+                int gidx = vm_find_global_index(name);
+                if (gidx >= 0) {
+                    Value v = vm_globals[gidx];
+                    char buf[256];
+                    switch (v.type) {
+                        case VAL_INT: snprintf(buf, sizeof(buf), "%d", v.data.ival); val = strdup(buf); break;
+                        case VAL_FLOAT: snprintf(buf, sizeof(buf), "%g", v.data.fval); val = strdup(buf); break;
+                        case VAL_BOOL: val = strdup(v.data.bval ? "true" : "false"); break;
+                        case VAL_STRING: val = strdup(v.data.sval); break;
+                        default: val = NULL;
+                    }
+                }
+            }
+            if (val) {
+                size_t vlen = strlen(val);
+                if (len > SIZE_MAX - vlen - 1) {
+                    free(val);
+                    free(result);
+                    error(current_eval_line, "Comando expandido demasiado largo");
+                }
+                if (!grow_text_buffer(&result, &cap, len + vlen + 1)) {
+                    free(val);
+                    free(result);
+                    error(current_eval_line, "Memoria insuficiente al expandir comando");
+                }
+                memcpy(result + len, val, vlen);
+                len += vlen;
+                free(val);
+                p = start;
+                continue;
+            }
+
+            free(result);
+            error(current_eval_line, "Variable '%s' no definida", name);
         }
-        if (len + 1 >= cap) {
-            cap *= 2;
-            result = realloc(result, cap);
+        if (!grow_text_buffer(&result, &cap, len + 2)) {
+            free(result);
+            error(current_eval_line, "Memoria insuficiente al expandir comando");
         }
         result[len++] = *p++;
     }
     result[len] = '\0';
-    return realloc(result, len + 1);
+    char *tmp = realloc(result, len + 1);
+    return tmp ? tmp : result;
 }
 
 /* --- Descompresión usando libz cargada dinámicamente --- */
@@ -314,8 +359,11 @@ static unsigned char *gunzip_data(const unsigned char *compressed, size_t compre
         return NULL;
     }
 
-    size_t buf_size = compressed_len * 4 + 1024;
-    if (buf_size > MAX_DECOMPRESSED_SIZE) buf_size = MAX_DECOMPRESSED_SIZE;
+    size_t buf_size;
+    if (compressed_len > (MAX_DECOMPRESSED_SIZE - 1024) / 4)
+        buf_size = MAX_DECOMPRESSED_SIZE;
+    else
+        buf_size = compressed_len * 4 + 1024;
     unsigned char *out = malloc(buf_size);
     if (!out) { p_inflateEnd(&strm); return NULL; }
 
@@ -503,7 +551,7 @@ FILE *popen_infernal_shell(const char *cmd, const char *mode) {
 /* --- Ejecutar comando embebido y devolver código de salida --- */
 int execute_embedded(const char *full_cmd) {
     if (!full_cmd) return -1;
-    char *cmd_copy = strdup(full_cmd);
+    char *cmd_copy = infernal_strdup(full_cmd);
     char *saveptr;
     char *cmd_name = strtok_r(cmd_copy, " \t", &saveptr);
     if (!cmd_name) { free(cmd_copy); return -1; }
@@ -511,14 +559,17 @@ int execute_embedded(const char *full_cmd) {
     char *binary_path = prepare_embedded_binary(cmd_name);
     if (!binary_path) { free(cmd_copy); return -1; }
 
-    size_t len = strlen(binary_path) + 1;
+    char *quoted_binary = shell_quote(binary_path);
+    if (!quoted_binary) { unlink(binary_path); free(binary_path); free(cmd_copy); return -1; }
+    size_t len = strlen(quoted_binary) + 1;
     char *rest = saveptr;
     if (rest && *rest) len += strlen(rest) + 1;
     char *exec_cmd = malloc(len);
-    if (!exec_cmd) { unlink(binary_path); free(binary_path); free(cmd_copy); return -1; }
-    int written = snprintf(exec_cmd, len, "%s%s%s", binary_path, (rest && *rest) ? " " : "", (rest && *rest) ? rest : "");
+    if (!exec_cmd) { unlink(binary_path); free(quoted_binary); free(binary_path); free(cmd_copy); return -1; }
+    int written = snprintf(exec_cmd, len, "%s%s%s", quoted_binary, (rest && *rest) ? " " : "", (rest && *rest) ? rest : "");
     if (written < 0 || (size_t)written >= len) {
         unlink(binary_path);
+        free(quoted_binary);
         free(binary_path);
         free(exec_cmd);
         free(cmd_copy);
@@ -536,10 +587,15 @@ int execute_embedded(const char *full_cmd) {
 
     int ret = -1;
     if (pid > 0) {
-        if (waitpid(pid, &ret, 0) < 0) ret = -1;
+        pid_t waited;
+        do {
+            waited = waitpid(pid, &ret, 0);
+        } while (waited < 0 && errno == EINTR);
+        if (waited < 0) ret = -1;
     }
 
     unlink(binary_path);
+    free(quoted_binary);
     free(binary_path);
     free(exec_cmd);
     free(cmd_copy);
@@ -551,20 +607,23 @@ int execute_embedded(const char *full_cmd) {
 
 FILE *popen_embedded_with_path(const char *full_cmd, const char *mode, char **temp_path) {
     if (!full_cmd || !temp_path) return NULL;
-    char *cmd_copy = strdup(full_cmd);
+    char *cmd_copy = infernal_strdup(full_cmd);
     char *saveptr;
     char *cmd_name = strtok_r(cmd_copy, " \t", &saveptr);
     if (!cmd_name) { free(cmd_copy); return NULL; }
     char *binary_path = prepare_embedded_binary(cmd_name);
     if (!binary_path) { free(cmd_copy); return NULL; }
-    size_t len = strlen(binary_path) + 1;
+    char *quoted_binary = shell_quote(binary_path);
+    if (!quoted_binary) { unlink(binary_path); free(binary_path); free(cmd_copy); return NULL; }
+    size_t len = strlen(quoted_binary) + 1;
     char *rest = saveptr;
     if (rest && *rest) len += strlen(rest) + 1;
     char *exec_cmd = malloc(len);
-    if (!exec_cmd) { unlink(binary_path); free(binary_path); free(cmd_copy); return NULL; }
-    int written = snprintf(exec_cmd, len, "%s%s%s", binary_path, (rest && *rest) ? " " : "", (rest && *rest) ? rest : "");
+    if (!exec_cmd) { unlink(binary_path); free(quoted_binary); free(binary_path); free(cmd_copy); return NULL; }
+    int written = snprintf(exec_cmd, len, "%s%s%s", quoted_binary, (rest && *rest) ? " " : "", (rest && *rest) ? rest : "");
     if (written < 0 || (size_t)written >= len) {
         unlink(binary_path);
+        free(quoted_binary);
         free(binary_path);
         free(exec_cmd);
         free(cmd_copy);
@@ -573,6 +632,7 @@ FILE *popen_embedded_with_path(const char *full_cmd, const char *mode, char **te
     FILE *fp = popen_infernal_shell(exec_cmd, mode);
     if (fp) { *temp_path = binary_path; }
     else { unlink(binary_path); free(binary_path); }
+    free(quoted_binary);
     free(exec_cmd);
     free(cmd_copy);
     return fp;
@@ -588,6 +648,7 @@ void cleanup_embedded_temp_dir(void) {
     struct dirent *entry;
     while ((entry = readdir(d)) != NULL) {
         if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) continue;
+        if (strncmp(entry->d_name, "infernal_", 9) != 0) continue;
         char full_path[PATH_MAX];
         int path_len = snprintf(full_path, sizeof(full_path), "%s/%s", work_dir, entry->d_name);
         if (path_len <= 0 || (size_t)path_len >= sizeof(full_path)) continue;
@@ -612,7 +673,9 @@ int run_shell_command(const char *cmd) {
         _exit(127);
     } else if (pid > 0) {
         int status;
-        waitpid(pid, &status, 0);
+        while (waitpid(pid, &status, 0) < 0) {
+            if (errno != EINTR) return -1;
+        }
         if (WIFEXITED(status)) return WEXITSTATUS(status);
         return -1;
     } else {

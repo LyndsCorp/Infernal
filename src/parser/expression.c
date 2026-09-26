@@ -8,6 +8,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <errno.h>
+#include <limits.h>
 #include "expression.h"
 #include "core/ast.h"
 #include "lexer/lexer.h"
@@ -15,6 +17,7 @@
 #include "runtime/error.h"
 #include "parser.h"
 #include "developer/debug.h"
+#include "core/memory.h"
 
 /* --- LIMPIEZA DE NOMBRE DE VARIABLE (elimina $ o ?) --- */
 static char *clean_var_name(const char *raw) {
@@ -37,6 +40,16 @@ static ASTNode *parse_not(void);
 static ASTNode *parse_logic_and(void);
 static ASTNode *parse_logic_or(void);
 static void expect_index_close_bracket(int line);
+
+static int parse_int_literal(const char *text, int line, const char *context) {
+    char *end = NULL;
+    errno = 0;
+    long value = strtol(text, &end, 10);
+    if (errno == ERANGE || end == text || *end != '\0' || value < INT_MIN || value > INT_MAX)
+        error(line, "Número entero fuera de rango en %s (límite: %d..%d)",
+              context, INT_MIN, INT_MAX);
+    return (int)value;
+}
 
 static bool token_starts_expression(TokenType type) {
     switch (type) {
@@ -98,7 +111,7 @@ ASTNode *parse_slice_content(int line) {
             if (strchr(num.lexeme, '.') != NULL) {
                 error(line, "Índice inválido: no se permiten números decimales");
             }
-            int val = atoi(num.lexeme);
+            int val = parse_int_literal(num.lexeme, line, "índice");
             if (val < 1) error(line, "Índice inválido: debe ser positivo");
 
             TokenType after = ts_peek().type;
@@ -123,7 +136,7 @@ ASTNode *parse_slice_content(int line) {
             if (strchr(num.lexeme, '.') != NULL) {
                 error(line, "Índice inválido: no se permiten números decimales");
             }
-            int val = atoi(num.lexeme);
+            int val = parse_int_literal(num.lexeme, line, "índice");
             if (val < 1) error(line, "Índice inválido: debe ser positivo");
             /* [**N] – todo lo que está ANTES de N, incluyendo N */
             mode = 5; start = -1; end = val;
@@ -135,7 +148,7 @@ ASTNode *parse_slice_content(int line) {
         if (strchr(num.lexeme, '.') != NULL) {
             error(line, "Índice inválido: no se permiten números decimales");
         }
-        int val = atoi(num.lexeme);
+        int val = parse_int_literal(num.lexeme, line, "índice");
         if (val < 1) error(line, "Índice inválido: debe ser positivo");
 
         Token next = ts_peek();
@@ -150,7 +163,7 @@ ASTNode *parse_slice_content(int line) {
                 if (strchr(num2.lexeme, '.') != NULL) {
                     error(line, "Índice inválido: no se permiten números decimales");
                 }
-                int val2 = atoi(num2.lexeme);
+                int val2 = parse_int_literal(num2.lexeme, line, "índice");
                 if (val2 < 1) error(line, "Índice inválido: debe ser positivo");
                 mode = 1; start = val; end = val2;
                 if (start > end) {
@@ -261,7 +274,7 @@ static ASTNode *parse_map_literal(int line) {
 
             ASTNode *value = parse_expression(0);
 
-        void *new_pairs = realloc(node->data.map.pairs,
+        void *new_pairs = infernal_realloc(node->data.map.pairs,
                                   (size_t)(node->data.map.pair_count + 1) * sizeof(*node->data.map.pairs));
         if (!new_pairs) {
             free(key_name);
@@ -358,7 +371,7 @@ ASTNode *parse_primary() {
             n->data.lit.fval = atof(t.lexeme);
         } else {
             n->data.lit.type = TOK_INT;
-            n->data.lit.ival = atoi(t.lexeme);
+            n->data.lit.ival = parse_int_literal(t.lexeme, t.line, "literal entero");
         }
         /* Permitir indexación/slice sobre un literal numérico:
          *   3[i]      → NODE_INDEX(list=3, index=i)
@@ -441,7 +454,7 @@ ASTNode *parse_primary() {
                     if (!token_starts_expression(arg_start.type))
                         expression_expected_value(arg_start, "un argumento");
 
-                    n->data.call.args = realloc(n->data.call.args,
+                    n->data.call.args = infernal_realloc(n->data.call.args,
                                                 (n->data.call.argc + 1) * sizeof(ASTNode*));
                     n->data.call.args[n->data.call.argc++] = parse_expression(0);
 
@@ -621,7 +634,7 @@ ASTNode *parse_primary() {
                         }
                         if (!token_starts_expression(item_start.type))
                             expression_expected_value(item_start, "un elemento de la lista");
-                        n->data.list_lit.items = realloc(n->data.list_lit.items,
+                        n->data.list_lit.items = infernal_realloc(n->data.list_lit.items,
                                                          (n->data.list_lit.count + 1) * sizeof(ASTNode*));
                         n->data.list_lit.items[n->data.list_lit.count++] = parse_expression(0);
                         ts_skip_newlines();
@@ -746,6 +759,30 @@ static ASTNode *parse_unary() {
     }
 
     if (ts_match(TOK_MINUS)) {
+        /* INT_MIN no puede representarse como literal positivo porque su
+         * magnitud es INT_MAX + 1. Lo tratamos aquí, antes de parse_primary,
+         * sin relajar el límite de los literales positivos. */
+        Token next = ts_peek();
+        if (next.type == TOK_NUMBER && !strchr(next.lexeme, '.') &&
+            !strchr(next.lexeme, 'e') && !strchr(next.lexeme, 'E')) {
+            char *end = NULL;
+            errno = 0;
+            unsigned long long magnitude = strtoull(next.lexeme, &end, 10);
+            unsigned long long min_magnitude = (unsigned long long)INT_MAX + 1ULL;
+            if (errno == ERANGE || end == next.lexeme || *end != '\0' ||
+                magnitude > min_magnitude) {
+                error(next.line, "Número entero fuera de rango en literal negativo (límite: %d..%d)",
+                      INT_MIN, INT_MAX);
+            }
+            if (magnitude == min_magnitude) {
+                ts_advance();
+                ASTNode *node = node_create(NODE_LITERAL, next.line);
+                node->data.lit.type = TOK_INT;
+                node->data.lit.ival = INT_MIN;
+                return node;
+            }
+        }
+
         ASTNode *operand = parse_unary();
         ASTNode *node = node_create(NODE_BINOP, operand->line);
         node->data.binop.op = TOK_MINUS;

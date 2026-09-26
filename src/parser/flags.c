@@ -15,6 +15,7 @@
 #include "runtime/error.h"
 #include "runtime/globals.h"
 #include "expression.h"
+#include "core/memory.h"
 
 static bool is_valid_flag_name(const char *s) {
     if (!s || !(isalpha((unsigned char)s[0]) || s[0] == '_'))
@@ -30,7 +31,7 @@ static void add_flag_name(FlagSpec *spec, const char *name, int line) {
     for (int i = 0; i < spec->name_count; i++)
         if (strcmp(spec->names[i], name) == 0)
             error(line, "Flag o alias repetido: %s", name);
-    char **names = realloc(spec->names, (size_t)(spec->name_count + 1) * sizeof(char *));
+    char **names = infernal_realloc(spec->names, (size_t)(spec->name_count + 1) * sizeof(char *));
     if (!names) error(line, "Memoria insuficiente al registrar flag");
     spec->names = names;
     spec->names[spec->name_count++] = strdup(name);
@@ -108,7 +109,7 @@ void parse_flag_body_tokens(Token **body_tokens, int *body_count, int already_co
         }
         if (*body_count >= cap) {
             cap = cap == 0 ? 64 : cap * 2;
-            *body_tokens = realloc(*body_tokens, cap * sizeof(Token));
+            *body_tokens = infernal_realloc(*body_tokens, cap * sizeof(Token));
         }
         (*body_tokens)[(*body_count)++] = t;
     }
@@ -271,7 +272,7 @@ ASTNode *parse_flags() {
             }
         }
 
-        node->data.flags.specs = realloc(node->data.flags.specs,
+        node->data.flags.specs = infernal_realloc(node->data.flags.specs,
                                          (node->data.flags.spec_count + 1) * sizeof(FlagSpec));
         node->data.flags.specs[node->data.flags.spec_count++] = spec;
 

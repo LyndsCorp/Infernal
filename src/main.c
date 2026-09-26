@@ -7,6 +7,8 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <errno.h>
+#include <limits.h>
 #include <string.h>
 #include <unistd.h>
 #include <limits.h>
@@ -217,9 +219,26 @@ int main(int argc, char **argv) {
                 *eq = '\0';
                 char *val = eq + 1;
                 if (val[0] == 'i' && val[1] == ':') {
-                    scope_define(super_global_scope, name, TOK_INT, val_int(atoi(val + 2)));
+                    char *end = NULL;
+                    errno = 0;
+                    long parsed = strtol(val + 2, &end, 10);
+                    if (errno != 0 || end == val + 2 || *end != '\0' || parsed < INT_MIN || parsed > INT_MAX) {
+                        fprintf(stderr, "Valor inválido para INFERNAL_VAR_%s: se esperaba int en rango %d..%d\n",
+                                name, INT_MIN, INT_MAX);
+                        free(line);
+                        continue;
+                    }
+                    scope_define(super_global_scope, name, TOK_INT, val_int((int)parsed));
                 } else if (val[0] == 'f' && val[1] == ':') {
-                    scope_define(super_global_scope, name, TOK_FLOAT, val_float(atof(val + 2)));
+                    char *end = NULL;
+                    errno = 0;
+                    double parsed = strtod(val + 2, &end);
+                    if (errno != 0 || end == val + 2 || *end != '\0') {
+                        fprintf(stderr, "Valor inválido para INFERNAL_VAR_%s: se esperaba float\n", name);
+                        free(line);
+                        continue;
+                    }
+                    scope_define(super_global_scope, name, TOK_FLOAT, val_float(parsed));
                 } else if (val[0] == 'b' && val[1] == ':') {
                     bool b = (strcmp(val + 2, "true") == 0);
                     scope_define(super_global_scope, name, TOK_BOOL, val_bool(b));

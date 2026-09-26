@@ -12,6 +12,7 @@
 #include <limits.h>
 #include "globals.h"
 #include "developer/debug.h"
+#include "core/memory.h"
 
 Scope *global_scope = NULL;
 Scope *super_global_scope = NULL;
@@ -73,7 +74,7 @@ static int parse_config_file(const char *path, char **shell_ptr) {
                 *end = '\0';
                 if (*p) {
                     if (*shell_ptr) free(*shell_ptr);
-                    *shell_ptr = strdup(p);
+                    *shell_ptr = infernal_strdup(p);
                     fclose(fp);
                     return 1;
                 }
@@ -110,7 +111,7 @@ void load_infernal_config(void) {
     }
 
     if (!infernal_shell) {
-        infernal_shell = strdup("/bin/sh");
+        infernal_shell = infernal_strdup("/bin/sh");
         DEBUG_INFO("Usando shell por defecto: /bin/sh");
     } else {
         DEBUG_INFO("Shell configurado: %s", infernal_shell);
@@ -166,36 +167,36 @@ void show_shell_info(void) {
 }
 
 void func_register(const char *name, ASTNode *def) {
-    FuncObject *obj = malloc(sizeof(FuncObject));
+    FuncObject *obj = infernal_malloc(sizeof(FuncObject));
     obj->kind = FUNC_USER;
     obj->def = def;
     obj->code = NULL;
-    FuncEntry *e = malloc(sizeof(FuncEntry));
-    e->name = strdup(name);
+    FuncEntry *e = infernal_malloc(sizeof(FuncEntry));
+    e->name = infernal_strdup(name);
     e->obj = obj;
     e->next = func_table;
     func_table = e;
 }
 
 void func_register_global(const char *name, ASTNode *def) {
-    FuncObject *obj = malloc(sizeof(FuncObject));
+    FuncObject *obj = infernal_malloc(sizeof(FuncObject));
     obj->kind = FUNC_USER;
     obj->def = def;
     obj->code = NULL;
-    FuncEntry *e = malloc(sizeof(FuncEntry));
-    e->name = strdup(name);
+    FuncEntry *e = infernal_malloc(sizeof(FuncEntry));
+    e->name = infernal_strdup(name);
     e->obj = obj;
     e->next = super_func_table;
     super_func_table = e;
 }
 
 void func_register_builtin(const char *name, BuiltinFunc fn) {
-    FuncObject *obj = malloc(sizeof(FuncObject));
+    FuncObject *obj = infernal_malloc(sizeof(FuncObject));
     obj->kind = FUNC_BUILTIN;
     obj->builtin = fn;
     obj->code = NULL;
-    FuncEntry *e = malloc(sizeof(FuncEntry));
-    e->name = strdup(name);
+    FuncEntry *e = infernal_malloc(sizeof(FuncEntry));
+    e->name = infernal_strdup(name);
     e->obj = obj;
     e->next = func_table;
     func_table = e;
