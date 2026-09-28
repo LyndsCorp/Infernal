@@ -14,7 +14,6 @@
 #include "string.h" //funciones de strings
 #include "cut.h" //funciones de cortar strings
 #include "map.h" //funciones de maps
-#include "bytes.h" //funciones de bytes crudos
 #include "neutral.h" //funciones polimorficas
 #include "database.h" //funciones de persistencia
 #include "list.h" //funciones de listas
@@ -27,7 +26,6 @@ void register_all_builtins(void) {
     register_system_builtins();
     register_string_builtins();
     register_map_builtins();
-    register_bytes_builtins();
     register_neutral_builtins();
     register_database_builtins();
     register_list_builtins();
