@@ -170,7 +170,6 @@ void func_register(const char *name, ASTNode *def) {
     FuncObject *obj = infernal_malloc(sizeof(FuncObject));
     obj->kind = FUNC_USER;
     obj->def = def;
-    obj->code = NULL;
     FuncEntry *e = infernal_malloc(sizeof(FuncEntry));
     e->name = infernal_strdup(name);
     e->obj = obj;
@@ -182,7 +181,6 @@ void func_register_global(const char *name, ASTNode *def) {
     FuncObject *obj = infernal_malloc(sizeof(FuncObject));
     obj->kind = FUNC_USER;
     obj->def = def;
-    obj->code = NULL;
     FuncEntry *e = infernal_malloc(sizeof(FuncEntry));
     e->name = infernal_strdup(name);
     e->obj = obj;
@@ -194,7 +192,6 @@ void func_register_builtin(const char *name, BuiltinFunc fn) {
     FuncObject *obj = infernal_malloc(sizeof(FuncObject));
     obj->kind = FUNC_BUILTIN;
     obj->builtin = fn;
-    obj->code = NULL;
     FuncEntry *e = infernal_malloc(sizeof(FuncEntry));
     e->name = infernal_strdup(name);
     e->obj = obj;

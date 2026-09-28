@@ -17,7 +17,6 @@
 #include "core/value.h"
 #include "runtime/error.h"
 #include "runtime/globals.h"
-#include "vm/vm.h"
 
 
 /* ================================================
@@ -312,7 +311,7 @@ static int utf8_find_first(const CharSegment *haystack, int hay_count,
 
 
                                                      /* ================================================
-                                                      *  Builtins para la VM / intérprete
+                                                      *  Funciones incorporadas
                                                       * ================================================ */
 
                                                      static Value builtin_cutAfter(int argc, Value *args) {
@@ -425,11 +424,4 @@ static int utf8_find_first(const CharSegment *haystack, int hay_count,
                                                          func_register_builtin("cutBeforeLast", builtin_cutBeforeLast);
                                                          func_register_builtin("cutHead",       builtin_cutHead);
                                                          func_register_builtin("cutTail",       builtin_cutTail);
-
-                                                         vm_register_builtin("cutAfter",      builtin_cutAfter);
-                                                         vm_register_builtin("cutAfterLast",  builtin_cutAfterLast);
-                                                         vm_register_builtin("cutBefore",     builtin_cutBefore);
-                                                         vm_register_builtin("cutBeforeLast", builtin_cutBeforeLast);
-                                                         vm_register_builtin("cutHead",       builtin_cutHead);
-                                                         vm_register_builtin("cutTail",       builtin_cutTail);
                                                      }

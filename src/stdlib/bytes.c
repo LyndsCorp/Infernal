@@ -15,7 +15,6 @@
 #include "core/value.h"
 #include "runtime/error.h"
 #include "runtime/globals.h"
-#include "vm/vm.h"
 
 
 /* ================================================
@@ -464,22 +463,4 @@ void register_bytes_builtins(void) {
     func_register_builtin("cutBeforeLastbytes", builtin_cutBeforeLastbytes);
     func_register_builtin("cutHeadbytes", builtin_cutHeadbytes);
     func_register_builtin("cutTailbytes", builtin_cutTailbytes);
-
-    vm_register_builtin("countbytes", builtin_countbytes);
-    vm_register_builtin("indexofbytes", builtin_indexofbytes);
-    vm_register_builtin("headbytes", builtin_headbytes);
-    vm_register_builtin("tailbytes", builtin_tailbytes);
-    vm_register_builtin("replacebytes", builtin_replacebytes);
-    vm_register_builtin("reversebytes", builtin_reversebytes);
-    vm_register_builtin("lengthbytes", builtin_lengthbytes);
-    vm_register_builtin("binbytes", builtin_binbytes);
-    vm_register_builtin("hexbytes", builtin_hexbytes);
-    vm_register_builtin("utf8bytes", builtin_utf8bytes);
-    vm_register_builtin("unicodeCodepoints", builtin_unicodeCodepoints);
-    vm_register_builtin("cutAfterbytes", builtin_cutAfterbytes);
-    vm_register_builtin("cutAfterLastbytes", builtin_cutAfterLastbytes);
-    vm_register_builtin("cutBeforebytes", builtin_cutBeforebytes);
-    vm_register_builtin("cutBeforeLastbytes", builtin_cutBeforeLastbytes);
-    vm_register_builtin("cutHeadbytes", builtin_cutHeadbytes);
-    vm_register_builtin("cutTailbytes", builtin_cutTailbytes);
 }

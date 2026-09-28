@@ -45,33 +45,6 @@ do { \
 #define DEBUG_WARN(fmt, ...)   DEBUG_LOG("WARN", DEBUG_COLOR_YELLOW, fmt, ##__VA_ARGS__)
 #define DEBUG_ERROR(fmt, ...)  DEBUG_LOG("ERROR", DEBUG_COLOR_RED, fmt, ##__VA_ARGS__)
 #define DEBUG_OP(fmt, ...)     DEBUG_LOG("OP", DEBUG_COLOR_CYAN, fmt, ##__VA_ARGS__)
-#define DEBUG_VM(fmt, ...)     DEBUG_LOG("VM", DEBUG_COLOR_MAGENTA, fmt, ##__VA_ARGS__)
-#define DEBUG_COMPILER(fmt, ...) DEBUG_LOG("COMPILER", DEBUG_COLOR_BLUE, fmt, ##__VA_ARGS__)
-
-/* --- Macro para trazar ejecución de bytecode ------------------ */
-#define DEBUG_TRACE_OP(op, desc) \
-DEBUG_OP("%s (op=%d, operand=%d, operand2=%d)", desc, ip->op, ip->operand, ip->operand2)
-
-/* --- Macro para mostrar estado de la pila --------------------- */
-#define DEBUG_STACK() \
-do { \
-    if (sp > stack) { \
-        DEBUG_VM("Stack: [%d elements]", (int)(sp - stack)); \
-        for (Value *p = stack; p < sp; p++) { \
-            switch (p->type) { \
-                case VAL_INT:    DEBUG_VM("  [%ld] int: %d", (long)(p - stack), p->data.ival); break; \
-                case VAL_FLOAT:  DEBUG_VM("  [%ld] float: %g", (long)(p - stack), p->data.fval); break; \
-                case VAL_BOOL:   DEBUG_VM("  [%ld] bool: %s", (long)(p - stack), p->data.bval ? "true" : "false"); break; \
-                case VAL_STRING: DEBUG_VM("  [%ld] string: \"%s\"", (long)(p - stack), p->data.sval); break; \
-                case VAL_LIST:   DEBUG_VM("  [%ld] list: [%d elements]", (long)(p - stack), p->data.list.count); break; \
-                case VAL_NULL:   DEBUG_VM("  [%ld] null", (long)(p - stack)); break; \
-                default:         DEBUG_VM("  [%ld] unknown type: %d", (long)(p - stack), p->type); break; \
-            } \
-        } \
-    } else { \
-        DEBUG_VM("Stack: empty"); \
-    } \
-} while(0)
 
 /* --- Macro para mostrar valor de una variable ----------------- */
 #define DEBUG_VAR(name, value) \
@@ -98,10 +71,6 @@ do { \
 #define DEBUG_WARN(fmt, ...)
 #define DEBUG_ERROR(fmt, ...)
 #define DEBUG_OP(fmt, ...)
-#define DEBUG_VM(fmt, ...)
-#define DEBUG_COMPILER(fmt, ...)
-#define DEBUG_TRACE_OP(op, desc)
-#define DEBUG_STACK()
 #define DEBUG_VAR(name, value)
 #define DEBUG_ENTER(fn)
 #define DEBUG_LEAVE(fn)

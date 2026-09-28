@@ -27,7 +27,6 @@
 #include "runtime/globals.h"
 #include "runtime/error.h"
 #include "embedded/embedded.h"
-#include "vm/vm.h"
 #include "developer/debug.h"
 #include "runtime/constants.h"
 
@@ -154,126 +153,6 @@ char *expand_command(const char *cmd) {
         if (len > SIZE_MAX - 2) {
             free(result);
             error(current_eval_line, "Comando expandido demasiado largo");
-        }
-        if (!grow_text_buffer(&result, &cap, len + 2)) {
-            free(result);
-            error(current_eval_line, "Memoria insuficiente al expandir comando");
-        }
-        result[len++] = *p++;
-    }
-    result[len] = '\0';
-    char *tmp = realloc(result, len + 1);
-    return tmp ? tmp : result;
-}
-
-/* --- Expansión de comandos usando arrays de locales (para la VM) --- */
-char *expand_command_with_locals(const char *cmd, char **names, Value *values, int count) {
-    if (!cmd) return NULL;
-    size_t cmd_len = strlen(cmd);
-    if (cmd_len > (SIZE_MAX - 65) / 2)
-        error(current_eval_line, "Comando demasiado largo");
-    size_t cap = cmd_len * 2 + 64;
-    char *result = malloc(cap);
-    if (!result) error(current_eval_line, "Memoria insuficiente al expandir comando");
-    size_t len = 0;
-    const char *p = cmd;
-
-    while (*p) {
-        if ((*p == '$' || *p == '?') &&
-            (isalpha((unsigned char)p[1]) || p[1] == '_')) {
-            const char *start = p + 1;
-            while (isalnum((unsigned char)*start) || *start == '_') start++;
-            size_t nlen = (size_t)(start - (p + 1));
-            if (nlen > 127) nlen = 127;
-            char name[128];
-            memcpy(name, p + 1, nlen);
-            name[nlen] = '\0';
-
-            if (*p == '?') {
-                append_dollar_name(&result, &len, &cap, name);
-                p = start;
-                continue;
-            }
-
-            char *val = NULL;
-            for (int i = 0; i < count; i++) {
-                if (names[i] && strcmp(names[i], name) == 0) {
-                    Value v = values[i];
-                    char buf[256];
-                    switch (v.type) {
-                        case VAL_INT: snprintf(buf, sizeof(buf), "%d", v.data.ival); val = strdup(buf); break;
-                        case VAL_FLOAT: snprintf(buf, sizeof(buf), "%g", v.data.fval); val = strdup(buf); break;
-                        case VAL_BOOL: val = strdup(v.data.bval ? "true" : "false"); break;
-                        case VAL_STRING: val = strdup(v.data.sval); break;
-                        default: val = NULL;
-                    }
-                    break;
-                }
-            }
-            if (!val) {
-                VarEntry *e = scope_find(current_scope, name);
-                if (e) {
-                    Value v = e->value;
-                    char buf[256];
-                    switch (v.type) {
-                        case VAL_INT: snprintf(buf, sizeof(buf), "%d", v.data.ival); val = strdup(buf); break;
-                        case VAL_FLOAT: snprintf(buf, sizeof(buf), "%g", v.data.fval); val = strdup(buf); break;
-                        case VAL_BOOL: val = strdup(v.data.bval ? "true" : "false"); break;
-                        case VAL_STRING: val = strdup(v.data.sval); break;
-                        default: val = NULL;
-                    }
-                }
-            }
-            if (!val) {
-                Value constant_value;
-                if (constants_lookup(name, &constant_value)) {
-                    Value v = constant_value;
-                    char buf[256];
-                    switch (v.type) {
-                        case VAL_INT: snprintf(buf, sizeof(buf), "%d", v.data.ival); val = strdup(buf); break;
-                        case VAL_FLOAT: snprintf(buf, sizeof(buf), "%g", v.data.fval); val = strdup(buf); break;
-                        case VAL_BOOL: val = strdup(v.data.bval ? "true" : "false"); break;
-                        case VAL_STRING: val = strdup(v.data.sval); break;
-                        default: val = NULL;
-                    }
-                    value_free(&constant_value);
-                }
-            }
-            if (!val) {
-                int gidx = vm_find_global_index(name);
-                if (gidx >= 0) {
-                    Value v = vm_globals[gidx];
-                    char buf[256];
-                    switch (v.type) {
-                        case VAL_INT: snprintf(buf, sizeof(buf), "%d", v.data.ival); val = strdup(buf); break;
-                        case VAL_FLOAT: snprintf(buf, sizeof(buf), "%g", v.data.fval); val = strdup(buf); break;
-                        case VAL_BOOL: val = strdup(v.data.bval ? "true" : "false"); break;
-                        case VAL_STRING: val = strdup(v.data.sval); break;
-                        default: val = NULL;
-                    }
-                }
-            }
-            if (val) {
-                size_t vlen = strlen(val);
-                if (len > SIZE_MAX - vlen - 1) {
-                    free(val);
-                    free(result);
-                    error(current_eval_line, "Comando expandido demasiado largo");
-                }
-                if (!grow_text_buffer(&result, &cap, len + vlen + 1)) {
-                    free(val);
-                    free(result);
-                    error(current_eval_line, "Memoria insuficiente al expandir comando");
-                }
-                memcpy(result + len, val, vlen);
-                len += vlen;
-                free(val);
-                p = start;
-                continue;
-            }
-
-            free(result);
-            error(current_eval_line, "Variable '%s' no definida", name);
         }
         if (!grow_text_buffer(&result, &cap, len + 2)) {
             free(result);

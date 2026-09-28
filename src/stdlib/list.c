@@ -12,7 +12,6 @@
 #include "runtime/scope.h"
 #include "runtime/globals.h"
 #include "runtime/error.h"
-#include "vm/vm.h"
 #include "stdlib/output.h"
 
 
@@ -40,6 +39,4 @@ static Value builtin_listLatest(int argc, Value *args) {
 
 void register_list_builtins(void) {
     func_register_builtin("listLatest", builtin_listLatest);
-
-    vm_register_builtin("listLatest", builtin_listLatest);
 }

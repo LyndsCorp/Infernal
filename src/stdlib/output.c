@@ -11,7 +11,6 @@
 #include "output.h"
 #include "core/value.h"
 #include "runtime/globals.h"
-#include "vm/vm.h"
 
 /* --- Mapa de nombres de color a códigos ANSI ---------------- */
 static const struct {
@@ -203,9 +202,4 @@ void register_output_builtins(void) {
     func_register_builtin("printf", builtin_printf);
     func_register_builtin("error",  builtin_error);
     func_register_builtin("color",  builtin_color);
-
-    vm_register_builtin("print",  builtin_print);
-    vm_register_builtin("printf", builtin_printf);
-    vm_register_builtin("error",  builtin_error);
-    vm_register_builtin("color",  builtin_color);
 }

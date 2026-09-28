@@ -14,7 +14,6 @@
 #include "runtime/globals.h"
 #include "runtime/error.h"
 #include "runtime/command.h"
-#include "vm/vm.h"
 
 
 /* ================================================
@@ -58,8 +57,4 @@ void register_system_builtins(void) {
     func_register_builtin("exit", builtin_exit);
     func_register_builtin("here", builtin_here);
     func_register_builtin("exited", builtin_exited);
-
-    vm_register_builtin("exit", builtin_exit);
-    vm_register_builtin("here", builtin_here);
-    vm_register_builtin("exited", builtin_exited);
 }

@@ -15,6 +15,7 @@
 #include <stdbool.h>
 #include <signal.h>
 #include "core/value.h"
+#include "core/ast.h"
 #include "lexer/lexer.h"
 #include "parser/parser.h"
 #include "runtime/scope.h"
@@ -23,8 +24,6 @@
 #include "runtime/command.h"
 #include "runtime/lava.h"
 #include "stdlib/builtins.h"
-#include "vm/vm.h"
-#include "vm/compiler.h"
 #include "developer/debug.h"
 #include "runtime/constants.h"
 #include "runtime/evaluator/evaluator.h"
@@ -56,17 +55,6 @@ static void install_internal_error_handlers(void) {
     sigaction(SIGFPE, &sa, NULL);
 }
 
-void chunk_free(Chunk *ch) {
-    if (!ch) return;
-    for (int i = 0; i < ch->const_count; i++) value_free(&ch->constants[i]);
-    free(ch->constants);
-    for (int i = 0; i < ch->local_count; i++) free(ch->local_names[i]);
-    free(ch->local_names);
-    free(ch->local_types);
-    free(ch->code);
-    free(ch);
-}
-
 static void cleanup_runtime_state(void) {
     lava_cleanup();
     constants_cleanup();
@@ -80,10 +68,6 @@ static void cleanup_runtime_state(void) {
         func_table = entry->next;
         FuncObject *obj = entry->obj;
         if (obj) {
-            if (obj->kind == FUNC_USER && obj->code) {
-                chunk_free(obj->code);
-                obj->code = NULL;
-            }
             free(obj);
         }
         free(entry->name);
@@ -96,10 +80,6 @@ static void cleanup_runtime_state(void) {
         super_func_table = entry->next;
         FuncObject *obj = entry->obj;
         if (obj) {
-            if (obj->kind == FUNC_USER && obj->code) {
-                chunk_free(obj->code);
-                obj->code = NULL;
-            }
             free(obj);
         }
         free(entry->name);
@@ -308,8 +288,6 @@ int main(int argc, char **argv) {
         /* No usamos `program` aquí: su valor es indeterminado tras el
          * longjmp. ast_free_all() ya se encarga de liberar todo el AST
          * registrado, así como los NodeList huérfanos. */
-        vm_cleanup_state();
-        compiler_cleanup_on_error();
         parser_cleanup_on_error();      /* = ast_free_all() */
         if (ts.tokens) {
             for (int i = 0; i < ts.count; i++) free(ts.tokens[i].lexeme);

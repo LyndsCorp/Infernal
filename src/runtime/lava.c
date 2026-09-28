@@ -28,7 +28,6 @@
 #include "runtime/globals.h"
 #include "runtime/error.h"
 #include "runtime/constants.h"
-#include "vm/vm.h"
 #include "embedded/embedded.h"
 
 #include <dlfcn.h>
@@ -988,16 +987,8 @@ int lava_register_fn(const char *name, void (*fn)(void), const char *sig) {
         extern Value (*lava_thunk_table[LAVA_MAX_SLOTS])(int, Value *);
         Value (*thunk)(int, Value *) = lava_thunk_table[slot];
 
-        /*
-         * Solo el nombre con prefijo. El nombre desnudo NO se registra.
-         *
-         * func_register_builtin() copia internamente el nombre con strdup(),
-         * mientras que vm_register_builtin() toma propiedad del puntero que
-         * se le pasa. Por eso pasamos el mismo `prefixed` a ambas: la primera
-         * lo copia, la segunda se queda con el original.
-         */
+        /* Solo se registra el nombre con prefijo; el nombre desnudo no se expone. */
         func_register_builtin(prefixed, thunk);
-        vm_register_builtin(prefixed, thunk);
         return 0;
 }
 

@@ -11,8 +11,6 @@
 #include <stdbool.h>
 #include <setjmp.h>
 
-typedef struct Chunk Chunk;
-
 typedef enum {
     TOK_EOF, TOK_NEWLINE, TOK_IDENT, TOK_NUMBER, TOK_STRING_LITERAL,
     TOK_EQ, TOK_PLUS, TOK_MINUS, TOK_STAR, TOK_SLASH, TOK_PERCENT,
@@ -117,7 +115,6 @@ typedef struct FuncObject {
         ASTNode *def;
         BuiltinFunc builtin;
     };
-    Chunk *code;
 } FuncObject;
 
 typedef struct {

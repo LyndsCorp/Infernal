@@ -14,7 +14,6 @@
 #include "core/value.h"
 #include "runtime/error.h"
 #include "runtime/globals.h"
-#include "vm/vm.h"
 
 
 /* ================================================
@@ -95,7 +94,4 @@ static Value builtin_size(int argc, Value *args) {
 void register_neutral_builtins(void) {
     func_register_builtin("has", builtin_has);
     func_register_builtin("size", builtin_size);
-
-    vm_register_builtin("has", builtin_has);
-    vm_register_builtin("size", builtin_size);
 }

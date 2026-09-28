@@ -11,7 +11,6 @@
 #include "core/value.h"
 #include "runtime/error.h"
 #include "runtime/globals.h"
-#include "vm/vm.h"
 
 
 /* ================================================
@@ -69,8 +68,4 @@ void register_map_builtins(void) {
     func_register_builtin("keys",   builtin_keys);
     func_register_builtin("values", builtin_values);
     func_register_builtin("delete", builtin_delete);
-
-    vm_register_builtin("keys",   builtin_keys);
-    vm_register_builtin("values", builtin_values);
-    vm_register_builtin("delete", builtin_delete);
 }

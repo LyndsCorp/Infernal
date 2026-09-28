@@ -8,9 +8,8 @@
 #ifndef RUNTIME_GLOBALS_H
 #define RUNTIME_GLOBALS_H
 
-#include "core/types.h"   // ya contiene FuncObject con el campo code
+#include "core/types.h"
 #include "runtime/scope.h"
-#include "vm/vm.h"        // para Chunk (pero solo se usa el forward declaration en types.h)
 
 /* --- Control flow constants ------------------------------ */
 #define CF_NONE        0

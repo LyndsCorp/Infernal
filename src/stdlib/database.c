@@ -24,7 +24,6 @@
 #include "core/value.h"
 #include "runtime/error.h"
 #include "runtime/globals.h"
-#include "vm/vm.h"
 
 /* ============================================================
  *  Límites de seguridad
@@ -1297,11 +1296,4 @@ void register_database_builtins(void) {
     func_register_builtin("frombinfile",  builtin_frombinfile);
     func_register_builtin("fileexists",   builtin_fileexists);
     func_register_builtin("deletefile",   builtin_deletefile);
-
-    vm_register_builtin("tofile",       builtin_tofile);
-    vm_register_builtin("fromfile",     builtin_fromfile);
-    vm_register_builtin("tobinfile",    builtin_tobinfile);
-    vm_register_builtin("frombinfile",  builtin_frombinfile);
-    vm_register_builtin("fileexists",   builtin_fileexists);
-    vm_register_builtin("deletefile",   builtin_deletefile);
 }

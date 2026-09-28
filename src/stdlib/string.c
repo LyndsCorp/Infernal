@@ -17,7 +17,6 @@
 #include "core/value.h"
 #include "runtime/error.h"
 #include "runtime/globals.h"
-#include "vm/vm.h"
 
 
 /* ================================================
@@ -633,23 +632,4 @@ void register_string_builtins(void) {
     func_register_builtin("ends", builtin_ends);
     func_register_builtin("capitalize", builtin_capitalize);
     func_register_builtin("length", builtin_length);
-
-    vm_register_builtin("head", builtin_head);
-    vm_register_builtin("tail", builtin_tail);
-    vm_register_builtin("lower", builtin_lower);
-    vm_register_builtin("upper", builtin_upper);
-    vm_register_builtin("count", builtin_count);
-    vm_register_builtin("indexof", builtin_indexof);
-    vm_register_builtin("replace", builtin_replace);
-    vm_register_builtin("reverse", builtin_reverse);
-    vm_register_builtin("join", builtin_join);
-    vm_register_builtin("trim", builtin_trim);
-    vm_register_builtin("rtrim", builtin_rtrim);
-    vm_register_builtin("ltrim", builtin_ltrim);
-    vm_register_builtin("trimcenter", builtin_trimcenter);
-    vm_register_builtin("delspaces", builtin_delspaces);
-    vm_register_builtin("starts", builtin_starts);
-    vm_register_builtin("ends", builtin_ends);
-    vm_register_builtin("capitalize", builtin_capitalize);
-    vm_register_builtin("length", builtin_length);
 }

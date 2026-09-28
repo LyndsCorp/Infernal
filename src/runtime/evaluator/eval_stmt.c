@@ -21,7 +21,6 @@
 #include "lexer/lexer.h"
 #include "parser/parser.h"
 #include "developer/debug.h"
-#include "vm/vm.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
@@ -594,20 +593,9 @@ void exec_stmt(ASTNode *stmt) {
 
             DEBUG_INFO("NODE_ASSIGN: is_global=%d, is_local=%d, nombre='%s'",
                        stmt->data.assign.is_global, stmt->data.assign.is_local, stmt->data.assign.name);
-
             if (stmt->data.assign.is_global) {
                 DEBUG_INFO("Definiendo global '%s' en super_global_scope", stmt->data.assign.name);
                 scope_define(super_global_scope, stmt->data.assign.name, vtype, val);
-
-                int gidx = vm_find_global_index(stmt->data.assign.name);
-                if (gidx < 0) {
-                    gidx = vm_register_global(stmt->data.assign.name, GLOBAL_SUPER, vtype);
-                }
-                if (gidx >= 0) {
-                    value_free(&vm_globals[gidx]);
-                    vm_globals[gidx] = copy_value_secure(val);
-                    if (vtype != 0) vm_global_types[gidx] = vtype;
-                }
             } else if (stmt->data.assign.is_local) {
                 DEBUG_INFO("Definiendo local '%s' en current_scope", stmt->data.assign.name);
                 scope_define(current_scope, stmt->data.assign.name, vtype, val);

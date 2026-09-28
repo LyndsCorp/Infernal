@@ -19,7 +19,6 @@
 #include "runtime/error.h"
 #include "runtime/constants.h"
 #include "runtime/evaluator/helpers.h"
-#include "vm/vm.h"
 #include "stdlib/output.h"
 
 /* --- Impresión "de inspección" --------------------------------
@@ -435,10 +434,4 @@ void register_io_builtins(void) {
     func_register_builtin("printAllBuiltins",  builtin_printAllBuiltins);
     func_register_builtin("vartype",           builtin_vartype);
     func_register_builtin("input",             builtin_input);
-
-    vm_register_builtin("printAllVars",      builtin_printAllVars);
-    vm_register_builtin("printAllFunctions", builtin_printAllFunctions);
-    vm_register_builtin("printAllBuiltins",  builtin_printAllBuiltins);
-    vm_register_builtin("vartype",           builtin_vartype);
-    vm_register_builtin("input",             builtin_input);
 }

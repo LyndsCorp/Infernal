@@ -18,7 +18,6 @@
 #include "runtime/scope.h"
 #include "runtime/globals.h"
 #include "runtime/error.h"
-#include "vm/vm.h"
 #include "runtime/constants.h"
 #include "developer/debug.h"
 
@@ -215,14 +214,6 @@ static Value builtin_delvar(int argc, Value *args) {
 
     scope_remove_entry(owner, entry);
 
-    if (owner == global_scope || owner == super_global_scope) {
-        int gidx = vm_find_global_index(name);
-        if (gidx >= 0) {
-            value_free(&vm_globals[gidx]);
-            vm_globals[gidx] = val_make_null();
-        }
-    }
-
     DEBUG_INFO("delvar(): variable \"%s\" eliminada", name);
     return val_make_null();
 }
@@ -298,47 +289,18 @@ static Value builtin_mkvar(int argc, Value *args) {
     }
 
     VarEntry *existing = scope_find_current(target, name);
-    VarEntry *target_entry = NULL;
 
     if (existing) {
         value_free(&existing->value);
         existing->value = val;
         existing->vtype = tok_type;
-        target_entry = existing;
         DEBUG_INFO("mkvar(): variable \"%s\" actualizada en scope %s (tipo=%d)",
                    name, scope_name_str(scope_type), tok_type);
     } else {
         scope_define(target, name, tok_type, val);
-        target_entry = scope_find_current(target, name);
         DEBUG_INFO("mkvar(): variable \"%s\" creada en scope %s (tipo=%d)",
                    name, scope_name_str(scope_type), tok_type);
     }
-
-    /*
-     * Sincronizar con la VM si el scope es global (script o superglobal).
-     * El bytecode lee las globales vía vm_globals[], no vía la cadena de
-     * scopes.
-     *
-     * El flag de VM que toca usar depende del scope:
-     *   - global_scope       → GLOBAL_SCRIPT (variable del script actual)
-     *   - super_global_scope → GLOBAL_SUPER  (compartida entre scripts)
-     */
-    if (target_entry && (target == global_scope || target == super_global_scope)) {
-        int gidx = vm_find_global_index(name);
-        if (gidx < 0) {
-            gidx = vm_register_global(
-                name,
-                target == super_global_scope ? GLOBAL_SUPER : GLOBAL_SCRIPT,
-                tok_type
-            );
-        }
-        if (gidx >= 0) {
-            value_free(&vm_globals[gidx]);
-            vm_globals[gidx] = copy_value_secure(target_entry->value);
-            vm_global_types[gidx] = tok_type;
-        }
-    }
-
     return val_make_null();
 }
 
@@ -350,7 +312,4 @@ static Value builtin_mkvar(int argc, Value *args) {
 void register_variables_builtins(void) {
     func_register_builtin("delvar", builtin_delvar);
     func_register_builtin("mkvar",  builtin_mkvar);
-
-    vm_register_builtin("delvar", builtin_delvar);
-    vm_register_builtin("mkvar",  builtin_mkvar);
 }

@@ -13,7 +13,6 @@
 
 char *expand_command(const char *cmd);
 char *get_var_string(const char *name);
-char *expand_command_with_locals(const char *cmd, char **names, Value *values, int count);
 int execute_embedded(const char *full_cmd);
 FILE *popen_embedded_with_path(const char *full_cmd, const char *mode, char **temp_path);
 void set_embedded_tmp_dir(const char *dir);

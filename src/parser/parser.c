@@ -23,7 +23,6 @@
 #include "runtime/error.h"
 #include "runtime/lava.h"
 #include "embedded/embedded.h"
-#include "vm/compiler.h"
 #include "developer/debug.h"
 #include "core/memory.h"
 #include "runtime/evaluator/helpers.h"
@@ -1052,7 +1051,6 @@ NodeList parse_block(const char *terminator) {
                 func_register(stmt->data.func.name, stmt);
             }
 
-            /* NO compilar aquí. La compilación se hará en compile_program */
             DEBUG_INFO("parse_block: añadido NODE_FUNC_DEF en línea %d", stmt->line);
             ts_skip_newlines();
             continue;
