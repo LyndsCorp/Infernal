@@ -276,12 +276,11 @@ static Value builtin_vartype(int argc, Value *args) {
     return val_string(t);
 }
 
-static void redraw_input(const char *prompt, const char *buffer, size_t length, size_t cursor) {
-    printf("\r%s%s\033[K", prompt ? prompt : "", buffer);
-    if (length > cursor) printf("\033[%zuD", length - cursor);
-    fflush(stdout);
-}
+/* ================================================================
+ *  input(): lectura de línea con edición en TTY
+ * ================================================================ */
 
+/* Lee un byte de stdin reintentando si es interrumpido por una señal. */
 static int read_byte(unsigned char *out) {
     ssize_t n;
     do {
@@ -290,14 +289,34 @@ static int read_byte(unsigned char *out) {
     return n == 1 ? 1 : 0;
 }
 
-static Value input_line_editor(const char *prompt) {
+/* Redibuja el buffer de entrada sin volver a imprimir el prompt.
+ * Se asume que antes se guardó la posición del cursor con "\033[s". */
+static void redraw_input(const char *buffer, size_t length, size_t cursor) {
+    printf("\033[u\033[K");              /* restaura cursor y borra hasta fin de línea */
+    if (length > 0) fwrite(buffer, 1, length, stdout);
+    if (length > cursor) printf("\033[%zuD", length - cursor);
+    fflush(stdout);
+}
+
+/* Editor de línea para terminales interactivas.
+ *
+ * El prompt ya se ha impreso antes de llamar a esta función. Aquí se
+ * guarda la posición del cursor justo después de él con "\033[s" y se
+ * restaura en cada redibujado con "\033[u", de modo que el prompt no
+ * se reimprime nunca. */
+static Value input_line_editor(void) {
     struct termios original, raw;
     if (tcgetattr(STDIN_FILENO, &original) != 0) return val_string("");
+
     raw = original;
     raw.c_lflag &= (tcflag_t) ~(ICANON | ECHO);
     raw.c_cc[VMIN] = 1;
     raw.c_cc[VTIME] = 0;
     if (tcsetattr(STDIN_FILENO, TCSANOW, &raw) != 0) return val_string("");
+
+    /* Guardamos la posición del cursor justo después del prompt. */
+    printf("\033[s");
+    fflush(stdout);
 
     size_t capacity = 128;
     size_t length = 0;
@@ -318,6 +337,7 @@ static Value input_line_editor(const char *prompt) {
             fflush(stdout);
             break;
         }
+
         if (c == 4) { /* Ctrl-D */
             if (length == 0) {
                 printf("\033[0m\n");
@@ -328,47 +348,64 @@ static Value input_line_editor(const char *prompt) {
             }
             continue;
         }
-        if (c == 127 || c == 8) {
+
+        if (c == 127 || c == 8) { /* Backspace */
             if (cursor > 0) {
                 memmove(buffer + cursor - 1, buffer + cursor, length - cursor + 1);
                 length--;
                 cursor--;
-                redraw_input(prompt, buffer, length, cursor);
+                redraw_input(buffer, length, cursor);
             }
             continue;
         }
-        if (c == 27) {
+
+        if (c == 27) { /* ESC: posibles secuencias de flechas / Home / End / Delete */
             unsigned char a, b, d;
             if (!read_byte(&a)) continue;
             if (a == '[') {
                 if (!read_byte(&b)) continue;
                 if (b >= '0' && b <= '9') {
                     if (!read_byte(&d)) continue;
-                    if (b == '3' && d == '~' && cursor < length) {
+                    if (b == '3' && d == '~' && cursor < length) { /* Delete */
                         memmove(buffer + cursor, buffer + cursor + 1, length - cursor);
                         length--;
-                        redraw_input(prompt, buffer, length, cursor);
+                        redraw_input(buffer, length, cursor);
                     }
                     continue;
                 }
                 switch (b) {
-                    case 'D': if (cursor > 0) cursor--; redraw_input(prompt, buffer, length, cursor); break;
-                    case 'C': if (cursor < length) cursor++; redraw_input(prompt, buffer, length, cursor); break;
-                    case 'H': cursor = 0; redraw_input(prompt, buffer, length, cursor); break;
-                    case 'F': cursor = length; redraw_input(prompt, buffer, length, cursor); break;
-                    case 'A': /* up: reservado para historial */ break;
-                    case 'B': /* down: reservado para historial */ break;
-                    default: break;
+                    case 'D': /* Izquierda */
+                        if (cursor > 0) cursor--;
+                        redraw_input(buffer, length, cursor);
+                        break;
+                    case 'C': /* Derecha */
+                        if (cursor < length) cursor++;
+                        redraw_input(buffer, length, cursor);
+                        break;
+                    case 'H': /* Home */
+                        cursor = 0;
+                        redraw_input(buffer, length, cursor);
+                        break;
+                    case 'F': /* End */
+                        cursor = length;
+                        redraw_input(buffer, length, cursor);
+                        break;
+                    case 'A': /* Arriba: reservado para historial */
+                    case 'B': /* Abajo: reservado para historial */
+                    default:
+                        break;
                 }
             } else if (a == 'O') {
                 if (!read_byte(&b)) continue;
                 if (b == 'H') cursor = 0;
                 else if (b == 'F') cursor = length;
-                redraw_input(prompt, buffer, length, cursor);
+                redraw_input(buffer, length, cursor);
             }
             continue;
         }
-        if (c < 32) continue;
+
+        if (c < 32) continue; /* ignorar otros controles */
+
         if (length + 1 >= capacity) {
             size_t new_capacity = (capacity < 4096) ? capacity * 2 : capacity + 4096;
             if (new_capacity > 1024 * 1024) {
@@ -385,11 +422,12 @@ static Value input_line_editor(const char *prompt) {
             buffer = tmp;
             capacity = new_capacity;
         }
+
         memmove(buffer + cursor + 1, buffer + cursor, length - cursor + 1);
         buffer[cursor] = (char)c;
         length++;
         cursor++;
-        redraw_input(prompt, buffer, length, cursor);
+        redraw_input(buffer, length, cursor);
     }
 
     tcsetattr(STDIN_FILENO, TCSANOW, &original);
@@ -398,7 +436,17 @@ static Value input_line_editor(const char *prompt) {
     return result;
 }
 
-/* --- input() --- */
+/* --- input() ---
+ *
+ * Imprime el prompt tal cual (sin añadir nada). Si stdin y stdout son
+ * TTYs, usa un editor de línea propio que permite mover el cursor con
+ * las flechas, Home/End, Delete y Backspace. En caso contrario lee con
+ * fgets (útil para pipes, redirecciones y scripts).
+ *
+ * El prompt se imprime una sola vez. El editor guarda la posición del
+ * cursor con "\033[s" y la restaura con "\033[u", así que el prompt
+ * nunca se vuelve a dibujar, sin importar cuántos "\n" contenga.
+ */
 static Value builtin_input(int argc, Value *args) {
     const char *prompt = "";
     if (argc >= 1 && args[0].type == VAL_STRING) prompt = args[0].data.sval;
@@ -409,7 +457,7 @@ static Value builtin_input(int argc, Value *args) {
     }
 
     if (isatty(STDIN_FILENO) && isatty(STDOUT_FILENO))
-        return input_line_editor(prompt);
+        return input_line_editor();
 
     char buffer[4096];
     if (!fgets(buffer, sizeof(buffer), stdin)) {
@@ -417,8 +465,10 @@ static Value builtin_input(int argc, Value *args) {
         fflush(stdout);
         return val_string("");
     }
+
     size_t len = strlen(buffer);
     if (len > 0 && buffer[len - 1] == '\n') buffer[len - 1] = '\0';
+
     printf("\033[0m");
     fflush(stdout);
     return val_string(buffer);
