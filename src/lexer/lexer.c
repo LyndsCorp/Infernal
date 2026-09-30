@@ -197,7 +197,7 @@ void tokenize_file(FILE *fp) {
             if (*p == ']') { Token t = {TOK_RBRACKET, strdup("]"), lineno, start_col, start_col + 1}; ts_add(t); p++; continue; }
             if (*p == '{') { Token t = {TOK_LBRACE, strdup("{"), lineno, start_col, start_col + 1}; ts_add(t); p++; continue; }
             if (*p == '}') { Token t = {TOK_RBRACE, strdup("}"), lineno, start_col, start_col + 1}; ts_add(t); p++; continue; }
-            if (*p == ';') { Token t = {TOK_SEMI, strdup(";"), lineno, start_col, start_col + 1}; ts_add(t); p++; continue; }
+            if (*p == ';') { Token t = {TOK_NEWLINE, strdup(";"), lineno, start_col, start_col + 1}; ts_add(t); p++; continue; }
             if (*p == ',') { Token t = {TOK_COMMA, strdup(","), lineno, start_col, start_col + 1}; ts_add(t); p++; continue; }
             if (*p == '+') { Token t = {TOK_PLUS, strdup("+"), lineno, start_col, start_col + 1}; ts_add(t); p++; continue; }
             if (*p == '-') { Token t = {TOK_MINUS, strdup("-"), lineno, start_col, start_col + 1}; ts_add(t); p++; continue; }

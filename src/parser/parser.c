@@ -1994,8 +1994,6 @@ NodeList parse_block(const char *terminator) {
             error_at(t.line, t.start_col, "'}' no tiene un '{' abierto que cerrar aquí");
         if (t.type == TOK_COMMA)
             error_at(t.line, t.start_col, "Hay una ',' fuera de una lista, mapa, llamada o declaración múltiple");
-        if (t.type == TOK_SEMI)
-            error_at(t.line, t.start_col, "';' no separa instrucciones en Infernal; usa un salto de línea");
 
         error_at(t.line, t.start_col > 0 ? t.start_col : 1,
                  "Sentencia no reconocida '%s'", t.lexeme);

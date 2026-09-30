@@ -692,8 +692,6 @@ ASTNode *parse_primary() {
         t.type == TOK_ELSEIF || t.type == TOK_CASE || t.type == TOK_DEFAULT ||
         t.type == TOK_CATCH)
         error_at(t.line, t.start_col, "'%s' no puede aparecer aquí; falta una expresión antes de este bloque", t.lexeme);
-    if (t.type == TOK_SEMI)
-        error_at(t.line, t.start_col, "';' no separa expresiones en Infernal; termina la instrucción con un salto de línea");
     expression_expected_value(t, "una expresión");
     return NULL;
 }
