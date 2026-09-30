@@ -449,70 +449,81 @@ Value eval_binop(ASTNode *expr) {
      * texto + "c"[2]      inserta "c" en la posición 2
      * texto += "c"[2]     idem
      *
-     * El lado derecho debe ser NODE_INDEX (el parser lo produce tanto si
-     * el valor a insertar es un literal como si es una variable o una
-     * expresión). El índice es la posición donde se inserta. */
+     * SOLO es inserción de carácter cuando el contenedor que se indexa
+     * es él mismo un string:
+     *
+     *     $texto + "x"[2]         →  base es string → inserta 'x' en pos 2
+     *     $texto + $letra[1]      →  base es string → inserta el carácter
+     *
+     * Si el contenedor es una lista o un mapa, NO es inserción, es
+     * concatenación normal. El valor indexado se evalúa y se concatena
+     * como cualquier otro operando derecho:
+     *
+     *     $texto + otro[2]        →  base es list  → concatena otro[2]
+     *     $texto + $mapa["k"]     →  base es map   → concatena mapa["k"]
+     *
+     * Así Infernal sabe de dónde viene el valor y no confunde un string
+     * de una lista (que puede tener cualquier longitud) con un carácter
+     * de un string. */
     if (left.type == VAL_STRING && expr->data.binop.op == TOK_PLUS &&
         expr->data.binop.right->kind == NODE_INDEX) {
 
         ASTNode *idx_node = expr->data.binop.right;
 
-        Value base = eval_expr(idx_node->data.idx.list);
-        if (base.type == VAL_REFERENCE)
-            base = resolve_reference(base, expr->line);
+    Value base = eval_expr(idx_node->data.idx.list);
+    if (base.type == VAL_REFERENCE)
+        base = resolve_reference(base, expr->line);
 
-        Value index_val = eval_expr(idx_node->data.idx.index);
-        if (index_val.type == VAL_REFERENCE)
-            index_val = resolve_reference(index_val, expr->line);
-
-        /* El valor a insertar debe ser un string de exactamente 1 carácter. */
+        /* Si el contenedor indexado NO es un string, no es inserción:
+         * liberamos `base` y dejamos caer el flujo al bloque general de
+         * concatenación, que evaluará `expr->data.binop.right` (el
+         * NODE_INDEX completo) como operando derecho. */
         if (base.type != VAL_STRING) {
             value_free(&base);
-            value_free(&index_val);
-            value_free(&left);
-            error(expr->line,
-                  "Solo se pueden insertar strings de 1 carácter en un string "
-                  "(valor recibido de tipo '%s')",
-                  value_type_name(base.type));
-        }
+        } else {
+            Value index_val = eval_expr(idx_node->data.idx.index);
+            if (index_val.type == VAL_REFERENCE)
+                index_val = resolve_reference(index_val, expr->line);
 
-        size_t ins_chars = utf8_char_count(base.data.sval);
-        if (ins_chars != 1) {
+            /* El valor a insertar debe ser un string de exactamente 1 carácter. */
+            size_t ins_chars = utf8_char_count(base.data.sval);
+            if (ins_chars != 1) {
+                value_free(&base);
+                value_free(&index_val);
+                value_free(&left);
+                error(expr->line,
+                      "No se puede insertar en un string un valor de %zu carácter(es): "
+                      "solo se admite 1 carácter a la vez",
+                      ins_chars);
+            }
+
+            /* La posición debe ser un entero positivo. */
+            int pos = -1;
+            if (index_val.type == VAL_INT) {
+                pos = index_val.data.ival;
+            } else if (index_val.type == VAL_FLOAT) {
+                double f = index_val.data.fval;
+                if (isfinite(f) && f >= 1.0 && f <= (double)INT_MAX && trunc(f) == f)
+                    pos = (int)f;
+            }
+
+            if (pos < 1) {
+                value_free(&base);
+                value_free(&index_val);
+                value_free(&left);
+                error(expr->line,
+                      "La posición de inserción debe ser un entero positivo");
+            }
+
+            char *new_str = utf8_insert_at(left.data.sval, base.data.sval, pos, expr->line);
+            Value result = val_string(new_str);
+            free(new_str);
             value_free(&base);
             value_free(&index_val);
             value_free(&left);
-            error(expr->line,
-                  "No se puede insertar en un string un valor de %zu carácter(es): "
-                  "solo se admite 1 carácter a la vez",
-                  ins_chars);
+            return result;
         }
-
-        /* La posición debe ser un entero positivo. */
-        int pos = -1;
-        if (index_val.type == VAL_INT) {
-            pos = index_val.data.ival;
-        } else if (index_val.type == VAL_FLOAT) {
-            double f = index_val.data.fval;
-            if (isfinite(f) && f >= 1.0 && f <= (double)INT_MAX && trunc(f) == f)
-                pos = (int)f;
         }
-
-        if (pos < 1) {
-            value_free(&base);
-            value_free(&index_val);
-            value_free(&left);
-            error(expr->line,
-                  "La posición de inserción debe ser un entero positivo");
-        }
-
-        char *new_str = utf8_insert_at(left.data.sval, base.data.sval, pos, expr->line);
-        Value result = val_string(new_str);
-        free(new_str);
-        value_free(&base);
-        value_free(&index_val);
-        value_free(&left);
-        return result;
-    }
 
     /* =================================================================
      *  RESTO DE OPERADORES (AND, OR, comparaciones, POW, concat, aritmética)
