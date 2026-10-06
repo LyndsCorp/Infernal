@@ -716,7 +716,7 @@ void exec_stmt(ASTNode *stmt) {
             int iter_count = 0;
             while (1) {
                 if (iter_count >= max_loop_iterations)
-                    error(stmt->line, "Límite de iteraciones (%d) alcanzado en bucle while", max_loop_iterations);
+                    error(stmt->line, "Límite de iteraciones (%d) alcanzado en bucle while.\n    Si necesitas ampliar el límite de iteraciones, haz:\n\tdefine _MAX_LOOP_LIMIT x\n    Pero reemplazando ese x por el número que quieres que sea el límite de iteraciones.", max_loop_iterations);
                 iter_count++;
                 Value cond = eval_expr(stmt->data.while_stmt.cond);
                 bool truthy = val_is_truthy(cond);
@@ -809,7 +809,7 @@ void exec_stmt(ASTNode *stmt) {
             while (1) {
                 if (iter_count >= max_loop_iterations) {
                     error(stmt->line,
-                          "Límite de iteraciones (%d) alcanzado en bucle for",
+                          "Límite de iteraciones (%d) alcanzado en bucle for.\n    Si necesitas ampliar el límite de iteraciones, haz:\n\tdefine _MAX_LOOP_LIMIT x\n    Pero reemplazando ese x por el número que quieres que sea el límite de iteraciones.",
                           max_loop_iterations);
                 }
 
