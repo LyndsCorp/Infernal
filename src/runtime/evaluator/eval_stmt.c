@@ -514,7 +514,7 @@ void exec_stmt(ASTNode *stmt) {
                      *   stats["vida"] = 1000
                      *   texto[1] = "X"            (string)
                      *   pages[web][pagina] = []   (declaración con tipo) */
-                    VarEntry *var = scope_find(current_scope, stmt->data.assign.name);
+                    VarEntry * volatile var = scope_find(current_scope, stmt->data.assign.name);
                     if (!var) {
                         int vtype = stmt->data.assign.vtype;
                         if (vtype == TOK_MAP || vtype == TOK_LIST) {
@@ -748,7 +748,7 @@ void exec_stmt(ASTNode *stmt) {
         }
 
         case NODE_WHILE: {
-            int iter_count = 0;
+            volatile int iter_count = 0;
             while (1) {
                 if (iter_count >= max_loop_iterations)
                     error(stmt->line, "Límite de iteraciones (%d) alcanzado en bucle while.\n    Si necesitas ampliar el límite de iteraciones, haz:\n\tdefine _MAX_LOOP_LIMIT x\n    Pero reemplazando ese x por el número que quieres que sea el límite de iteraciones.", max_loop_iterations);
@@ -820,7 +820,7 @@ void exec_stmt(ASTNode *stmt) {
                 DEBUG_INFO("NODE_FOR: init_val por defecto del tipo %d", vtype);
             }
 
-            Scope *for_scope;
+            Scope * volatile for_scope;
 
             if (is_global_for) {
                 for_scope = super_global_scope;
@@ -867,7 +867,7 @@ void exec_stmt(ASTNode *stmt) {
 
             current_scope = for_scope;
 
-            int iter_count = 0;
+            volatile int iter_count = 0;
 
             while (1) {
                 if (iter_count >= max_loop_iterations) {

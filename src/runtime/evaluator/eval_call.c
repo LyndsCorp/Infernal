@@ -23,7 +23,7 @@ Value eval_call(ASTNode *expr) {
     if (fobj->kind == FUNC_BUILTIN) {
         int argc = expr->data.call.argc;
         int saved_line = current_eval_line;
-        Value *args = argc > 0 ? malloc(sizeof(Value) * (size_t)argc) : NULL;
+        Value * volatile args = argc > 0 ? malloc(sizeof(Value) * (size_t)argc) : NULL;
         if (argc > 0 && !args) error(expr->line, "Memoria insuficiente para argumentos");
         for (int i = 0; i < argc; i++) args[i] = val_make_null();
 
