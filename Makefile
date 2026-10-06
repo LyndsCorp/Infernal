@@ -578,7 +578,7 @@ install-lava:
 			printf "    $(RED)✗$(RESET)  %s\n" "$$f"; \
 		done; \
 		printf "\nCompila Infernal primero para generarlos:\n\n"; \
-		printf "    $(YELLOW)make$(RESET)                       # compila el binario y los módulos\n"; \
+		printf "    $(YELLOW)make lava$(RESET)                  # compila el binario y los módulos\n"; \
 		printf "    sudo $(YELLOW)make install-lava$(RESET)     # luego instálalos\n\n"; \
 		exit 1; \
 	fi; \
