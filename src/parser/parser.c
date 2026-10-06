@@ -889,16 +889,29 @@ NodeList parse_block(const char *terminator) {
                              is_local ? "local" : "global", varname,
                              is_local ? "local" : "global", varname);
                 } else {
+                    Token after = ts_peek();
+                    if (after.type == TOK_COMMA) {
+                        error_at(after.line, after.start_col > 0 ? after.start_col : 1,
+                                 "Se esperaba '=' después de '%s' en el for.\n"
+                                 "    Escribiste 'for %s, ...', y esa forma solo es válida si tras la coma\n"
+                                 "    viene otro nombre seguido de 'in' (for-in con índice):\n"
+                                 "        for i, elemento in lista then\n"
+                                 "    Para un for tradicional, da un valor inicial a la variable:\n"
+                                 "        for %s = 0, condición, incremento then\n"
+                                 "    O declara el tipo para usar el valor por defecto del tipo:\n"
+                                 "        for int %s, condición, incremento then         (usa 0)\n"
+                                 "        for local int %s, condición, incremento then   (usa 0, local)",
+                                 varname, varname, varname, varname, varname);
+                    }
                     error_at(ts_peek().line, ts_peek().start_col > 0 ? ts_peek().start_col : 1,
-                             "Se esperaba '=' después de la variable del for.\n"
-                             "    La sintaxis del for tradicional es:\n"
-                             "        for variable = inicio, condición, incremento then\n"
-                             "        for tipo variable, condición, incremento then   (usa el valor por defecto del tipo)\n"
-                             "    Por ejemplo:  for i = 0, i <= 3, i++ then\n"
-                             "                  for local int i, i <= 3, i++ then\n"
+                             "Se esperaba '=' después de '%s' en el for.\n"
+                             "    Un for tradicional necesita dar un valor inicial a la variable:\n"
+                             "        for %s = 0, condición, incremento then\n"
+                             "        for int %s, condición, incremento then   (usa el valor por defecto del tipo)\n"
                              "    Para recorrer una lista usa for-in:\n"
                              "        for elemento in lista then\n"
-                             "        for i, elemento in lista then");
+                             "        for i, elemento in lista then   (con índice)",
+                             varname, varname, varname);
                 }
 
                 ASTNode *init = node_create(NODE_ASSIGN, t.line);
