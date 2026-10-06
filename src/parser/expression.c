@@ -664,14 +664,23 @@ ASTNode *parse_primary() {
             }
     }
     if (t.type == TOK_LBRACE) {
-        ts_advance();
-        if (ts_peek().type != TOK_IDENT) error(t.line, "Se esperaba nombre de variable tras '{'");
-        char *name = strdup(ts_advance().lexeme);
-        if (!ts_match(TOK_RBRACE)) error(t.line, "Se esperaba '}'");
-        ASTNode *n = node_create(NODE_VAR, t.line);
-        n->data.var.name = name;
-        n->data.var.clone = false;
-        return n;
+        // FUTURO
+        // Aquí añadiré el comportamiento para que sea como embeber una función en la asignación. O sea:
+        /*
+         * algo = true
+         * var = {if algo then
+         * return "hola"
+         * else
+         * return "adios"}
+        */
+        // Y que entonces el valor de var sería "hola"
+        // O sea, el {} significa "código embebido", como se hace en flags ()
+
+        // Error temporal
+        error_at(t.line, t.start_col > 0 ? t.start_col : 1,
+                 "La sintaxis '{variable}' ya no se admite.\n"
+                 "    Usa la máquina de clonación así: '$variable' para obtener el valor de una variable.\n"
+                 "    Pronto tendrá una utilidad: código embebido como en flags (). De momento, da error de sintaxis.");
     }
     if (t.type == TOK_LPAREN) {
         ts_advance();
