@@ -81,3 +81,25 @@ fi
 | **Compilación a código nativo**           | ❌                                   | ❌                         | ❌                       | ✅                                 | ✅                        | ❌                                                                             |
 | **Rendimiento**                           | Bajo–medio                          | Medio                     | Medio–alto              | **Muy alto**                      | **Muy alto**             | **Medio**                                                                      |
 | **Curva de aprendizaje**                  | Media                               | Baja                      | Baja–media              | Alta                              | Media–baja               | **Baja–media**                                                                |
+
+
+
+
+## Scopes
+======
+
+| Estructura                    | Scope | Cómo                                                       |
+| ----------------------------- | ----- | ---------------------------------------------------------- |
+| programa principal            |   ✅   | corre en `global_scope` (hijo de `super_global_scope`)     |
+| `if` / `elseif` / `else`      |   ❌   | `exec_block_impl()` directo                                |
+| `switch` / `case` / `default` |   ❌   | `exec_block_impl()` directo; los `case` comparten scope    |
+| `while`                       |   ✅   | `scope_new(current_scope, NULL)` por iteración             |
+| `for`                         |   ✅¹  | `scope_new(old_scope, NULL)` por iteración                 |
+| `for-in`                      |   ✅   | `scope_new(current_scope, NULL)` por iteración             |
+| `function`                    |   ✅   | `scope_new(current_scope, nombre)` en `eval_call.c`        |
+| `try` / `catch`               |   ❌   | `exec_block_impl()` directo; comparten scope               |
+| `import`                      |   —   | no crea scope, pero usa `global_scope` durante el módulo   |
+| `execute`                     |   ✅   | `scope_new(current_scope, NULL)`                           |
+| `flags`                       |   ❌   | `exec_block_impl()` directo                                |
+
+¹ salvo `for global ...`, que usa `super_global_scope`.
