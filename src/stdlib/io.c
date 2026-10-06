@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <setjmp.h>
 #include <stdbool.h>
 #include <unistd.h>
 #include <termios.h>
@@ -93,7 +94,20 @@ static void print_var_entry(const VarEntry *entry, const char *indent, int line)
             printf(" -> %s[%d]: ", container, entry->value.data.ref.index);
         }
         Value ref = copy_value_secure(entry->value);
+        jmp_buf saved_env;
+        memcpy(&saved_env, &exception_env, sizeof(jmp_buf));
+        int saved_raised = exception_raised;
+        if (setjmp(exception_env) != 0) {
+            exception_raised = 0;
+            memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
+            exception_raised = saved_raised;
+            printf("<referencia rota>");
+            return;
+        }
+
         Value resolved = resolve_reference(ref, line);
+        memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
+        exception_raised = saved_raised;
         print_value_for_inspection(resolved);
         printf(" (%s)", value_type_name(resolved.type));
         value_free(&resolved);

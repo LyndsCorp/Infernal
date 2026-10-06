@@ -45,6 +45,7 @@ static void infernal_internal_signal(int sig) {
 }
 
 static void install_internal_error_handlers(void) {
+#ifndef DEBUG
     struct sigaction sa;
     memset(&sa, 0, sizeof(sa));
     sigemptyset(&sa.sa_mask);
@@ -53,6 +54,34 @@ static void install_internal_error_handlers(void) {
     sigaction(SIGSEGV, &sa, NULL);
     sigaction(SIGBUS, &sa, NULL);
     sigaction(SIGFPE, &sa, NULL);
+#endif
+}
+
+static bool cleanup_done = false;
+
+static void cleanup_runtime_state(void);
+
+static void cleanup_all(void) {
+    if (cleanup_done) return;
+    cleanup_done = true;
+
+    if (ts.tokens) {
+        for (int i = 0; i < ts.count; i++) free(ts.tokens[i].lexeme);
+        free(ts.tokens);
+        ts.tokens = NULL;
+        ts.count = ts.cap = ts.pos = 0;
+    }
+    if (source_lines) {
+        for (int i = 0; i < source_line_count; i++) free(source_lines[i]);
+        free(source_lines);
+        source_lines = NULL;
+        source_line_count = 0;
+    }
+    ast_free_all();
+    cleanup_runtime_state();
+    cleanup_embedded_temp_dir();
+    free(script_dir);
+    script_dir = NULL;
 }
 
 static void cleanup_runtime_state(void) {
@@ -234,6 +263,7 @@ int main(int argc, char **argv) {
 
     global_scope = scope_new(super_global_scope, NULL);
     current_scope = global_scope;
+    atexit(cleanup_all);
 
     register_all_builtins();
 
@@ -243,7 +273,7 @@ int main(int argc, char **argv) {
     FILE *volatile fp = fopen(script_file, "r");
     if (!fp) {
         perror("Error al abrir script");
-        free(script_dir);
+        cleanup_all();
         return 1;
     }
     ts_init();
@@ -268,16 +298,7 @@ int main(int argc, char **argv) {
         }
 
         nodelist_free(&program);
-        if (ts.tokens) {
-            for (int i = 0; i < ts.count; i++) free(ts.tokens[i].lexeme);
-            free(ts.tokens); ts.tokens = NULL; ts.count = ts.cap = ts.pos = 0;
-        }
-        for (int i = 0; i < source_line_count; i++) free(source_lines[i]);
-        free(source_lines); source_lines = NULL; source_line_count = 0;
-        cleanup_runtime_state();
-
-        cleanup_embedded_temp_dir();
-        free(script_dir);
+        cleanup_all();
         return 0;
     } else {
         /* Cerrar el archivo si la tokenización no llegó a cerrarlo.
@@ -289,16 +310,8 @@ int main(int argc, char **argv) {
          * longjmp. ast_free_all() ya se encarga de liberar todo el AST
          * registrado, así como los NodeList huérfanos. */
         parser_cleanup_on_error();      /* = ast_free_all() */
-        if (ts.tokens) {
-            for (int i = 0; i < ts.count; i++) free(ts.tokens[i].lexeme);
-            free(ts.tokens); ts.tokens = NULL; ts.count = ts.cap = ts.pos = 0;
-        }
-        for (int i = 0; i < source_line_count; i++) free(source_lines[i]);
-        free(source_lines); source_lines = NULL; source_line_count = 0;
-        cleanup_runtime_state();
+        cleanup_all();
         fprintf(stderr, "%s\n", exception_msg);
-        cleanup_embedded_temp_dir();
-        free(script_dir);
         return 1;
     }
 }

@@ -428,6 +428,42 @@ static bool rhs_is_post_op(void) {
     return at == TOK_NEWLINE || at == TOK_EOF;
 }
 
+static ASTNode *parse_for_increment_assignment(int line) {
+    if (ts_peek().type != TOK_IDENT) {
+        error_at(ts_peek().line, ts_peek().start_col > 0 ? ts_peek().start_col : 1,
+                 "Se esperaba una variable en el incremento del for");
+    }
+
+    Token var_tok = ts_advance();
+    char *varname = clean_var_name(var_tok.lexeme);
+    validate_var_name(varname, line);
+
+    if (!ts_match(TOK_EQ)) {
+        free(varname);
+        error(line, "Se esperaba '=' en el incremento del for");
+    }
+
+    if (!is_expression_start(ts_peek().type)) {
+        free(varname);
+        error_at(ts_peek().line, ts_peek().start_col > 0 ? ts_peek().start_col : 1,
+                 "Se esperaba una expresión después de '=' en el incremento del for");
+    }
+
+    ASTNode *value = parse_expression(0);
+    require_statement_end("el incremento del for");
+
+    ASTNode *assign = node_create(NODE_ASSIGN, line);
+    assign->data.assign.name = varname;
+    assign->data.assign.value = value;
+    assign->data.assign.vtype = 0;
+    assign->data.assign.is_local = false;
+    assign->data.assign.is_global = false;
+    assign->data.assign.is_cmd = false;
+    assign->data.assign.cmd_str = NULL;
+    assign->data.assign.lhs_index = NULL;
+    return assign;
+}
+
 ASTNode *parse_assignment_expr(int line) {
     DEBUG_INFO("parse_assignment_expr: ¡LLAMADA! línea %d", line);
     if (ts_peek().type != TOK_IDENT) {
@@ -950,9 +986,16 @@ NodeList parse_block(const char *terminator) {
                     Token next_next = ts.tokens[pos];
                     if (next_next.type == TOK_PLUS_EQ || next_next.type == TOK_MINUS_EQ ||
                         next_next.type == TOK_STAR_EQ || next_next.type == TOK_SLASH_EQ ||
-                        next_next.type == TOK_PERCENT_EQ || next_next.type == TOK_EQ) {
+                        next_next.type == TOK_PERCENT_EQ) {
                         incr = parse_assignment_expr(t.line);
-                        }
+                    } else if (next_next.type == TOK_EQ) {
+                        /* En el incremento de un for, `i = i + 1` es una
+                         * asignación de expresión, no un comando shell. La
+                         * regla general de Infernal (`x = comando`) se conserva
+                         * fuera de este contexto, pero aquí el incremento ya
+                         * viene determinado sintácticamente por el for. */
+                        incr = parse_for_increment_assignment(t.line);
+                    }
                 }
             }
             if (!incr) incr = parse_expression(0);

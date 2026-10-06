@@ -170,27 +170,47 @@ Value resolve_reference(Value v, int line) {
 }
 
 void assign_reference(Value *reference, Value value, int line) {
-    if (!reference || reference->type != VAL_REFERENCE) {
-        error(line, "Referencia inválida");
+    jmp_buf saved_env;
+    memcpy(&saved_env, &exception_env, sizeof(jmp_buf));
+    int saved_raised = exception_raised;
+
+    if (setjmp(exception_env) != 0) {
+        value_free(&value);
+        memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
+        exception_raised = saved_raised;
+        longjmp(exception_env, 1);
     }
-    const char *container = reference->data.ref.container_name ? reference->data.ref.container_name : "";
+
+    if (!reference || reference->type != VAL_REFERENCE)
+        error(line, "Referencia inválida");
+
+    const char *container = reference->data.ref.container_name ?
+                            reference->data.ref.container_name : "";
     VarEntry *entry = scope_find(current_scope, container);
-    if (!entry) error(line, "La referencia apunta a una variable inexistente '%s'", container);
+    if (!entry)
+        error(line, "La referencia apunta a una variable inexistente '%s'", container);
 
     if (reference->data.ref.is_map) {
-        if (entry->value.type != VAL_MAP || !entry->value.data.map)
-            error(line, "La referencia '%s[%s]' ya no apunta a un mapa", container, reference->data.ref.map_key);
+        if (entry->value.type != VAL_MAP || !entry->value.data.map) {
+            error(line, "La referencia '%s[%s]' ya no apunta a un mapa", container,
+                  reference->data.ref.map_key ? reference->data.ref.map_key : "");
+        }
         val_map_set(&entry->value, reference->data.ref.map_key, value);
     } else {
         if (entry->value.type != VAL_LIST)
             error(line, "La referencia apunta a una lista inexistente '%s'", container);
+
         int idx = reference->data.ref.index;
         if (idx < 1 || idx > entry->value.data.list.count)
             error(line, "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
+
         Value copied = copy_value_secure(value);
         value_free(&entry->value.data.list.items[idx - 1]);
         entry->value.data.list.items[idx - 1] = copied;
     }
+
+    memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
+    exception_raised = saved_raised;
 }
 
 int extract_integer_index(ASTNode *node, int line) {

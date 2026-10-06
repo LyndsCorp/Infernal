@@ -151,12 +151,36 @@ static Value builtin_count(int argc, Value *args) {
     size_t needle_len = strlen(needle);
     if (needle_len == 0) return val_int(0);
 
-    int count = 0;
-    const char *p = haystack;
-    while ((p = strstr(p, needle)) != NULL) {
-        count++;
-        p += needle_len;
+    int hay_count, needle_count;
+    CharSegment *hay_segs = utf8_to_segments(haystack, &hay_count);
+    if (!hay_segs) error(current_eval_line, "memoria insuficiente en count");
+    CharSegment *needle_segs = utf8_to_segments(needle, &needle_count);
+    if (!needle_segs) {
+        free(hay_segs);
+        error(current_eval_line, "memoria insuficiente en count");
     }
+
+    int count = 0;
+    if (needle_count <= hay_count) {
+        for (int i = 0; i <= hay_count - needle_count; ) {
+            bool match = true;
+            for (int j = 0; j < needle_count; j++) {
+                if (!seg_equal(&hay_segs[i + j], &needle_segs[j])) {
+                    match = false;
+                    break;
+                }
+            }
+            if (match) {
+                count++;
+                i += needle_count;  /* conserva el comportamiento no solapado */
+            } else {
+                i++;
+            }
+        }
+    }
+
+    free(hay_segs);
+    free(needle_segs);
     return val_int(count);
 }
 

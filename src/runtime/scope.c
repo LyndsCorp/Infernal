@@ -64,9 +64,8 @@ Scope *scope_new(Scope *parent, const char *function_name) {
 /* ================================================================
  * BÚSQUEDA DE VARIABLE:
  * - Recorre la cadena de ámbitos (desde el actual hacia arriba).
- * - Prioriza valores REAL sobre NULL.
  * - Si no encuentra REAL en la cadena, busca en global_scope (script) y luego en super_global_scope.
- * - Devuelve la variable REAL más cercana (en profundidad) o NULL si no existe.
+ * - Devuelve la primera variable declarada más cercana o NULL si no existe.
  * ================================================================ */
 VarEntry *scope_find(Scope *scope, const char *name) {
     if (!scope) return NULL;
@@ -171,12 +170,14 @@ void scope_assign(Scope *scope, const char *name, Value val, int line) {
         // Conversión si el destino es string y el valor es lista
         if (e->vtype == TOK_STRING && val.type == VAL_LIST) {
             if (!try_convert_value(&val, TOK_STRING)) {
+                value_free(&val);
                 error(line, "No se pudo convertir lista a string en la asignación a '%s'", name);
             }
         }
         int expected = e->vtype;
         int new_type = valtype_to_tokentype(val.type);
         if (expected != 0 && new_type != expected) {
+            value_free(&val);
             error(line, "Tipado fijo: la variable '%s' es de tipo %s, no se puede asignar un valor de tipo %s",
                   name, type_name(expected), type_name(new_type));
         }

@@ -256,6 +256,8 @@ static Value get_max_loop_limit(void) {
 static void set_max_loop_limit(const Value *value) {
     if (!value || value->type != VAL_INT)
         internal_registration_error("_MAX_LOOP_LIMIT recibió un valor con tipo inválido");
+    if (value->data.ival <= 0)
+        internal_registration_error("_MAX_LOOP_LIMIT debe ser mayor que 0");
     max_loop_iterations = value->data.ival;
 }
 

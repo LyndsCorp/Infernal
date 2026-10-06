@@ -28,7 +28,7 @@ typedef struct {
     unsigned int *size_ptr;
 } EmbeddedLavaModule;
 
-extern EmbeddedLavaModule embedded_lava_modules[];
+extern EmbeddedLavaModule embedded_lava_modules_generated[];
 
 /* Busca un módulo Lava embebido por nombre (sin extensión).
  * Devuelve 1 si lo encuentra, 0 en caso contrario. */

@@ -470,9 +470,9 @@ Value eval_binop(ASTNode *expr) {
 
         ASTNode *idx_node = expr->data.binop.right;
 
-    Value base = eval_expr(idx_node->data.idx.list);
-    if (base.type == VAL_REFERENCE)
-        base = resolve_reference(base, expr->line);
+        Value base = eval_expr(idx_node->data.idx.list);
+        if (base.type == VAL_REFERENCE)
+            base = resolve_reference(base, expr->line);
 
         /* Si el contenedor indexado NO es un string, no es inserción:
          * liberamos `base` y dejamos caer el flujo al bloque general de

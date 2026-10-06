@@ -337,7 +337,10 @@ void exec_stmt(ASTNode *stmt) {
                     goto assign_value;
                 }
 
-                int is_embedded = (expanded_cmd[0] == '!' && expanded_cmd[strlen(expanded_cmd)-1] == '!');
+                size_t expanded_cmd_len = strlen(expanded_cmd);
+                int is_embedded = (expanded_cmd_len >= 2 &&
+                                    expanded_cmd[0] == '!' &&
+                                    expanded_cmd[expanded_cmd_len - 1] == '!');
 
                 char *cmd_with_redir = NULL;
                 if (is_embedded) {
@@ -359,8 +362,17 @@ void exec_stmt(ASTNode *stmt) {
                 char *temp_path = NULL;
 
                 if (is_embedded) {
+                    size_t embedded_len = strlen(cmd_with_redir);
+                    if (embedded_len < 2) {
+                        free(cmd_with_redir);
+                        error(stmt->line, "Comando embebido inválido");
+                    }
                     char *trimmed = strdup(cmd_with_redir + 1);
-                    trimmed[strlen(trimmed)-1] = '\0';
+                    if (!trimmed) {
+                        free(cmd_with_redir);
+                        error(stmt->line, "Memoria insuficiente para preparar comando embebido");
+                    }
+                    trimmed[embedded_len - 2] = '\0';
                     fp = popen_embedded_with_path(trimmed, "r", &temp_path);
                     free(trimmed);
                 } else {
@@ -475,7 +487,12 @@ void exec_stmt(ASTNode *stmt) {
                     if (stmt->data.assign.vtype == TOK_LIST) {
                         Value list = val_list_empty();
                         char *dup = strdup(out);
-                        char *saveptr;
+                        if (!dup) {
+                            value_free(&list);
+                            free(out);
+                            error(stmt->line, "Memoria insuficiente para dividir la salida en líneas");
+                        }
+                        char *saveptr = NULL;
                         char *line = strtok_r(dup, "\n", &saveptr);
                         while (line) {
                             val_list_append(&list, val_string(line));
@@ -516,8 +533,25 @@ void exec_stmt(ASTNode *stmt) {
                     }
 
                     Value new_val = eval_expr(stmt->data.assign.value);
+
+                    /* assign_nested_index() puede lanzar desde eval_expr(),
+                     * resolve_reference() o una validación de contenedor. El
+                     * Value pertenece a este frame hasta que la asignación
+                     * termina, así que hay que liberarlo también en el salto. */
+                    jmp_buf assign_saved_env;
+                    memcpy(&assign_saved_env, &exception_env, sizeof(jmp_buf));
+                    int assign_saved_raised = exception_raised;
+                    if (setjmp(exception_env) != 0) {
+                        value_free(&new_val);
+                        memcpy(&exception_env, &assign_saved_env, sizeof(jmp_buf));
+                        exception_raised = assign_saved_raised;
+                        longjmp(exception_env, 1);
+                    }
+
                     assign_nested_index(&var->value, stmt->data.assign.lhs_index,
                                         new_val, stmt->line);
+                    memcpy(&exception_env, &assign_saved_env, sizeof(jmp_buf));
+                    exception_raised = assign_saved_raised;
                     value_free(&new_val);
                     break;
                 }
@@ -571,7 +605,7 @@ void exec_stmt(ASTNode *stmt) {
                     val = val_map_empty();
             }
 
-            assign_value:
+            assign_value: {
             int vtype = stmt->data.assign.vtype;
 
             if (vtype == TOK_STRING && val.type == VAL_LIST) {
@@ -612,6 +646,7 @@ void exec_stmt(ASTNode *stmt) {
                 }
             }
             break;
+            }
         }
 
         case NODE_IF: {
@@ -718,16 +753,33 @@ void exec_stmt(ASTNode *stmt) {
                 if (iter_count >= max_loop_iterations)
                     error(stmt->line, "Límite de iteraciones (%d) alcanzado en bucle while.\n    Si necesitas ampliar el límite de iteraciones, haz:\n\tdefine _MAX_LOOP_LIMIT x\n    Pero reemplazando ese x por el número que quieres que sea el límite de iteraciones.", max_loop_iterations);
                 iter_count++;
+
                 Value cond = eval_expr(stmt->data.while_stmt.cond);
                 bool truthy = val_is_truthy(cond);
                 value_free(&cond);
                 if (!truthy) break;
+
                 Scope *block_scope = scope_new(current_scope, NULL);
                 Scope *old_scope = current_scope;
+                jmp_buf saved_env;
+                memcpy(&saved_env, &exception_env, sizeof(jmp_buf));
+                int saved_raised = exception_raised;
+
+                if (setjmp(exception_env) != 0) {
+                    current_scope = old_scope;
+                    scope_free(block_scope);
+                    memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
+                    exception_raised = saved_raised;
+                    longjmp(exception_env, 1);
+                }
+
                 current_scope = block_scope;
                 exec_block_impl(&stmt->data.while_stmt.body);
                 current_scope = old_scope;
                 scope_free(block_scope);
+                memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
+                exception_raised = saved_raised;
+
                 if (control_flow == CF_BREAK) { control_flow = CF_NONE; break; }
                 if (control_flow == CF_CONTINUE) { control_flow = CF_NONE; continue; }
                 if (control_flow == CF_REPEAT_LINE) return;
@@ -778,6 +830,17 @@ void exec_stmt(ASTNode *stmt) {
                 DEBUG_INFO("NODE_FOR: creado for_scope");
             }
 
+            jmp_buf saved_env;
+            memcpy(&saved_env, &exception_env, sizeof(jmp_buf));
+            int saved_raised = exception_raised;
+            if (setjmp(exception_env) != 0) {
+                current_scope = old_scope;
+                if (!is_global_for) scope_free(for_scope);
+                memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
+                exception_raised = saved_raised;
+                longjmp(exception_env, 1);
+            }
+
             const char *var_name = stmt->data.for_stmt.var;
             int vtype = stmt->data.for_stmt.vtype;
 
@@ -826,12 +889,26 @@ void exec_stmt(ASTNode *stmt) {
 
                 Scope *body_scope = scope_new(for_scope, NULL);
                 Scope *old_body = current_scope;
-                current_scope = body_scope;
+                jmp_buf body_saved_env;
+                memcpy(&body_saved_env, &exception_env, sizeof(jmp_buf));
+                int body_saved_raised = exception_raised;
 
+                if (setjmp(exception_env) != 0) {
+                    current_scope = old_body;
+                    scope_free(body_scope);
+                    value_free(&cond);
+                    memcpy(&exception_env, &body_saved_env, sizeof(jmp_buf));
+                    exception_raised = body_saved_raised;
+                    longjmp(exception_env, 1);
+                }
+
+                current_scope = body_scope;
                 exec_block_impl(&stmt->data.for_stmt.body);
 
                 current_scope = old_body;
                 scope_free(body_scope);
+                memcpy(&exception_env, &body_saved_env, sizeof(jmp_buf));
+                exception_raised = body_saved_raised;
                 value_free(&cond);
 
                 if (control_flow == CF_BREAK) {
@@ -851,6 +928,8 @@ void exec_stmt(ASTNode *stmt) {
                     if (!is_global_for) {
                         scope_free(for_scope);
                     }
+                    memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
+                    exception_raised = saved_raised;
 
                     return;
                 }
@@ -866,6 +945,8 @@ void exec_stmt(ASTNode *stmt) {
             if (!is_global_for) {
                 scope_free(for_scope);
             }
+            memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
+            exception_raised = saved_raised;
 
             break;
         }
@@ -897,11 +978,25 @@ void exec_stmt(ASTNode *stmt) {
             }
 
             for (volatile int i = 0; i < count; i++) {
-                Scope *iter_scope = scope_new(current_scope, NULL);
                 Scope *old_scope = current_scope;
-                current_scope = iter_scope;
+                volatile Scope *iter_scope = scope_new(old_scope, NULL);
+                volatile Value item = val_make_null();
 
-                Value item = val_make_null();
+                jmp_buf saved_env;
+                memcpy(&saved_env, &exception_env, sizeof(jmp_buf));
+                int saved_raised = exception_raised;
+                if (setjmp(exception_env) != 0) {
+                    current_scope = old_scope;
+                    value_free((Value *)&item);
+                    scope_free((Scope *)iter_scope);
+                    value_free(&iterable);
+                    memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
+                    exception_raised = saved_raised;
+                    longjmp(exception_env, 1);
+                }
+
+                current_scope = (Scope *)iter_scope;
+
                 if (iterable.type == VAL_LIST) {
                     item = copy_value_secure(iterable.data.list.items[i]);
                 } else if (iterable.type == VAL_MAP) {
@@ -922,42 +1017,27 @@ void exec_stmt(ASTNode *stmt) {
                     else if (c >= 0xE0 && (c & 0xF0) == 0xE0 && p[1] && p[2]) width = 3;
                     else if (c >= 0xF0 && (c & 0xF8) == 0xF0 && p[1] && p[2] && p[3]) width = 4;
                     char *ch = malloc(width + 1);
-                    if (!ch) {
-                        current_scope = old_scope;
-                        scope_free(iter_scope);
-                        value_free(&iterable);
+                    if (!ch)
                         error(stmt->line, "Memoria insuficiente en for-in");
-                    }
                     memcpy(ch, p, width);
                     ch[width] = '\0';
                     item = val_string(ch);
                     free(ch);
                 }
 
-                scope_define(iter_scope, stmt->data.for_in.var, 0, item);
+                scope_define((Scope *)iter_scope, stmt->data.for_in.var, 0, (Value)item);
+                item = val_make_null(); /* propiedad transferida al scope */
 
                 if (stmt->data.for_in.index_var) {
-                    scope_define(iter_scope, stmt->data.for_in.index_var,
+                    scope_define((Scope *)iter_scope, stmt->data.for_in.index_var,
                                  TOK_INT, val_int(i + 1));
-                }
-
-                jmp_buf saved_env;
-                memcpy(&saved_env, &exception_env, sizeof(jmp_buf));
-                int saved_raised = exception_raised;
-                if (setjmp(exception_env) != 0) {
-                    current_scope = old_scope;
-                    scope_free(iter_scope);
-                    value_free(&iterable);
-                    memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
-                    exception_raised = saved_raised;
-                    longjmp(exception_env, 1);
                 }
 
                 exec_block_impl(&stmt->data.for_in.body);
                 memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
                 exception_raised = saved_raised;
                 current_scope = old_scope;
-                scope_free(iter_scope);
+                scope_free((Scope *)iter_scope);
 
                 if (control_flow == CF_BREAK) { control_flow = CF_NONE; break; }
                 if (control_flow == CF_CONTINUE) { control_flow = CF_NONE; continue; }
@@ -1035,9 +1115,23 @@ void exec_stmt(ASTNode *stmt) {
         }
 
         case NODE_IMPORT: {
-            Scope *old_scope = current_scope; current_scope = global_scope;
+            Scope *old_scope = current_scope;
+            jmp_buf saved_env;
+            memcpy(&saved_env, &exception_env, sizeof(jmp_buf));
+            int saved_raised = exception_raised;
+
+            if (setjmp(exception_env) != 0) {
+                current_scope = old_scope;
+                memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
+                exception_raised = saved_raised;
+                longjmp(exception_env, 1);
+            }
+
+            current_scope = global_scope;
             exec_block_impl(&stmt->data.import.module_block);
             current_scope = old_scope;
+            memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
+            exception_raised = saved_raised;
             if (control_flow == CF_REPEAT_LINE) return;
             break;
         }
@@ -1070,16 +1164,85 @@ void exec_stmt(ASTNode *stmt) {
 
         case NODE_EXECUTE: {
             bool saved_constants_definition_allowed = constants_definition_allowed();
-            constants_set_definition_allowed(false);
             ASTNode *path_node = stmt->data.execute.path_expr;
-            Value path_val;
+            Value path_val = val_make_null();
+            char * volatile path_owned = NULL;
+            char * volatile expanded_path = NULL;
+            char * volatile resolved_path = NULL;
+            char ** volatile expanded_args = NULL;
+            int expanded_argc = stmt->data.execute.argc;
+            char ** volatile new_argv = NULL;
+            volatile bool state_switched = false;
+            volatile bool child_scope_active = false;
+            Scope * volatile child_scope = NULL;
+            Scope * volatile old_scope = NULL;
+            FILE * volatile script_fp = NULL;
+
+            TokenStream saved_ts = ts;
+            char **saved_source_lines = source_lines;
+            int saved_source_line_count = source_line_count;
+            char *saved_source_file = current_source_file;
+            int saved_argc = script_argc;
+            char **saved_argv = script_argv;
+            int saved_flags_arg_index = flags_arg_index;
+
+            jmp_buf saved_env;
+            memcpy(&saved_env, &exception_env, sizeof(jmp_buf));
+            int saved_raised = exception_raised;
+
+            if (setjmp(exception_env) != 0) {
+                if (script_fp) {
+                    fclose((FILE *)script_fp);
+                    script_fp = NULL;
+                }
+
+                if (child_scope_active) {
+                    current_scope = (Scope *)old_scope;
+                    scope_free((Scope *)child_scope);
+                    child_scope_active = false;
+                }
+
+                if (state_switched) {
+                    if (ts.tokens) {
+                        for (int i = 0; i < ts.count; i++) free(ts.tokens[i].lexeme);
+                        free(ts.tokens);
+                    }
+                    ts = saved_ts;
+                    if (source_lines) {
+                        for (int i = 0; i < source_line_count; i++) free(source_lines[i]);
+                        free(source_lines);
+                    }
+                    source_lines = saved_source_lines;
+                    source_line_count = saved_source_line_count;
+                    current_source_file = saved_source_file;
+                    state_switched = false;
+                }
+
+                constants_set_definition_allowed(saved_constants_definition_allowed);
+                script_argc = saved_argc;
+                script_argv = saved_argv;
+                flags_arg_index = saved_flags_arg_index;
+
+                for (int i = 0; expanded_args && i < expanded_argc; i++)
+                    free(expanded_args[i]);
+                free((void *)expanded_args);
+                free((void *)new_argv);
+                free((void *)resolved_path);
+                free((void *)expanded_path);
+                free((void *)path_owned);
+
+                memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
+                exception_raised = saved_raised;
+                longjmp(exception_env, 1);
+            }
+
+            constants_set_definition_allowed(false);
 
             bool looks_like_path = false;
             if (path_node && path_node->kind == NODE_VAR) {
                 const char *n = path_node->data.var.name;
-                if (n && (strchr(n, '/') != NULL || strchr(n, '.') != NULL)) {
+                if (n && (strchr(n, '/') != NULL || strchr(n, '.') != NULL))
                     looks_like_path = true;
-                }
             }
 
             if (looks_like_path) {
@@ -1089,112 +1252,127 @@ void exec_stmt(ASTNode *stmt) {
             }
 
             if (path_val.type != VAL_STRING) {
+                value_free(&path_val);
                 error(stmt->line, "La ruta del script debe ser una cadena");
             }
-            char *raw_path = path_val.data.sval;
-            char *expanded_path = expand_command(raw_path);
-            free(raw_path);
+            path_owned = path_val.data.sval;
+            path_val.type = VAL_NULL;
+            path_val.data.sval = NULL;
+            expanded_path = expand_command(path_owned ? path_owned : "");
+            free((void *)path_owned);
+            path_owned = NULL;
             if (!expanded_path) {
                 error(stmt->line, "Error al expandir la ruta del script");
             }
 
-            char *resolved_path = NULL;
             if (expanded_path[0] != '/') {
                 const char *base = current_source_file;
                 char *base_abs = base ? realpath(base, NULL) : NULL;
                 if (base_abs) {
                     char *slash = strrchr(base_abs, '/');
-                    if (slash) {
-                        *slash = '\0';
-                        size_t need = strlen(base_abs) + 1 +
-                        strlen(expanded_path) + 1;
-                        resolved_path = malloc(need);
-                        if (!resolved_path) {
-                            free(base_abs);
-                            free(expanded_path);
-                            error(stmt->line, "Memoria insuficiente al resolver la ruta del script");
-                        }
-                        snprintf(resolved_path, need, "%s/%s",
-                                 base_abs, expanded_path);
+                    if (slash) *slash = '\0';
+                    size_t base_len = strlen(base_abs);
+                    size_t rel_len = strlen(expanded_path);
+                    if (base_len > SIZE_MAX - rel_len - 2) {
+                        free(base_abs);
+                        error(stmt->line, "Ruta del script demasiado larga");
                     }
+                    resolved_path = malloc(base_len + rel_len + 2);
+                    if (!resolved_path) {
+                        free(base_abs);
+                        error(stmt->line, "Memoria insuficiente al resolver la ruta del script");
+                    }
+                    snprintf(resolved_path, base_len + rel_len + 2,
+                             "%s/%s", base_abs, expanded_path);
                     free(base_abs);
                 }
             }
             const char *final_path = resolved_path ? resolved_path : expanded_path;
 
-            int expanded_argc = stmt->data.execute.argc;
-            char **expanded_args = NULL;
             if (expanded_argc > 0) {
-                expanded_args = malloc(expanded_argc * sizeof(char*));
+                if ((size_t)expanded_argc > SIZE_MAX / sizeof(char *))
+                    error(stmt->line, "Demasiados argumentos para execute");
+                expanded_args = calloc((size_t)expanded_argc, sizeof(char *));
+                if (!expanded_args)
+                    error(stmt->line, "Memoria insuficiente para argumentos de execute");
                 for (int i = 0; i < expanded_argc; i++) {
                     expanded_args[i] = expand_command(stmt->data.execute.args[i]);
                     if (!expanded_args[i]) expanded_args[i] = strdup("");
                 }
             }
 
-            int saved_argc = script_argc;
-            char **saved_argv = script_argv;
-            int saved_flags_arg_index = flags_arg_index;
-
-            char **new_argv = malloc((expanded_argc + 2) * sizeof(char*));
-            new_argv[0] = (char*)final_path;
-            for (int i = 0; i < expanded_argc; i++) {
+            if ((size_t)expanded_argc > (SIZE_MAX / sizeof(char *)) - 2)
+                error(stmt->line, "Demasiados argumentos para execute");
+            new_argv = malloc(((size_t)expanded_argc + 2) * sizeof(char *));
+            if (!new_argv)
+                error(stmt->line, "Memoria insuficiente para argv de execute");
+            new_argv[0] = (char *)final_path;
+            for (int i = 0; i < expanded_argc; i++)
                 new_argv[i + 1] = expanded_args[i];
-            }
             new_argv[expanded_argc + 1] = NULL;
 
             script_argc = expanded_argc + 1;
             script_argv = new_argv;
             flags_arg_index = 1;
 
-            FILE *fp = fopen(final_path, "r");
-            if (!fp) {
+            script_fp = fopen(final_path, "r");
+            if (!script_fp) {
                 error(stmt->line, "No se pudo abrir el script '%s'", final_path);
             }
-
-            TokenStream saved_ts = ts;
-            char **saved_source_lines = source_lines;
-            int saved_source_line_count = source_line_count;
-            char *saved_source_file = current_source_file;
 
             ts_init();
             source_lines = NULL;
             source_line_count = 0;
-            current_source_file = (char*)final_path;
+            current_source_file = (char *)final_path;
+            state_switched = true;
 
-            tokenize_file(fp);
-            fclose(fp);
+            tokenize_file((FILE *)script_fp);
+            fclose((FILE *)script_fp);
+            script_fp = NULL;
 
             NodeList script_block = parse_block(NULL);
 
-            ts = saved_ts;
-
-            Scope *child_scope = scope_new(current_scope, NULL);
-            Scope *old_scope = current_scope;
-            current_scope = child_scope;
-
+            old_scope = current_scope;
+            child_scope = scope_new((Scope *)old_scope, NULL);
+            child_scope_active = true;
+            current_scope = (Scope *)child_scope;
             exec_block_impl(&script_block);
 
-            constants_set_definition_allowed(saved_constants_definition_allowed);
-            current_scope = old_scope;
-            scope_free(child_scope);
+            current_scope = (Scope *)old_scope;
+            scope_free((Scope *)child_scope);
+            child_scope_active = false;
+            nodelist_free(&script_block);
 
-            for (int i = 0; i < source_line_count; i++) free(source_lines[i]);
-            free(source_lines);
-            source_lines = saved_source_lines;
-            source_line_count = saved_source_line_count;
-            current_source_file = saved_source_file;
+            if (state_switched) {
+                if (ts.tokens) {
+                    for (int i = 0; i < ts.count; i++) free(ts.tokens[i].lexeme);
+                    free(ts.tokens);
+                }
+                if (source_lines) {
+                    for (int i = 0; i < source_line_count; i++) free(source_lines[i]);
+                    free(source_lines);
+                }
+                ts = saved_ts;
+                source_lines = saved_source_lines;
+                source_line_count = saved_source_line_count;
+                current_source_file = saved_source_file;
+                state_switched = false;
+            }
 
             script_argc = saved_argc;
             script_argv = saved_argv;
             flags_arg_index = saved_flags_arg_index;
+            constants_set_definition_allowed(saved_constants_definition_allowed);
 
-            free(resolved_path);
-            free(expanded_path);
-            for (int i = 0; i < expanded_argc; i++) free(expanded_args[i]);
-            free(expanded_args);
-            free(new_argv);
+            free((void *)resolved_path);
+            free((void *)expanded_path);
+            for (int i = 0; expanded_args && i < expanded_argc; i++)
+                free(expanded_args[i]);
+            free((void *)expanded_args);
+            free((void *)new_argv);
 
+            memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
+            exception_raised = saved_raised;
             break;
         }
 

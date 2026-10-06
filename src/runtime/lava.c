@@ -91,12 +91,15 @@ static const char *g_loading_prefix      = NULL;
 
 /* Contexto activo durante la llamada a una función Lava. */
 typedef struct {
-    bool   type_set;
-    int    type;      /* TOK_INT, TOK_FLOAT, TOK_STRING, TOK_BOOL, TOK_LIST, TOK_MAP */
-    bool   value_set;
-    Value  value;
-    int    argc;
-    Value *args;
+    bool    type_set;
+    int     type;      /* TOK_INT, TOK_FLOAT, TOK_STRING, TOK_BOOL, TOK_LIST, TOK_MAP */
+    bool    value_set;
+    Value   value;
+    int     argc;
+    Value  *args;
+    char  **temp_strings;
+    size_t  temp_string_count;
+    size_t  temp_string_cap;
 } LavaCtx;
 
 static LavaCtx *g_ctx = NULL;
@@ -205,6 +208,66 @@ static int value_to_c_bool(Value v) {
     }
 }
 
+static void lava_ctx_free_temp_strings(LavaCtx *ctx) {
+    if (!ctx) return;
+    for (size_t i = 0; i < ctx->temp_string_count; i++)
+        free(ctx->temp_strings[i]);
+    free(ctx->temp_strings);
+    ctx->temp_strings = NULL;
+    ctx->temp_string_count = 0;
+    ctx->temp_string_cap = 0;
+}
+
+static const char *lava_ctx_store_string(char *s) {
+    if (!g_ctx) {
+        free(s);
+        return NULL;
+    }
+    if (g_ctx->temp_string_count == g_ctx->temp_string_cap) {
+        size_t new_cap = g_ctx->temp_string_cap ? g_ctx->temp_string_cap * 2U : 8U;
+        if (new_cap < g_ctx->temp_string_cap ||
+            new_cap > SIZE_MAX / sizeof(*g_ctx->temp_strings)) {
+            free(s);
+            error(0, "Lava: demasiadas conversiones temporales de string");
+        }
+        char **tmp = realloc(g_ctx->temp_strings,
+                             new_cap * sizeof(*g_ctx->temp_strings));
+        if (!tmp) {
+            free(s);
+            error(0, "Lava: memoria insuficiente para strings temporales");
+        }
+        g_ctx->temp_strings = tmp;
+        g_ctx->temp_string_cap = new_cap;
+    }
+    g_ctx->temp_strings[g_ctx->temp_string_count++] = s;
+    return s;
+}
+
+static const char *lava_value_temp_string(Value v) {
+    if (v.type == VAL_STRING)
+        return v.data.sval ? v.data.sval : "";
+
+    char buf[64];
+    switch (v.type) {
+        case VAL_INT:
+            snprintf(buf, sizeof(buf), "%d", v.data.ival);
+            break;
+        case VAL_FLOAT:
+            snprintf(buf, sizeof(buf), "%g", v.data.fval);
+            break;
+        case VAL_BOOL:
+            snprintf(buf, sizeof(buf), "%s", v.data.bval ? "true" : "false");
+            break;
+        default:
+            buf[0] = '\0';
+            break;
+    }
+
+    char *copy = strdup(buf);
+    if (!copy) error(0, "Lava: memoria insuficiente para convertir a string");
+    return lava_ctx_store_string(copy);
+}
+
 /* ==================================================================
  * API pública (llamada por el .lava)
  * ================================================================== */
@@ -270,15 +333,17 @@ void infernal_return_value(const char *fmt, ...) {
             break;
         }
         case TOK_LIST:
-            /* Para listas usa infernal_return_list(); si alguien llega aquí
-             * con TOK_LIST, devolvemos lista vacía. */
-            g_ctx->value = val_list_empty();
-            break;
+            va_end(ap);
+            error(0,
+                  "Lava: infernal_return_value() no puede devolver una lista; "
+                  "usa infernal_return_list()");
+            return;
         case TOK_MAP:
-            /* Para mapas usa infernal_return_map(); si alguien llega aquí
-             * con TOK_MAP, devolvemos mapa vacío. */
-            g_ctx->value = val_map_empty();
-            break;
+            va_end(ap);
+            error(0,
+                  "Lava: infernal_return_value() no puede devolver un mapa; "
+                  "usa infernal_return_map()");
+            return;
         default:
             g_ctx->value = val_make_null();
             break;
@@ -302,20 +367,7 @@ double      lava_arg_float (int i) { return value_to_c_double(lava_arg_at(i)); }
 int         lava_arg_bool  (int i) { return value_to_c_bool(lava_arg_at(i)); }
 
 const char *lava_arg_string(int i) {
-    Value v = lava_arg_at(i);
-    if (v.type == VAL_STRING) return v.data.sval ? v.data.sval : "";
-
-    static char bufs[8][64];
-    static int  slot = 0;
-    char *buf = bufs[slot];
-    slot = (slot + 1) & 7;
-    switch (v.type) {
-        case VAL_INT:   snprintf(buf, 64, "%d",  v.data.ival); break;
-        case VAL_FLOAT: snprintf(buf, 64, "%g",  v.data.fval); break;
-        case VAL_BOOL:  snprintf(buf, 64, "%s",  v.data.bval ? "true" : "false"); break;
-        default:        buf[0] = '\0'; break;
-    }
-    return buf;
+    return lava_value_temp_string(lava_arg_at(i));
 }
 
 /* ==================================================================
@@ -392,21 +444,7 @@ const char *lava_list_string(lava_list *l, int index) {
     Value *v = (Value *)l;
     if (v->type != VAL_LIST) return NULL;
     if (index < 1 || index > v->data.list.count) return NULL;
-    Value item = v->data.list.items[index - 1];
-    if (item.type == VAL_STRING)
-        return item.data.sval ? item.data.sval : "";
-
-    static char bufs[4][64];
-    static int  slot = 0;
-    char *buf = bufs[slot];
-    slot = (slot + 1) & 3;
-    switch (item.type) {
-        case VAL_INT:   snprintf(buf, 64, "%d", item.data.ival); break;
-        case VAL_FLOAT: snprintf(buf, 64, "%g", item.data.fval); break;
-        case VAL_BOOL:  snprintf(buf, 64, "%s", item.data.bval ? "true" : "false"); break;
-        default:        buf[0] = '\0'; break;
-    }
-    return buf;
+    return lava_value_temp_string(v->data.list.items[index - 1]);
 }
 
 int lava_list_bool(lava_list *l, int index) {
@@ -604,21 +642,7 @@ double lava_map_get_float(lava_map *m, const char *key) {
 const char *lava_map_get_string(lava_map *m, const char *key) {
     MapPair *p = lava_map_lookup(m, key);
     if (!p) return NULL;
-    if (p->value.type == VAL_STRING)
-        return p->value.data.sval ? p->value.data.sval : "";
-
-    static char bufs[4][64];
-    static int  slot = 0;
-    char *buf = bufs[slot];
-    slot = (slot + 1) & 3;
-    switch (p->value.type) {
-        case VAL_INT:   snprintf(buf, 64, "%d", p->value.data.ival); break;
-        case VAL_FLOAT: snprintf(buf, 64, "%g", p->value.data.fval); break;
-        case VAL_BOOL:  snprintf(buf, 64, "%s",
-                                 p->value.data.bval ? "true" : "false"); break;
-        default:        buf[0] = '\0'; break;
-    }
-    return buf;
+    return lava_value_temp_string(p->value);
 }
 
 int lava_map_get_bool(lava_map *m, const char *key) {
@@ -786,8 +810,7 @@ int lava_string_length(const char *s) {
 }
 
 const char *lava_string_char(const char *s, int index) {
-    static char buf[8];
-    if (!s || index < 1) { buf[0] = '\0'; return buf; }
+    if (!g_ctx || !s || index < 1) return NULL;
 
     const unsigned char *p = (const unsigned char *)s;
     int n = 1;
@@ -795,13 +818,15 @@ const char *lava_string_char(const char *s, int index) {
         p += utf8_seq_len(*p);
         n++;
     }
-    if (!*p) { buf[0] = '\0'; return buf; }
+    if (!*p) return "";
 
     size_t len = utf8_seq_len(*p);
-    if (len > 7) len = 1;
+    if (len > 4) len = 1;
+    char *buf = malloc(len + 1);
+    if (!buf) error(0, "Lava: memoria insuficiente en lava_string_char");
     memcpy(buf, p, len);
     buf[len] = '\0';
-    return buf;
+    return lava_ctx_store_string(buf);
 }
 
 char *lava_string_concat(const char *a, const char *b) {
@@ -891,13 +916,11 @@ lava_list *lava_string_split(const char *s, const char *sep) {
 
 int lava_register_fn(const char *name, void (*fn)(void), const char *sig) {
     if (!g_loading_module_path) {
-        fprintf(stderr,
-                "Error Lava: lava_register_fn() fuera de la carga de un módulo\n");
-        return -1;
+        error(0,
+              "Lava: lava_register_fn() solo puede llamarse durante la carga de un módulo");
     }
     if (!name || !*name || !fn) {
-        fprintf(stderr, "Error Lava: lava_register_fn() con name/fn inválido\n");
-        return -1;
+        error(0, "Lava: lava_register_fn() recibió un nombre o función inválidos");
     }
 
     /*
@@ -911,29 +934,27 @@ int lava_register_fn(const char *name, void (*fn)(void), const char *sig) {
      * función: `random.randint(...)` en lugar de `randint(...)`.
      */
     if (!g_loading_prefix || !*g_loading_prefix) {
-        fprintf(stderr,
-                "Error Lava: el módulo '%s' intentó registrar '%s' sin prefijo.\n"
-                "    Los módulos Lava deben importarse con un nombre de módulo o\n"
-                "    un alias, de forma que sus funciones queden accesibles como\n"
-                "    'prefijo.%s'. El nombre desnudo '%s' está prohibido.\n",
-                g_loading_module_path, name, name, name);
-        return -1;
+        error(0,
+              "Lava: el módulo '%s' intentó registrar '%s' sin prefijo. "
+              "Debe importarse con nombre o alias y exponerse como '%s.%s'.",
+              g_loading_module_path ? g_loading_module_path : "<desconocido>",
+              name, g_loading_prefix ? g_loading_prefix : "<prefijo>", name);
     }
 
     if (!sig) sig = "";
 
     if (g_slot_count >= LAVA_MAX_SLOTS) {
-        fprintf(stderr,
-                "Error Lava: límite de %d funciones; '%s' no se registra\n",
-                LAVA_MAX_SLOTS, name);
-        return -1;
+        error(0,
+              "Lava: se alcanzó el límite de %d funciones; no se puede registrar '%s'",
+              LAVA_MAX_SLOTS, name);
     }
 
     int nargs = (int)strlen(sig);
     ffi_type **types = NULL;
     if (nargs > 0) {
         types = malloc(sizeof(ffi_type*) * (size_t)nargs);
-        if (!types) return -1;
+        if (!types)
+            error(0, "Lava: memoria insuficiente para la firma de '%s'", name);
         for (int i = 0; i < nargs; i++) {
             switch (sig[i]) {
                 case 'i': types[i] = &ffi_type_sint;    break;
@@ -944,31 +965,44 @@ int lava_register_fn(const char *name, void (*fn)(void), const char *sig) {
                 case 'm': types[i] = &ffi_type_pointer; break;
                 case 'a': types[i] = &ffi_type_pointer; break;
                 default:
-                    fprintf(stderr,
-                            "Error Lava: firma '%s' inválida para '%s'. "
-                            "Solo i, f, s, b, l, m, a.\n", sig, name);
                     free(types);
-                    return -1;
+                    error(0, "Lava: firma '%s' inválida para '%s'. Solo i, f, s, b, l, m, a.",
+                          sig, name);
             }
         }
     }
 
     LavaEntry *e = calloc(1, sizeof(LavaEntry));
-    if (!e) { free(types); return -1; }
-    e->name        = strdup(name);
-    e->module_path = strdup(g_loading_module_path);
-    e->target_fn   = fn;
-    e->signature   = strdup(sig);
-    e->nargs       = nargs;
-    e->arg_types   = types;
+    if (!e) {
+        free(types);
+        error(0, "Lava: memoria insuficiente al registrar '%s'", name);
+    }
+
+    e->name = strdup(name);
+    e->module_path = strdup(g_loading_module_path ? g_loading_module_path : "<unknown>");
+    e->signature = strdup(sig);
+    e->target_fn = fn;
+    e->nargs = nargs;
+    e->arg_types = types;
+
+    if (!e->name || !e->module_path || !e->signature) {
+        free(e->name);
+        free(e->module_path);
+        free(e->signature);
+        free(e->arg_types);
+        free(e);
+        error(0, "Lava: memoria insuficiente al registrar '%s'", name);
+    }
 
     if (ffi_prep_cif(&e->cif, FFI_DEFAULT_ABI,
-        (unsigned)nargs, &ffi_type_void, types) != FFI_OK) {
-        fprintf(stderr, "Error Lava: ffi_prep_cif falló para '%s'\n", name);
-    free(e->arg_types); free(e->name); free(e->signature);
-    free(e->module_path); free(e);
-    return -1;
-        }
+                     (unsigned)nargs, &ffi_type_void, types) != FFI_OK) {
+        free(e->arg_types);
+        free(e->name);
+        free(e->signature);
+        free(e->module_path);
+        free(e);
+        error(0, "Lava: ffi_prep_cif falló para '%s'", name);
+    }
 
         /* Construir el nombre prefijado ANTES de tocar g_slots, para que un
          * fallo de malloc no deje un slot huérfano en la tabla. */
@@ -977,7 +1011,7 @@ int lava_register_fn(const char *name, void (*fn)(void), const char *sig) {
         if (!prefixed) {
             free(e->arg_types); free(e->name); free(e->signature);
             free(e->module_path); free(e);
-            return -1;
+            error(0, "Lava: memoria insuficiente para registrar '%s'", name);
         }
         snprintf(prefixed, plen, "%s.%s", g_loading_prefix, name);
 
@@ -989,6 +1023,7 @@ int lava_register_fn(const char *name, void (*fn)(void), const char *sig) {
 
         /* Solo se registra el nombre con prefijo; el nombre desnudo no se expone. */
         func_register_builtin(prefixed, thunk);
+        free(prefixed);
         return 0;
 }
 
@@ -1067,11 +1102,13 @@ static Value lava_dispatch(int slot, int argc, Value *args) {
     void  * volatile storage = NULL;
     void ** volatile values  = NULL;
     LavaCtx ctx;
+    memset(&ctx, 0, sizeof(ctx));
     LavaCtx *saved_ctx = g_ctx;
     const char *err_msg = NULL;
     char err_buf[512];
 
     if (setjmp(exception_env) != 0) {
+        lava_ctx_free_temp_strings(&ctx);
         free((void *)values);
         free((void *)storage);
         g_ctx = saved_ctx;
@@ -1152,7 +1189,6 @@ static Value lava_dispatch(int slot, int argc, Value *args) {
 
     Value result = val_make_null();
     if (!err_msg) {
-        memset(&ctx, 0, sizeof(ctx));
         ctx.argc = argc;
         ctx.args = args;
         g_ctx = &ctx;
@@ -1182,6 +1218,7 @@ static Value lava_dispatch(int slot, int argc, Value *args) {
         }
     }
 
+    lava_ctx_free_temp_strings(&ctx);
     free((void *)values);
     free((void *)storage);
 
@@ -1219,12 +1256,19 @@ static int lava_init_handle(void *h, const char *display_path, const char *prefi
     }
 
     LavaHandle *entry = calloc(1, sizeof(LavaHandle));
-    if (entry) {
-        entry->path   = strdup(display_path);
-        entry->handle = h;
-        entry->next   = g_handles;
-        g_handles     = entry;
+    if (!entry) {
+        dlclose(h);
+        error(0, "Lava: memoria insuficiente al registrar el módulo '%s'", display_path);
     }
+    entry->path = strdup(display_path);
+    if (!entry->path) {
+        free(entry);
+        dlclose(h);
+        error(0, "Lava: memoria insuficiente al registrar el módulo '%s'", display_path);
+    }
+    entry->handle = h;
+    entry->next = g_handles;
+    g_handles = entry;
 
     const char *saved_path   = g_loading_module_path;
     const char *saved_prefix = g_loading_prefix;
@@ -1449,6 +1493,9 @@ int lava_try_import_path(const char *path, const char *prefix,
 }
 
 void lava_cleanup(void) {
+    g_ctx = NULL;
+    g_loading_module_path = NULL;
+    g_loading_prefix = NULL;
     while (g_handles) {
         LavaHandle *h = g_handles;
         g_handles = h->next;

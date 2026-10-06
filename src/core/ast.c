@@ -6,6 +6,7 @@
 */
 
 #include <stdlib.h>
+#include <stdint.h>
 #include "ast.h"
 #include "memory.h"
 
@@ -15,6 +16,117 @@ typedef struct ASTRegistryEntry {
 } ASTRegistryEntry;
 
 static ASTRegistryEntry *ast_registry = NULL;
+
+/*
+ * Conjunto hash de punteros AST registrados. No se puede usar un campo
+ * dentro de ASTNode como marca de pertenencia porque ast_free_all() puede
+ * visitar un mismo nodo a través de un padre después de que ese nodo ya
+ * haya sido liberado. Consultar una marca dentro de memoria liberada sería
+ * un use-after-free.
+ *
+ * La tabla mantiene la comprobación O(1) media que buscamos sin tocar el
+ * objeto para saber si sigue vivo.
+ */
+static ASTNode **ast_ptr_set = NULL;
+static size_t ast_ptr_cap = 0;
+static size_t ast_ptr_count = 0;
+
+static size_t ast_ptr_hash(const ASTNode *node) {
+    uintptr_t x = (uintptr_t)node;
+#if UINTPTR_MAX > 0xffffffffU
+    x ^= x >> 33;
+    x *= (uintptr_t)0xff51afd7ed558ccdULL;
+    x ^= x >> 33;
+    x *= (uintptr_t)0xc4ceb9fe1a85ec53ULL;
+    x ^= x >> 33;
+#else
+    x ^= x >> 16;
+    x *= (uintptr_t)0x7feb352dU;
+    x ^= x >> 15;
+    x *= (uintptr_t)0x846ca68bU;
+    x ^= x >> 16;
+#endif
+    return (size_t)x;
+}
+
+static void ast_ptr_set_rehash(size_t new_cap) {
+    ASTNode **new_set = infernal_calloc(new_cap, sizeof(*new_set));
+
+    if (ast_ptr_set) {
+        for (size_t i = 0; i < ast_ptr_cap; i++) {
+            ASTNode *node = ast_ptr_set[i];
+            if (!node) continue;
+            size_t pos = ast_ptr_hash(node) & (new_cap - 1);
+            while (new_set[pos]) pos = (pos + 1) & (new_cap - 1);
+            new_set[pos] = node;
+        }
+        free(ast_ptr_set);
+    }
+
+    ast_ptr_set = new_set;
+    ast_ptr_cap = new_cap;
+}
+
+static void ast_ptr_set_add(ASTNode *node) {
+    if (!node) return;
+    if (ast_ptr_cap == 0) ast_ptr_set_rehash(64);
+    if ((ast_ptr_count + 1) * 10 >= ast_ptr_cap * 7)
+        ast_ptr_set_rehash(ast_ptr_cap * 2);
+
+    size_t pos = ast_ptr_hash(node) & (ast_ptr_cap - 1);
+    while (ast_ptr_set[pos]) {
+        if (ast_ptr_set[pos] == node) return;
+        pos = (pos + 1) & (ast_ptr_cap - 1);
+    }
+    ast_ptr_set[pos] = node;
+    ast_ptr_count++;
+}
+
+static bool ast_ptr_set_contains(const ASTNode *node) {
+    if (!node || !ast_ptr_set || ast_ptr_cap == 0) return false;
+    size_t pos = ast_ptr_hash(node) & (ast_ptr_cap - 1);
+    while (ast_ptr_set[pos]) {
+        if (ast_ptr_set[pos] == node) return true;
+        pos = (pos + 1) & (ast_ptr_cap - 1);
+    }
+    return false;
+}
+
+static void ast_ptr_set_remove(const ASTNode *node) {
+    if (!node || !ast_ptr_set || ast_ptr_cap == 0) return;
+    size_t pos = ast_ptr_hash(node) & (ast_ptr_cap - 1);
+    while (ast_ptr_set[pos]) {
+        if (ast_ptr_set[pos] != node) {
+            pos = (pos + 1) & (ast_ptr_cap - 1);
+            continue;
+        }
+
+        ast_ptr_set[pos] = NULL;
+        ast_ptr_count--;
+
+        /* Reinsertar el cluster posterior para conservar el probing. */
+        size_t next = (pos + 1) & (ast_ptr_cap - 1);
+        while (ast_ptr_set[next]) {
+            ASTNode *moved = ast_ptr_set[next];
+            ast_ptr_set[next] = NULL;
+            ast_ptr_count--;
+
+            size_t dst = ast_ptr_hash(moved) & (ast_ptr_cap - 1);
+            while (ast_ptr_set[dst]) dst = (dst + 1) & (ast_ptr_cap - 1);
+            ast_ptr_set[dst] = moved;
+            ast_ptr_count++;
+            next = (next + 1) & (ast_ptr_cap - 1);
+        }
+        return;
+    }
+}
+
+static void ast_ptr_set_clear(void) {
+    free(ast_ptr_set);
+    ast_ptr_set = NULL;
+    ast_ptr_cap = 0;
+    ast_ptr_count = 0;
+}
 
 typedef struct NodeListAllocEntry {
     ASTNode **ptr;
@@ -92,9 +204,10 @@ static void nodelist_alloc_free_orphans(void) {
 }
 
 static void ast_registry_add(ASTNode *node) {
+    if (!node) return;
     ASTRegistryEntry *entry = infernal_malloc(sizeof(*entry));
-    if (!entry) return;
     entry->node = node;
+    ast_ptr_set_add(node);
     entry->next = ast_registry;
     ast_registry = entry;
 }
@@ -105,6 +218,7 @@ static void ast_registry_remove(ASTNode *node) {
         if ((*link)->node == node) {
             ASTRegistryEntry *entry = *link;
             *link = entry->next;
+            ast_ptr_set_remove(node);
             free(entry);
             return;
         }
@@ -176,10 +290,7 @@ static void nodelist_free_internal(NodeList *list) {
 }
 
 static bool ast_is_registered(const ASTNode *node) {
-    for (ASTRegistryEntry *entry = ast_registry; entry; entry = entry->next) {
-        if (entry->node == node) return true;
-    }
-    return false;
+    return ast_ptr_set_contains(node);
 }
 
 static void ast_free_internal(ASTNode *node) {
@@ -281,4 +392,5 @@ void ast_free_all(void) {
     }
     /* Libera NodeList temporales que nunca llegaron a ser propiedad de un AST. */
     nodelist_alloc_free_orphans();
+    ast_ptr_set_clear();
 }

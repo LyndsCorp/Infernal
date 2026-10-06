@@ -88,11 +88,8 @@ void exec_flags(ASTNode *node) {
         }
     }
 
-    int total_matched = 0;
-
     if (mode > 0) {
         int arg_idx = flags_arg_index;
-        int consumed = 0;
         for (int s = 0; s < node->data.flags.spec_count; s++) {
             FlagSpec *spec = &node->data.flags.specs[s];
             if (spec->catch_all) continue;
@@ -125,9 +122,7 @@ void exec_flags(ASTNode *node) {
                     }
                 }
                 handled[arg_idx] = true;
-                total_matched++;
                 arg_idx++;
-                consumed++;
 
                 if (spec->body_count > 0) {
                     exec_flag_spec_impl(spec);
@@ -141,8 +136,7 @@ void exec_flags(ASTNode *node) {
                 if (!handled[a]) {
                     scope_define(current_scope, "_", 0, val_string(script_argv[a]));
                     exec_flag_spec_impl(catch_all);
-                    total_matched++;
-                }
+                    }
         }
     } else {
         for (int a = 2; a < script_argc; a++) {
@@ -185,8 +179,7 @@ void exec_flags(ASTNode *node) {
                         }
                         handled[a] = true;
                         matched = true;
-                        total_matched++;
-                        break;
+                                break;
                     }
                 }
                 if (matched) break;
@@ -204,8 +197,7 @@ void exec_flags(ASTNode *node) {
                                     exec_flag_spec_impl(spec);
                                 }
                                 found = true;
-                                total_matched++;
-                                break;
+                                                break;
                             }
                         }
                         if (found) break;
@@ -213,15 +205,13 @@ void exec_flags(ASTNode *node) {
                     if (!found && catch_all) {
                         scope_define(current_scope, "_", 0, val_string(sn));
                         exec_flag_spec_impl(catch_all);
-                        total_matched++;
-                    }
+                            }
                 }
                 handled[a] = true;
             } else if (!matched && catch_all) {
                 scope_define(current_scope, "_", 0, val_string(arg));
                 exec_flag_spec_impl(catch_all);
                 handled[a] = true;
-                total_matched++;
             }
             free(arg_dup);
         }

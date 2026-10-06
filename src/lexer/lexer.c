@@ -56,18 +56,55 @@ void ts_skip_newlines() {
 }
 
 char *extract_command_string(int line) {
-    if (line < 1 || line > source_line_count) return strdup("");
-    char *src = source_lines[line - 1];
-    char *eq = strchr(src, '=');
+    if (line < 1 || line > source_line_count || !source_lines || !source_lines[line - 1])
+        return strdup("");
+
+    const char *src = source_lines[line - 1];
+    const char *eq = strchr(src, '=');
     if (!eq) return strdup("");
-    char *start = eq + 1;
+
+    const char *start = eq + 1;
     while (*start == ' ' || *start == '\t') start++;
-    char *hash = strchr(start, '#');
-    if (hash) *hash = '\0';
-    int end = strlen(start) - 1;
-    while (end >= 0 && (start[end] == ' ' || start[end] == '\t')) end--;
-    start[end + 1] = '\0';
-    return strdup(start);
+
+    /* Encuentra un comentario solo cuando '#' está fuera de comillas.
+     * No modificamos source_lines: esas líneas se reutilizan para los
+     * diagnósticos con columna/marcador. */
+    bool in_single = false;
+    bool in_double = false;
+    bool escaped = false;
+    const char *end_ptr = start + strlen(start);
+    for (const char *p = start; *p; ++p) {
+        if (escaped) {
+            escaped = false;
+            continue;
+        }
+        if (in_double && *p == '\\') {
+            escaped = true;
+            continue;
+        }
+        if (!in_double && *p == '\'') {
+            in_single = !in_single;
+            continue;
+        }
+        if (!in_single && *p == '\"') {
+            in_double = !in_double;
+            continue;
+        }
+        if (!in_single && !in_double && *p == '#') {
+            end_ptr = p;
+            break;
+        }
+    }
+
+    while (end_ptr > start && (end_ptr[-1] == ' ' || end_ptr[-1] == '\t'))
+        end_ptr--;
+
+    size_t len = (size_t)(end_ptr - start);
+    char *result = malloc(len + 1);
+    if (!result) error(line, "Memoria insuficiente para extraer comando");
+    memcpy(result, start, len);
+    result[len] = '\0';
+    return result;
 }
 
 void tokenize_buffer(const char *data, size_t len) {
@@ -206,12 +243,35 @@ void tokenize_file(FILE *fp) {
             if (*p == ':') { Token t = {TOK_COLON, strdup(":"), lineno, start_col, start_col + 1}; ts_add(t); p++; continue; }
 
             if (*p == '/') {
+                /* '/' es división cuando estamos justo después de un token
+                 * que puede terminar una expresión. En cualquier otro lugar
+                 * puede iniciar una ruta (/tmp, /usr/bin, ...). Esto hace que
+                 * 10/2, a/b y foo()[0]/2 funcionen sin romper rutas absolutas.
+                 * Los comandos shell siguen reconstruyéndose con el texto y
+                 * conservan `cd /tmp`, incluso cuando / y tmp sean tokens
+                 * separados. */
+                TokenType prev_type = TOK_EOF;
+                if (ts.count > 0) prev_type = ts.tokens[ts.count - 1].type;
+                bool after_expr =
+                    prev_type == TOK_NUMBER ||
+                    prev_type == TOK_IDENT ||
+                    prev_type == TOK_STRING_LITERAL ||
+                    prev_type == TOK_RPAREN ||
+                    prev_type == TOK_RBRACKET ||
+                    prev_type == TOK_TRUE ||
+                    prev_type == TOK_FALSE;
+
                 char *next = p + 1;
-                if (*next != '\0' && (isalnum(*next) || *next == '_' || *next == '/' || *next == '.' || *next == '-' || *next == '~')) {
+                bool can_start_path = *next != '\0' &&
+                    (isalnum((unsigned char)*next) || *next == '_' ||
+                     *next == '/' || *next == '.' || *next == '-' || *next == '~');
+
+                if (!after_expr && can_start_path) {
                     char *start = p;
-                    while (*p && (isalnum(*p) || *p == '_' || *p == '/' || *p == '.' || *p == '-' || *p == '~')) p++;
-                    size_t len = (size_t)(p - start);
-                    char *lexeme = strndup(start, len);
+                    while (*p && (isalnum((unsigned char)*p) || *p == '_' ||
+                                  *p == '/' || *p == '.' || *p == '-' || *p == '~')) p++;
+                    size_t path_len = (size_t)(p - start);
+                    char *lexeme = strndup(start, path_len);
                     if (!lexeme) error(lineno, "Memoria insuficiente para ruta");
                     TokenType k = lookup_keyword(lexeme);
                     Token t;
@@ -222,12 +282,12 @@ void tokenize_file(FILE *fp) {
                     t.end_col = (int)(p - line);
                     ts_add(t);
                     continue;
-                } else {
-                    Token t = {TOK_SLASH, strdup("/"), lineno, start_col, start_col + 1};
-                    ts_add(t);
-                    p++;
-                    continue;
                 }
+
+                Token t = {TOK_SLASH, strdup("/"), lineno, start_col, start_col + 1};
+                ts_add(t);
+                p++;
+                continue;
             }
 
             if (*p == '=') {
@@ -348,10 +408,12 @@ void tokenize_file(FILE *fp) {
                 continue;
             }
 
-            if (isalpha(*p) || *p == '_' || *p == '.' || *p == '~') {
+            if (isalpha((unsigned char)*p) || *p == '_' || *p == '.' || *p == '~') {
                 char *start = p;
-                while (isalnum((unsigned char)*p) || *p == '_' || *p == '/' || *p == '.' ||
-                       *p == '~' || (*p == '-' && *(p + 1) != '-')) {
+                bool path_prefix = (*start == '.' || *start == '~');
+                while (isalnum((unsigned char)*p) || *p == '_' || *p == '.' ||
+                       *p == '~' || (path_prefix && *p == '/') ||
+                       (*p == '-' && *(p + 1) != '-')) {
                     p++;
                 }
                 size_t len = (size_t)(p - start);

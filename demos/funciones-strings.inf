@@ -62,10 +62,9 @@ print(count(texto, ""))        #0
 
 # Test completo de funciones de strings
 
-print("=== length / countbytes ===")
+print("=== length ===")
 text = "Hola 🌍"
 print(length(text))
-print(countbytes(text))
 
 print("=== upper / lower ===")
 print(upper("hola mundo"))
@@ -74,10 +73,6 @@ print(lower("HOLA MUNDO"))
 print("=== head / tail ===")
 print(head("Infernal", 3))
 print(tail("Infernal", 3))
-
-print("=== headbytes / tailbytes ===")
-print(headbytes("Hola 🌍", 4))
-print(tailbytes("Hola 🌍", 4))
 
 print("=== starts / ends / has ===")
 print(starts("Infernal", "Inf"))
@@ -93,15 +88,9 @@ print(replace("Hola mundo mundo", "mundo", "Infernal"))
 print("=== replace UTF-8 ===")
 print(replace("Hola 🌍 🌍", "🌍", "🔥"))
 
-print("=== replacebytes ===")
-print(replacebytes("aaaa", "a", "b"))
-
 print("=== reverse ===")
 print(reverse("Infernal"))
 print(reverse("Hola 🌍"))
-
-print("=== reversebytes ===")
-print(reversebytes("abc"))
 
 print("=== trim ===")
 print(trim("   Hola Infernal   "))

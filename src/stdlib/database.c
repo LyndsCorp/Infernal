@@ -967,9 +967,17 @@ static Value deserialize_binary_owned(unsigned char *data, size_t data_len) {
  *  Escritura atómica
  * ============================================================ */
 static void write_file_atomic(const char *path, const void *data, size_t len) {
-    char *tmp_path = malloc(strlen(path) + 8);
+    size_t path_len = strlen(path);
+    if (path_len > SIZE_MAX - 8)
+        error(current_eval_line, "Ruta demasiado larga para escritura atómica");
+
+    char *tmp_path = malloc(path_len + 8);
     if (!tmp_path) error(current_eval_line, "Memoria insuficiente");
-    snprintf(tmp_path, strlen(path) + 8, "%s.XXXXXX", path);
+    int path_written = snprintf(tmp_path, path_len + 8, "%s.XXXXXX", path);
+    if (path_written < 0 || (size_t)path_written != path_len + 7) {
+        free(tmp_path);
+        error(current_eval_line, "La ruta es demasiado larga para escritura atómica");
+    }
 
     int fd = mkstemp(tmp_path);
     if (fd == -1) {

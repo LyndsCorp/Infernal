@@ -40,9 +40,16 @@ Value eval_call(ASTNode *expr) {
         }
 
         for (int i = 0; i < argc; i++) {
-            args[i] = eval_expr(expr->data.call.args[i]);
-            if (args[i].type == VAL_REFERENCE)
-                args[i] = resolve_reference(args[i], expr->line);
+            Value arg = eval_expr(expr->data.call.args[i]);
+            if (arg.type == VAL_REFERENCE) {
+                /* resolve_reference() toma propiedad de la referencia y la libera
+                 * incluso cuando lanza un error. Dejamos el slot en NULL durante
+                 * la llamada para que el handler no intente liberarla dos veces. */
+                Value reference = arg;
+                args[i] = val_make_null();
+                arg = resolve_reference(reference, expr->line);
+            }
+            args[i] = arg;
         }
 
         /* Establecer la línea actual para que los errores muestren la línea real */
@@ -66,15 +73,34 @@ Value eval_call(ASTNode *expr) {
         }
         Scope *new_scope = scope_new(current_scope, expr->data.call.name);
         Scope *prev_scope = current_scope;
+        jmp_buf saved_env;
+        memcpy(&saved_env, &exception_env, sizeof(jmp_buf));
+        int saved_raised = exception_raised;
+        int saved_cf = control_flow;
+        Value saved_ret = return_value;
+        bool function_state_active = false;
+
+        if (setjmp(exception_env) != 0) {
+            current_scope = prev_scope;
+            if (function_state_active) {
+                value_free(&return_value);
+                return_value = saved_ret;
+                control_flow = saved_cf;
+            }
+            scope_free(new_scope);
+            memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
+            exception_raised = saved_raised;
+            longjmp(exception_env, 1);
+        }
+
         current_scope = new_scope;
         for (int i = 0; i < func->data.func.param_count; i++) {
             Value arg = (i < expr->data.call.argc) ? eval_expr(expr->data.call.args[i]) : val_make_null();
             scope_define(new_scope, func->data.func.params[i], func->data.func.ptypes[i], arg);
         }
-        int saved_cf = control_flow;
-        Value saved_ret = return_value;
         return_value = val_make_null();
         control_flow = CF_NONE;
+        function_state_active = true;
         exec_block(&func->data.func.body);
 
         Value ret = (control_flow == CF_RETURN) ? return_value : val_make_null();
@@ -84,8 +110,11 @@ Value eval_call(ASTNode *expr) {
 
         control_flow = saved_cf;
         return_value = saved_ret;
+        function_state_active = false;
         current_scope = prev_scope;
         scope_free(new_scope);
+        memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
+        exception_raised = saved_raised;
         return ret;
     }
 }

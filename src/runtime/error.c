@@ -23,11 +23,19 @@ static void __attribute__((noreturn)) error_build(int line, int column, const ch
 
     if (source && column > 0) {
         char marker[256];
-        int spaces = column - 1;
-        if (spaces > 200) spaces = 200;
-        memset(marker, ' ', (size_t)spaces);
-        marker[spaces] = '^';
-        marker[spaces + 1] = '\0';
+        size_t source_pos = 0;
+        size_t marker_len = 0;
+        int target = column - 1;
+
+        /* Las columnas del lexer son offsets de bytes. Para que un tabulador
+         * no desplace el '^' visualmente, reproducimos los tabs del prefijo
+         * en el marcador en lugar de convertirlos en espacios. */
+        while (source[source_pos] && source_pos < (size_t)target && marker_len < sizeof(marker) - 2) {
+            marker[marker_len++] = source[source_pos] == '\t' ? '\t' : ' ';
+            source_pos++;
+        }
+        marker[marker_len++] = '^';
+        marker[marker_len] = '\0';
         snprintf(exception_msg, sizeof(exception_msg),
                  "Error en '%-.240s', línea %d, columna %d:\n    %-.240s\n    %s\n    %-.900s",
                  file, line, column, source, marker, base);
