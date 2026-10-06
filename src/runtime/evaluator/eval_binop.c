@@ -604,7 +604,7 @@ Value eval_binop(ASTNode *expr) {
             const char *rt = value_type_name(right.type);
             value_free(&left);
             value_free(&right);
-            error(expr->line, "Los operadores '<', '>', '<=' y '>=' requieren valores numéricos (se recibió %s y %s)",
+            error(expr->line, "Los operadores '<', '>', '<=' y '>=' requieren que valores sean numéricos como int o float (se recibió %s y %s)",
                   lt, rt);
         }
         double lv = (left.type == VAL_INT) ? left.data.ival
