@@ -671,7 +671,9 @@ ASTNode *parse_primary() {
          * var = {if algo then
          * return "hola"
          * else
-         * return "adios"}
+         * return "adios"
+         * fi
+         * }
         */
         // Y que entonces el valor de var sería "hola"
         // O sea, el {} significa "código embebido", como se hace en flags ()

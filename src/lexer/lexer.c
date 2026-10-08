@@ -168,7 +168,7 @@ void tokenize_file(FILE *fp) {
 
             int start_col = (int)(p - line);
 
-            // --- NUEVOS OPERADORES DE VARIOS CARACTERES ---
+            // Operadores varios caracteres
             if (*p == '+' && *(p+1) == '=') {
                 Token t = {TOK_PLUS_EQ, strdup("+="), lineno, start_col, start_col + 2};
                 ts_add(t); p += 2; continue;
@@ -224,8 +224,8 @@ void tokenize_file(FILE *fp) {
                 ts_add(t); p += 2; continue;
             }
 
-            // Operadores de un carácter (resto igual)
-            if (*p == '|') { Token t = {TOK_PIPE, strdup("|"), lineno, start_col, start_col + 1}; ts_add(t); p++; continue; }
+            // Operadores de un carácter
+            if (*p == '|') { Token t = {TOK_PIPE, strdup("|"), lineno, start_col, start_col + 1}; ts_add(t); p++; continue; } //se usa en flags ()
             if (*p == '>') { Token t = {TOK_GT_OP, strdup(">"), lineno, start_col, start_col + 1}; ts_add(t); p++; continue; }
             if (*p == '<') { Token t = {TOK_LT_OP, strdup("<"), lineno, start_col, start_col + 1}; ts_add(t); p++; continue; }
             if (*p == '(') { Token t = {TOK_LPAREN, strdup("("), lineno, start_col, start_col + 1}; ts_add(t); p++; continue; }
@@ -391,8 +391,27 @@ void tokenize_file(FILE *fp) {
                 continue;
             }
 
-            if (*p == '?' && *(p + 1) == '?') {
+            /* \? → se emite tal cual para que el shell lo reciba como '?' literal */
+            if (*p == '\\' && *(p + 1) == '?') {
+                Token t = {TOK_IDENT, strdup("\\?"), lineno, start_col, start_col + 2};
+                ts_add(t);
                 p += 2;
+                continue;
+            }
+
+            /* ?? → un solo token "??" (antes se tiraba silenciosamente) */
+            if (*p == '?' && *(p + 1) == '?') {
+                Token t = {TOK_IDENT, strdup("??"), lineno, start_col, start_col + 2};
+                ts_add(t);
+                p += 2;
+                continue;
+            }
+
+            /* ? suelto → token "?" (antes caía al p++ final y se perdía) */
+            if (*p == '?') {
+                Token t = {TOK_IDENT, strdup("?"), lineno, start_col, start_col + 1};
+                ts_add(t);
+                p++;
                 continue;
             }
 
