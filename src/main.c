@@ -211,7 +211,7 @@ int main(int argc, char **argv) {
 
     super_global_scope = scope_new(NULL, NULL);
     if (!infernal_shell)
-        infernal_shell = strdup("/bin/sh");
+        load_infernal_config();
     register_all_constants();
 
     extern char **environ;

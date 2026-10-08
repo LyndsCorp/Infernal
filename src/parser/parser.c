@@ -68,14 +68,7 @@ static char *strip_quotes(const char *s) {
 
 static char *extract_literal_command(int line) {
     char *raw = extract_command_string(line);
-    if (!raw) return strdup("");
-    char *p = raw;
-    while ((p = strstr(p, "??")) != NULL) {
-        p[0] = '$';
-        p[1] = '$';
-        p += 2;
-    }
-    return raw;
+    return raw ? raw : strdup("");
 }
 
 static char *clean_var_name(const char *raw) {

@@ -103,17 +103,41 @@ static void append_dollar_name(char **result, size_t *len, size_t *cap, const ch
 /* --- Expansión de comandos --- */
 char *expand_command(const char *cmd) {
     if (!cmd) return NULL;
-    size_t cmd_len = strlen(cmd);
-    if (cmd_len > (SIZE_MAX - 65) / 2)
+
+    /* Pre-proceso: todo '?' se convierte en '$' para que lo trate el
+     * shell o nuestro propio expansor. La excepción es '\?', que se
+     * conserva tal cual para que el shell lo interprete como '?'. */
+    size_t raw_len = strlen(cmd);
+    char *pre = malloc(raw_len + 1);
+    if (!pre) error(current_eval_line, "Memoria insuficiente al expandir comando");
+    size_t pre_len = 0;
+    for (size_t i = 0; i < raw_len; i++) {
+        if (cmd[i] == '\\' && i + 1 < raw_len && cmd[i + 1] == '?') {
+            pre[pre_len++] = cmd[i++];   /* copia '\' */
+            pre[pre_len++] = cmd[i];     /* copia '?' */
+            continue;
+        }
+        pre[pre_len++] = (cmd[i] == '?') ? '$' : cmd[i];
+    }
+    pre[pre_len] = '\0';
+
+    if (pre_len > (SIZE_MAX - 65) / 2) {
+        free(pre);
         error(current_eval_line, "Comando demasiado largo");
-    size_t cap = cmd_len * 2 + 64;
+    }
+    size_t cap = pre_len * 2 + 64;
     char *result = malloc(cap);
-    if (!result) error(current_eval_line, "Memoria insuficiente al expandir comando");
+    if (!result) {
+        free(pre);
+        error(current_eval_line, "Memoria insuficiente al expandir comando");
+    }
     size_t len = 0;
-    const char *p = cmd;
+    const char *p = pre;
 
     while (*p) {
-        if ((*p == '$' || *p == '?') && (isalpha((unsigned char)p[1]) || p[1] == '_')) {
+        /* Ya no hace falta comprobar '?' aquí: pre ya solo contiene
+         * '$' donde había '?' sin escape. */
+        if (*p == '$' && (isalpha((unsigned char)p[1]) || p[1] == '_')) {
             const char *start = p + 1;
             while (isalnum((unsigned char)*start) || *start == '_') start++;
             size_t nlen = (size_t)(start - (p + 1));
@@ -122,26 +146,23 @@ char *expand_command(const char *cmd) {
             memcpy(name, p + 1, nlen);
             name[nlen] = '\0';
 
-            if (*p == '?') {
-                append_dollar_name(&result, &len, &cap, name);
-                p = start;
-                continue;
-            }
-
             char *val = get_var_string(name);
             if (!val) {
                 free(result);
+                free(pre);
                 error(current_eval_line, "Variable '%s' no definida", name);
             }
             size_t vlen = strlen(val);
             if (len > SIZE_MAX - vlen - 1) {
                 free(val);
                 free(result);
+                free(pre);
                 error(current_eval_line, "Comando expandido demasiado largo");
             }
             if (!grow_text_buffer(&result, &cap, len + vlen + 1)) {
                 free(val);
                 free(result);
+                free(pre);
                 error(current_eval_line, "Memoria insuficiente al expandir comando");
             }
             memcpy(result + len, val, vlen);
@@ -152,16 +173,19 @@ char *expand_command(const char *cmd) {
         }
         if (len > SIZE_MAX - 2) {
             free(result);
+            free(pre);
             error(current_eval_line, "Comando expandido demasiado largo");
         }
         if (!grow_text_buffer(&result, &cap, len + 2)) {
             free(result);
+            free(pre);
             error(current_eval_line, "Memoria insuficiente al expandir comando");
         }
         result[len++] = *p++;
     }
     result[len] = '\0';
     char *tmp = realloc(result, len + 1);
+    free(pre);
     return tmp ? tmp : result;
 }
 
