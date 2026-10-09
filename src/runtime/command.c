@@ -113,8 +113,8 @@ char *expand_command(const char *cmd) {
     size_t pre_len = 0;
     for (size_t i = 0; i < raw_len; i++) {
         if (cmd[i] == '\\' && i + 1 < raw_len && cmd[i + 1] == '?') {
-            pre[pre_len++] = cmd[i++];   /* copia '\' */
-            pre[pre_len++] = cmd[i];     /* copia '?' */
+            pre[pre_len++] = '?';   /* '?' literal, sin backslash */
+            i++;                     /* consumir el '?' */
             continue;
         }
         pre[pre_len++] = (cmd[i] == '?') ? '$' : cmd[i];
