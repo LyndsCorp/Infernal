@@ -37,6 +37,7 @@ Value eval_expr(ASTNode *expr) {
         case NODE_BINOP:     return eval_binop(expr);
         case NODE_CALL:      return eval_call(expr);
         case NODE_UNARY:     return eval_unary(expr);
+        case NODE_EMBEDDED:  return eval_embedded(expr);
         case NODE_POST_INC:
         case NODE_POST_DEC: {
             ASTNode *var_node = expr->data.post_op.var;

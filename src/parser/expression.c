@@ -527,7 +527,7 @@ ASTNode *parse_primary() {
             char *cleaned = clean_var_name(t.lexeme);
             n->data.var.name = cleaned;
 
-            // --- NUEVA COMPROBACIÓN: si el siguiente token es '{' ---
+            // --- Comparar si el siguiente token es '{' ---
             if (ts_peek().type == TOK_LBRACE) {
                 error(t.line, "Para acceder a elementos de una lista o mapa, usa corchetes `[]`, no llaves `{}`.");
             }
@@ -664,25 +664,30 @@ ASTNode *parse_primary() {
             }
     }
     if (t.type == TOK_LBRACE) {
-        // FUTURO
-        // Aquí añadiré el comportamiento para que sea como embeber una función en la asignación. O sea:
-        /*
-         * algo = true
-         * var = {if algo then
-         * return "hola"
-         * else
-         * return "adios"
-         * fi
-         * }
-        */
-        // Y que entonces el valor de var sería "hola"
-        // O sea, el {} significa "código embebido", como se hace en flags ()
-
-        // Error temporal
-        error_at(t.line, t.start_col > 0 ? t.start_col : 1,
-                 "La sintaxis '{variable}' ya no se admite.\n"
-                 "    Usa la máquina de clonación así: '$variable' para obtener el valor de una variable.\n"
-                 "    Pronto tendrá una utilidad: código embebido como en flags (). De momento, da error de sintaxis.");
+        /* Bloque embebido '{ ... }'.
+         *
+         * Se parsea como un bloque de sentencias terminado por '}'. En
+         * tiempo de evaluación actúa como una función anónima sin
+         * parámetros: crea su propio scope, ejecuta el cuerpo y su valor
+         * es el del 'return' que se haya alcanzado.
+         *
+         * Las variables ya existentes en scopes externos se modifican
+         * (porque scope_find recorre la cadena hacia arriba), y las
+         * nuevas quedan como locales al bloque. Igual que en las
+         * funciones de usuario.
+         *
+         * Si el bloque termina sin haber ejecutado ningún 'return', es un
+         * error en tiempo de evaluación: la expresión no tiene ni tipo ni
+         * valor. Ese error lo emite eval_expr(NODE_EMBEDDED). */
+        ts_advance();
+        NodeList body = parse_block("}");
+        if (!ts_match(TOK_RBRACE)) {
+            error_at(t.line, t.start_col > 0 ? t.start_col : 1,
+                     "Se esperaba '}' para cerrar el bloque embebido '{'");
+        }
+        ASTNode *n = node_create(NODE_EMBEDDED, t.line);
+        n->data.embedded.body = body;
+        return n;
     }
     if (t.type == TOK_LPAREN) {
         ts_advance();

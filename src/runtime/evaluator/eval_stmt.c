@@ -30,6 +30,75 @@
 
 #define MAX_COMMAND_OUTPUT (8u * 1024u * 1024u)
 
+Value eval_embedded(ASTNode *expr) {
+    Scope *new_scope = scope_new(current_scope, NULL);
+    Scope *prev_scope = current_scope;
+
+    jmp_buf saved_env;
+    memcpy(&saved_env, &exception_env, sizeof(jmp_buf));
+    int saved_raised = exception_raised;
+    int saved_cf = control_flow;
+    Value saved_ret = return_value;
+    bool state_active = false;
+
+    if (setjmp(exception_env) != 0) {
+        /* Error propagándose desde dentro del bloque: restauramos el
+         * scope anterior, liberamos el nuevo y re-propagamos. Si ya
+         * habíamos activado el estado de "función", también restauramos
+         * control_flow y return_value. */
+        current_scope = prev_scope;
+        if (state_active) {
+            value_free(&return_value);
+            return_value = saved_ret;
+            control_flow = saved_cf;
+        }
+        scope_free(new_scope);
+        memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
+        exception_raised = saved_raised;
+        longjmp(exception_env, 1);
+    }
+
+    current_scope = new_scope;
+    return_value = val_make_null();
+    control_flow = CF_NONE;
+    state_active = true;
+
+    exec_block_impl(&expr->data.embedded.body);
+
+    if (control_flow != CF_RETURN) {
+        /* Ninguna ruta del bloque terminó en 'return'. La expresión no
+         * tiene valor ni tipo, así que es un error. Limpiamos todo antes
+         * de disparar el error para no dejar nada colgando. */
+        value_free(&return_value);
+        return_value = saved_ret;
+        control_flow = saved_cf;
+        current_scope = prev_scope;
+        scope_free(new_scope);
+        state_active = false;
+
+        memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
+        exception_raised = saved_raised;
+        error(expr->line,
+              "El bloque embebido '{ ... }' no alcanzó ningún 'return'.\n"
+              "    Un bloque embebido es como una función anónima sin parámetros: su valor\n"
+              "    es el del 'return' que se ejecute. Como ninguna ruta del bloque terminó\n"
+              "    en 'return', la expresión no tiene ni tipo ni valor.\n"
+              "    Asegúrate de que todas las ramas del bloque terminen con 'return'.");
+    }
+
+    /* Transferimos la propiedad del valor de retorno a la expresión.
+     * Dejamos return_value como estaba antes de entrar al bloque. */
+    Value ret = return_value;
+    control_flow = saved_cf;
+    return_value = saved_ret;
+    state_active = false;
+    current_scope = prev_scope;
+    scope_free(new_scope);
+    memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
+    exception_raised = saved_raised;
+    return ret;
+}
+
 /* --- Funciones auxiliares de bloque --- */
 void exec_block_impl(NodeList *block) {
     exec_block_from_impl(block, 0);

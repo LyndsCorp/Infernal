@@ -137,7 +137,8 @@ struct ASTNode {
         NODE_POST_INC,
         NODE_POST_DEC,
         NODE_EMPTY_AMBIGUOUS,
-        NODE_DEFINE
+        NODE_DEFINE,
+        NODE_EMBEDDED
     } kind;
     union {
         struct { NodeList stmts; } prog;
@@ -200,6 +201,9 @@ struct ASTNode {
                 char *name;
                 ASTNode *value;
             } define;
+            struct {
+                NodeList body;
+            } embedded;
     } data;
 };
 

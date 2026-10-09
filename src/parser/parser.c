@@ -2001,7 +2001,7 @@ NodeList parse_block(const char *terminator) {
                         /* Quedan tokens tras ++/--; toda la línea es un comando shell. */
                     }
 
-                    /* COMANDO SHELL (cualquier otra cosa) — NUEVO: preserva comillas */
+                    /* COMANDO SHELL (cualquier otra cosa) preserva comillas */
                     {
                         ts.pos--;
                         char *cmd = infernal_strdup("");
