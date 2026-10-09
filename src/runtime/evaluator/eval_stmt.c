@@ -88,6 +88,25 @@ static bool switch_values_equal(Value left, Value right) {
     }
 }
 
+/* Compara dos Value por igualdad de valor. Se usa en for-in para localizar
+ * el elemento visitado dentro de la lista viva. Listas y mapas se comparan
+ * por identidad de tipo pero no por contenido: no merece la pena recorrer
+ * estructuras enteras en cada iteración, y en la práctica los elementos que
+ * se eliminan con `-= [i]` son escalares (int, float, bool, string). */
+static bool forin_values_equal(Value a, Value b) {
+    if (a.type != b.type) return false;
+    switch (a.type) {
+        case VAL_NULL:   return true;
+        case VAL_INT:    return a.data.ival == b.data.ival;
+        case VAL_FLOAT:  return a.data.fval == b.data.fval;
+        case VAL_BOOL:   return a.data.bval == b.data.bval;
+        case VAL_STRING:
+            if (!a.data.sval || !b.data.sval) return a.data.sval == b.data.sval;
+            return strcmp(a.data.sval, b.data.sval) == 0;
+        default:         return false;
+    }
+}
+
 /* ====================================================================
  *  Helpers UTF-8 para manipulación cruda de strings
  * ====================================================================
@@ -953,101 +972,143 @@ void exec_stmt(ASTNode *stmt) {
 
         case NODE_FOR_IN: {
             Value iterable = eval_expr(stmt->data.for_in.list_expr);
-            if (iterable.type != VAL_LIST && iterable.type != VAL_STRING && iterable.type != VAL_MAP) {
+
+            /* Si la expresión devolvió una referencia (por ejemplo,
+             * `for x in lista[1]`), la resolvemos antes de iterar. */
+            if (iterable.type == VAL_REFERENCE)
+                iterable = resolve_reference(iterable, stmt->line);
+
+            if (iterable.type != VAL_LIST &&
+                iterable.type != VAL_STRING &&
+                iterable.type != VAL_MAP) {
                 value_free(&iterable);
-                error(stmt->line, "Se esperaba una lista, string o mapa en for-in");
-            }
-
-            volatile int count = 0;
-            if (iterable.type == VAL_LIST) {
-                count = iterable.data.list.count;
-            } else if (iterable.type == VAL_MAP) {
-                count = iterable.data.map ? iterable.data.map->count : 0;
-            } else {
-                const unsigned char *p = (const unsigned char *)iterable.data.sval;
-                while (*p) {
-                    unsigned char c = *p;
-                    size_t width = 1;
-                    if (c < 0x80) width = 1;
-                    else if ((c & 0xE0) == 0xC0 && p[1]) width = 2;
-                    else if ((c & 0xF0) == 0xE0 && p[1] && p[2]) width = 3;
-                    else if ((c & 0xF8) == 0xF0 && p[1] && p[2] && p[3]) width = 4;
-                    p += width;
-                    count++;
-                }
-            }
-
-            for (volatile int i = 0; i < count; i++) {
-                Scope *old_scope = current_scope;
-                volatile Scope *iter_scope = scope_new(old_scope, NULL);
-                volatile Value item = val_make_null();
-
-                jmp_buf saved_env;
-                memcpy(&saved_env, &exception_env, sizeof(jmp_buf));
-                int saved_raised = exception_raised;
-                if (setjmp(exception_env) != 0) {
-                    current_scope = old_scope;
-                    value_free((Value *)&item);
-                    scope_free((Scope *)iter_scope);
-                    value_free(&iterable);
-                    memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
-                    exception_raised = saved_raised;
-                    longjmp(exception_env, 1);
+            error(stmt->line, "Se esperaba una lista, string o mapa en for-in");
                 }
 
-                current_scope = (Scope *)iter_scope;
+                /* Si el contenedor es una variable simple, guardamos su VarEntry
+                 * para poder recalcular `i` como la posición viva del elemento. */
+                VarEntry *live_var = NULL;
+                if (stmt->data.for_in.list_expr &&
+                    stmt->data.for_in.list_expr->kind == NODE_VAR) {
+                    const char *vname = stmt->data.for_in.list_expr->data.var.name;
+                if (vname && (vname[0] == '$' || vname[0] == '?')) vname++;
+                if (vname && *vname)
+                    live_var = scope_find(current_scope, vname);
+                    }
 
+                    volatile int count = 0;
                 if (iterable.type == VAL_LIST) {
-                    item = copy_value_secure(iterable.data.list.items[i]);
+                    count = iterable.data.list.count;
                 } else if (iterable.type == VAL_MAP) {
-                    item = val_string(iterable.data.map->pairs[i].key);
+                    count = iterable.data.map ? iterable.data.map->count : 0;
                 } else {
                     const unsigned char *p = (const unsigned char *)iterable.data.sval;
-                    for (int n = 0; n < i; n++) {
+                    while (*p) {
                         unsigned char c = *p;
-                        if (c < 0x80) p += 1;
-                        else if ((c & 0xE0) == 0xC0 && p[1]) p += 2;
-                        else if ((c & 0xF0) == 0xE0 && p[1] && p[2]) p += 3;
-                        else if ((c & 0xF8) == 0xF0 && p[1] && p[2] && p[3]) p += 4;
-                        else p += 1;
+                        size_t width = 1;
+                        if (c < 0x80) width = 1;
+                        else if ((c & 0xE0) == 0xC0 && p[1]) width = 2;
+                        else if ((c & 0xF0) == 0xE0 && p[1] && p[2]) width = 3;
+                        else if ((c & 0xF8) == 0xF0 && p[1] && p[2] && p[3]) width = 4;
+                        p += width;
+                        count++;
                     }
-                    size_t width = 1;
-                    unsigned char c = *p;
-                    if (c >= 0xC0 && (c & 0xE0) == 0xC0 && p[1]) width = 2;
-                    else if (c >= 0xE0 && (c & 0xF0) == 0xE0 && p[1] && p[2]) width = 3;
-                    else if (c >= 0xF0 && (c & 0xF8) == 0xF0 && p[1] && p[2] && p[3]) width = 4;
-                    char *ch = malloc(width + 1);
-                    if (!ch)
-                        error(stmt->line, "Memoria insuficiente en for-in");
-                    memcpy(ch, p, width);
-                    ch[width] = '\0';
-                    item = val_string(ch);
-                    free(ch);
                 }
 
-                scope_define((Scope *)iter_scope, stmt->data.for_in.var, 0, (Value)item);
-                item = val_make_null(); /* propiedad transferida al scope */
+                for (volatile int iter_idx = 0; iter_idx < count; iter_idx++) {
+                    Scope *old_scope = current_scope;
+                    volatile Scope *iter_scope = scope_new(old_scope, NULL);
+                    volatile Value item = val_make_null();
 
-                if (stmt->data.for_in.index_var) {
-                    scope_define((Scope *)iter_scope, stmt->data.for_in.index_var,
-                                 TOK_INT, val_int(i + 1));
+                    jmp_buf saved_env;
+                    memcpy(&saved_env, &exception_env, sizeof(jmp_buf));
+                    int saved_raised = exception_raised;
+                    if (setjmp(exception_env) != 0) {
+                        current_scope = old_scope;
+                        value_free((Value *)&item);
+                        scope_free((Scope *)iter_scope);
+                        value_free(&iterable);
+                        memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
+                        exception_raised = saved_raised;
+                        longjmp(exception_env, 1);
+                    }
+
+                    current_scope = (Scope *)iter_scope;
+
+                    /* --- Obtener el elemento a visitar desde el snapshot --- */
+                    if (iterable.type == VAL_LIST) {
+                        item = copy_value_secure(iterable.data.list.items[iter_idx]);
+                    } else if (iterable.type == VAL_MAP) {
+                        item = val_string(iterable.data.map->pairs[iter_idx].key);
+                    } else {
+                        const unsigned char *p = (const unsigned char *)iterable.data.sval;
+                        for (int n = 0; n < iter_idx; n++) {
+                            unsigned char c = *p;
+                            if (c < 0x80) p += 1;
+                            else if ((c & 0xE0) == 0xC0 && p[1]) p += 2;
+                            else if ((c & 0xF0) == 0xE0 && p[1] && p[2]) p += 3;
+                            else if ((c & 0xF8) == 0xF0 && p[1] && p[2] && p[3]) p += 4;
+                            else p += 1;
+                        }
+                        size_t width = 1;
+                        unsigned char c = *p;
+                        if (c >= 0xC0 && (c & 0xE0) == 0xC0 && p[1]) width = 2;
+                        else if (c >= 0xE0 && (c & 0xF0) == 0xE0 && p[1] && p[2]) width = 3;
+                        else if (c >= 0xF0 && (c & 0xF8) == 0xF0 && p[1] && p[2] && p[3]) width = 4;
+                        char *ch = malloc(width + 1);
+                        if (!ch)
+                            error(stmt->line, "Memoria insuficiente en for-in");
+                        memcpy(ch, p, width);
+                        ch[width] = '\0';
+                        item = val_string(ch);
+                        free(ch);
+                    }
+
+                    /* --- Calcular `i` como la posición viva del elemento.
+                     *
+                     * Buscamos el valor del elemento visitado en la lista actual.
+                     * Si lo encontramos, esa es la posición (1-based). Si no lo
+                     * encontramos (porque el usuario ya lo eliminó, o porque el
+                     * contenedor no es una lista viva), caemos al número de
+                     * secuencia. --- */
+                    int live_index = iter_idx + 1;  /* fallback: número de secuencia */
+
+                    if (live_var && live_var->value.type == VAL_LIST &&
+                        iterable.type == VAL_LIST) {
+                        Value *live_items = live_var->value.data.list.items;
+                    int live_count = live_var->value.data.list.count;
+                    for (int j = 0; j < live_count; j++) {
+                        if (forin_values_equal(live_items[j], item)) {
+                            live_index = j + 1;
+                            break;
+                        }
+                    }
+                        }
+
+                        /* --- Publicar las variables del bucle en el scope --- */
+                        scope_define((Scope *)iter_scope, stmt->data.for_in.var, 0, (Value)item);
+                        item = val_make_null(); /* propiedad transferida al scope */
+
+                        if (stmt->data.for_in.index_var) {
+                            scope_define((Scope *)iter_scope, stmt->data.for_in.index_var,
+                                         TOK_INT, val_int(live_index));
+                        }
+
+                        exec_block_impl(&stmt->data.for_in.body);
+                        memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
+                        exception_raised = saved_raised;
+                        current_scope = old_scope;
+                        scope_free((Scope *)iter_scope);
+
+                        if (control_flow == CF_BREAK) { control_flow = CF_NONE; break; }
+                        if (control_flow == CF_CONTINUE) { control_flow = CF_NONE; continue; }
+                        if (control_flow == CF_REPEAT_LINE || control_flow == CF_RETURN) {
+                            value_free(&iterable);
+                            return;
+                        }
                 }
-
-                exec_block_impl(&stmt->data.for_in.body);
-                memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
-                exception_raised = saved_raised;
-                current_scope = old_scope;
-                scope_free((Scope *)iter_scope);
-
-                if (control_flow == CF_BREAK) { control_flow = CF_NONE; break; }
-                if (control_flow == CF_CONTINUE) { control_flow = CF_NONE; continue; }
-                if (control_flow == CF_REPEAT_LINE || control_flow == CF_RETURN) {
-                    value_free(&iterable);
-                    return;
-                }
-            }
-            value_free(&iterable);
-            break;
+                value_free(&iterable);
+                break;
         }
 
         case NODE_FUNC_DEF:
