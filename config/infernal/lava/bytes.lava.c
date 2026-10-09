@@ -8,21 +8,18 @@
  *
  *   import bytes
  *
- *   print(bytes.countbytes("hola"))              # 4
- *   print(bytes.indexofbytes("hola", "la"))      # 3
- *   print(bytes.headbytes("hola mundo", 4))      # "hola"
- *   print(bytes.tailbytes("hola mundo", 5))      # "mundo"
- *   print(bytes.replacebytes("a-b-c", "-", "+")) # "a+b+c"
- *   print(bytes.reversebytes("abc"))             # "cba"
- *   print(bytes.lengthbytes("hola"))             # 4
- *   print(bytes.binbytes("AB"))                  # "01000001 01000010"
- *   print(bytes.hexbytes("AB"))                  # "41 42"
- *   print(bytes.utf8bytes("ñ"))                  # "195 177"
- *   print(bytes.unicodeCodepoints("ñ"))          # "U+00F1"
- *   print(bytes.cutAfterbytes("a/b/c", "/"))     # "a/"
- *   print(bytes.cutBeforebytes("a/b/c", "/"))    # "/b/c"
- *   print(bytes.cutHeadbytes("abcdef", 2))       # "cdef"
- *   print(bytes.cutTailbytes("abcdef", 2))       # "abcd"
+ *   print(bytes.length("hola"))             # 4
+ *   print(bytes.bin("AB"))                  # "01000001 01000010"
+ *   print(bytes.hex("AB"))                  # "41 42"
+ *   print(bytes.utf8("ñ"))                  # "195 177"
+ *   print(bytes.unicodeCodepoints("ñ"))     # "U+00F1"
+ *   print(bytes.byteAt("hola", 1))          # 104
+ *   print(bytes.slice("hola mundo", 1, 4))  # "hola"
+ *   print(bytes.base64("hola"))             # "aG9sYQ=="
+ *   print(bytes.fromBase64("aG9sYQ=="))     # "hola"
+ *   print(bytes.crc32("hola"))              # "E3C4B5B6" (ejemplo)
+ *   print(bytes.checksum("hola"))           # 164
+ *   print(bytes.compare("abc", "abd"))      # -1
  */
 
 #include "lava.h"
@@ -57,149 +54,34 @@ static void raise(const char *fmt, ...) {
 }
 
 /* ==================================================================
+ * Helpers para Base64
+ * ================================================================== */
+
+static int b64_val(char c) {
+    if (c >= 'A' && c <= 'Z') return c - 'A';
+    if (c >= 'a' && c <= 'z') return c - 'a' + 26;
+    if (c >= '0' && c <= '9') return c - '0' + 52;
+    if (c == '+') return 62;
+    if (c == '/') return 63;
+    return -1;
+}
+
+/* ==================================================================
  * API pública
  * ================================================================== */
 
-/* countbytes(s) — número de bytes (== strlen). */
-LAVA_EXPORT void lava_countbytes(const char *s) {
+/* length(s) — número de bytes (== strlen). */
+LAVA_EXPORT void lava_length(const char *s) {
     infernal_return_type("int");
     infernal_return_value("%d", (int)strlen(s));
 }
 
-/* indexofbytes(haystack, needle) — posición 1-based, 0 si no se encuentra.
- * Subcadena vacía → 1 (como en el original). */
-LAVA_EXPORT void lava_indexofbytes(const char *haystack, const char *needle) {
-    if (*needle == '\0') {
-        infernal_return_type("int");
-        infernal_return_value("%d", 1);
-        return;
-    }
-    const char *found = strstr(haystack, needle);
-    infernal_return_type("int");
-    infernal_return_value("%d", found ? (int)(found - haystack) + 1 : 0);
-}
-
-/* headbytes(s, n) — primeros n bytes. n se recorta a [0, len]. */
-LAVA_EXPORT void lava_headbytes(const char *s, int n) {
-    if (n < 0) n = 0;
-    size_t len = strlen(s);
-    if ((size_t)n > len) n = (int)len;
-
-    char *buf = malloc((size_t)n + 1);
-    if (!buf) raise("bytes.headbytes(): memoria insuficiente");
-    memcpy(buf, s, (size_t)n);
-    buf[n] = '\0';
-
-    infernal_return_type("string");
-    infernal_return_value("%s", buf);
-    free(buf);
-}
-
-/* tailbytes(s, n) — últimos n bytes. */
-LAVA_EXPORT void lava_tailbytes(const char *s, int n) {
-    if (n < 0) n = 0;
-    size_t len = strlen(s);
-    if ((size_t)n > len) n = (int)len;
-    size_t start = len - (size_t)n;
-
-    char *buf = malloc((size_t)n + 1);
-    if (!buf) raise("bytes.tailbytes(): memoria insuficiente");
-    memcpy(buf, s + start, (size_t)n);
-    buf[n] = '\0';
-
-    infernal_return_type("string");
-    infernal_return_value("%s", buf);
-    free(buf);
-}
-
-/* replacebytes(str, from, to) — reemplaza todas las apariciones. */
-LAVA_EXPORT void lava_replacebytes(const char *str, const char *from, const char *to) {
-    size_t from_len = strlen(from);
-    if (from_len == 0) {
-        infernal_return_type("string");
-        infernal_return_value("%s", str);
-        return;
-    }
-
-    /* Contamos ocurrencias */
-    size_t count = 0;
-    const char *tmp = str;
-    while ((tmp = strstr(tmp, from)) != NULL) { count++; tmp += from_len; }
-
-    size_t to_len       = strlen(to);
-    size_t original_len = strlen(str);
-    size_t result_len;
-
-    if (to_len >= from_len) {
-        size_t diff = to_len - from_len;
-        if (diff > 0 && count > SIZE_MAX / diff)
-            raise("bytes.replacebytes(): resultado demasiado grande");
-        size_t added = count * diff;
-        if (added > SIZE_MAX - original_len - 1)
-            raise("bytes.replacebytes(): resultado demasiado grande");
-        result_len = original_len + added + 1;
-    } else {
-        size_t diff = from_len - to_len;
-        if (diff > 0 && count > SIZE_MAX / diff)
-            raise("bytes.replacebytes(): resultado demasiado grande");
-        size_t reduction = count * diff;
-        if (reduction > original_len)
-            raise("bytes.replacebytes(): inconsistencia interna");
-        result_len = original_len - reduction + 1;
-    }
-
-    char *result = malloc(result_len);
-    if (!result) raise("bytes.replacebytes(): memoria insuficiente");
-
-    const char *read_ptr = str;
-    char       *write_ptr = result;
-    while (*read_ptr) {
-        const char *found = strstr(read_ptr, from);
-        if (found == read_ptr) {
-            memcpy(write_ptr, to, to_len);
-            write_ptr += to_len;
-            read_ptr  += from_len;
-        } else {
-            const char *next = found ? found : read_ptr + strlen(read_ptr);
-            size_t chunk = (size_t)(next - read_ptr);
-            memcpy(write_ptr, read_ptr, chunk);
-            write_ptr += chunk;
-            read_ptr   = next;
-        }
-    }
-    *write_ptr = '\0';
-
-    infernal_return_type("string");
-    infernal_return_value("%s", result);
-    free(result);
-}
-
-/* reversebytes(s) — invierte el orden de los bytes. */
-LAVA_EXPORT void lava_reversebytes(const char *src) {
-    size_t len = strlen(src);
-    char *rev = malloc(len + 1);
-    if (!rev) raise("bytes.reversebytes(): memoria insuficiente");
-
-    for (size_t i = 0; i < len; i++) rev[i] = src[len - 1 - i];
-    rev[len] = '\0';
-
-    infernal_return_type("string");
-    infernal_return_value("%s", rev);
-    free(rev);
-}
-
-/* lengthbytes(s) — igual que countbytes, mantenido por compatibilidad. */
-LAVA_EXPORT void lava_lengthbytes(const char *s) {
-    infernal_return_type("int");
-    infernal_return_value("%d", (int)strlen(s));
-}
-
-/* binbytes(s) — representación binaria de cada byte, separados por espacios. */
-LAVA_EXPORT void lava_binbytes(const char *s) {
+/* bin(s) — representación binaria de cada byte, separados por espacios. */
+LAVA_EXPORT void lava_bin(const char *s) {
     size_t len = strlen(s);
     size_t out_len = (len == 0) ? 1 : len * 9;
     char *buf = malloc(out_len);
-    if (!buf) raise("bytes.binbytes(): memoria insuficiente");
+    if (!buf) raise("bytes.bin(): memoria insuficiente");
 
     char *p = buf;
     for (size_t i = 0; i < len; i++) {
@@ -216,12 +98,12 @@ LAVA_EXPORT void lava_binbytes(const char *s) {
     free(buf);
 }
 
-/* hexbytes(s) — representación hex mayúsculas separada por espacios. */
-LAVA_EXPORT void lava_hexbytes(const char *s) {
+/* hex(s) — representación hex mayúsculas separada por espacios. */
+LAVA_EXPORT void lava_hex(const char *s) {
     size_t len = strlen(s);
     size_t out_len = (len == 0) ? 1 : len * 3;
     char *buf = malloc(out_len);
-    if (!buf) raise("bytes.hexbytes(): memoria insuficiente");
+    if (!buf) raise("bytes.hex(): memoria insuficiente");
 
     static const char hexdigits[] = "0123456789ABCDEF";
     char *p = buf;
@@ -238,12 +120,12 @@ LAVA_EXPORT void lava_hexbytes(const char *s) {
     free(buf);
 }
 
-/* utf8bytes(s) — bytes decimales (0-255), separados por espacios. */
-LAVA_EXPORT void lava_utf8bytes(const char *s) {
+/* utf8(s) — bytes decimales (0-255), separados por espacios. */
+LAVA_EXPORT void lava_utf8(const char *s) {
     size_t len = strlen(s);
     size_t out_len = (len == 0) ? 1 : len * 4;
     char *buf = malloc(out_len);
-    if (!buf) raise("bytes.utf8bytes(): memoria insuficiente");
+    if (!buf) raise("bytes.utf8(): memoria insuficiente");
 
     char *p = buf;
     for (size_t i = 0; i < len; i++) {
@@ -278,7 +160,6 @@ LAVA_EXPORT void lava_unicodeCodepoints(const char *str) {
     const unsigned char *p   = s;
     const unsigned char *end = s + len;
 
-    /* Contamos cuántos caracteres UTF-8 hay (para reservar) */
     size_t char_count = 0;
     while (p < end) {
         unsigned char c = *p;
@@ -348,28 +229,32 @@ LAVA_EXPORT void lava_unicodeCodepoints(const char *str) {
     free(buf);
 }
 
-/* ------------------------------------------------------------------
- * cortes por separador
- * ------------------------------------------------------------------ */
+/* byteAt(s, index) — devuelve el byte en la posición index (1-based). */
+LAVA_EXPORT void lava_byteAt(const char *s, int index) {
+    size_t len = strlen(s);
+    if (index < 1 || (size_t)index > len)
+        raise("bytes.byteAt(): índice fuera de rango");
+    int byte = (int)(unsigned char)s[index - 1];
+    infernal_return_type("int");
+    infernal_return_value("%d", byte);
+}
 
-/* cutAfterbytes(s, sep) — todo hasta el final de la primera aparición de sep.
- * Si sep no aparece (o es vacío), devuelve s tal cual. */
-LAVA_EXPORT void lava_cutAfterbytes(const char *s, const char *sep) {
-    if (*sep == '\0') {
+/* slice(s, start, length) — extrae length bytes desde start (1-based). */
+LAVA_EXPORT void lava_slice(const char *s, int start, int length) {
+    if (start < 1) raise("bytes.slice(): 'start' debe ser >= 1");
+    if (length < 0) raise("bytes.slice(): 'length' debe ser >= 0");
+    size_t len = strlen(s);
+    if ((size_t)start > len) {
         infernal_return_type("string");
-        infernal_return_value("%s", s);
+        infernal_return_value("%s", "");
         return;
     }
-    const char *p = strstr(s, sep);
-    if (!p) {
-        infernal_return_type("string");
-        infernal_return_value("%s", s);
-        return;
-    }
-    size_t n = (size_t)(p - s) + strlen(sep);
+    size_t start_idx = (size_t)start - 1;
+    size_t available = len - start_idx;
+    size_t n = (length > available) ? available : (size_t)length;
     char *buf = malloc(n + 1);
-    if (!buf) raise("bytes.cutAfterbytes(): memoria insuficiente");
-    memcpy(buf, s, n);
+    if (!buf) raise("bytes.slice(): memoria insuficiente");
+    memcpy(buf, s + start_idx, n);
     buf[n] = '\0';
 
     infernal_return_type("string");
@@ -377,87 +262,172 @@ LAVA_EXPORT void lava_cutAfterbytes(const char *s, const char *sep) {
     free(buf);
 }
 
-/* cutAfterLastbytes(s, sep) — igual pero con la última aparición. */
-LAVA_EXPORT void lava_cutAfterLastbytes(const char *s, const char *sep) {
-    if (*sep == '\0') {
-        infernal_return_type("string");
-        infernal_return_value("%s", s);
-        return;
+/* base64(s) — codifica la cadena en Base64. */
+LAVA_EXPORT void lava_base64(const char *s) {
+    static const char b64[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    size_t len = strlen(s);
+    size_t out_len = 4 * ((len + 2) / 3);
+    char *buf = malloc(out_len + 1);
+    if (!buf) raise("bytes.base64(): memoria insuficiente");
+
+    size_t j = 0;
+    for (size_t i = 0; i < len; i += 3) {
+        uint32_t octet_a = i < len ? (unsigned char)s[i] : 0;
+        uint32_t octet_b = i + 1 < len ? (unsigned char)s[i+1] : 0;
+        uint32_t octet_c = i + 2 < len ? (unsigned char)s[i+2] : 0;
+        uint32_t triple = (octet_a << 16) | (octet_b << 8) | octet_c;
+        buf[j++] = b64[(triple >> 18) & 0x3F];
+        buf[j++] = b64[(triple >> 12) & 0x3F];
+        buf[j++] = b64[(triple >> 6) & 0x3F];
+        buf[j++] = b64[triple & 0x3F];
     }
-    const char *last = NULL, *p = s;
-    while ((p = strstr(p, sep)) != NULL) { last = p; p++; }
-    if (!last) {
-        infernal_return_type("string");
-        infernal_return_value("%s", s);
-        return;
+    if (len % 3 == 1) {
+        buf[out_len - 2] = '=';
+        buf[out_len - 1] = '=';
+    } else if (len % 3 == 2) {
+        buf[out_len - 1] = '=';
     }
-    size_t n = (size_t)(last - s) + strlen(sep);
-    char *buf = malloc(n + 1);
-    if (!buf) raise("bytes.cutAfterLastbytes(): memoria insuficiente");
-    memcpy(buf, s, n);
-    buf[n] = '\0';
+    buf[out_len] = '\0';
 
     infernal_return_type("string");
     infernal_return_value("%s", buf);
     free(buf);
 }
 
-/* cutBeforebytes(s, sep) — desde el inicio de la primera aparición de sep. */
-LAVA_EXPORT void lava_cutBeforebytes(const char *s, const char *sep) {
-    if (*sep == '\0') {
-        infernal_return_type("string");
-        infernal_return_value("%s", s);
-        return;
+/* fromBase64(s) — decodifica una cadena Base64. */
+LAVA_EXPORT void lava_fromBase64(const char *s) {
+    size_t slen = strlen(s);
+    char *clean = malloc(slen + 1);
+    if (!clean) raise("bytes.fromBase64(): memoria insuficiente");
+    size_t clen = 0;
+    for (size_t i = 0; i < slen; i++) {
+        char c = s[i];
+        if (c == ' ' || c == '\t' || c == '\n' || c == '\r') continue;
+        clean[clen++] = c;
     }
-    const char *p = strstr(s, sep);
+    clean[clen] = '\0';
+
+    if (clen % 4 != 0) {
+        free(clean);
+        raise("bytes.fromBase64(): longitud inválida (debe ser múltiplo de 4)");
+    }
+
+    size_t out_max = (clen / 4) * 3;
+    char *out = malloc(out_max + 1);
+    if (!out) { free(clean); raise("bytes.fromBase64(): memoria insuficiente"); }
+
+    size_t out_len = 0;
+    bool padding_done = false;
+    for (size_t i = 0; i < clen; i += 4) {
+        if (padding_done) {
+            free(clean); free(out);
+            raise("bytes.fromBase64(): datos después del relleno");
+        }
+        int v0 = b64_val(clean[i]);
+        int v1 = b64_val(clean[i+1]);
+        if (v0 < 0 || v1 < 0) {
+            free(clean); free(out);
+            raise("bytes.fromBase64(): carácter inválido");
+        }
+        if (clean[i+2] == '=') {
+            if (clean[i+3] != '=') {
+                free(clean); free(out);
+                raise("bytes.fromBase64(): relleno inválido");
+            }
+            uint32_t triple = ((uint32_t)v0 << 18) | ((uint32_t)v1 << 12);
+            unsigned char b = (triple >> 16) & 0xFF;
+            if (b == 0) {
+                free(clean); free(out);
+                raise("bytes.fromBase64(): el resultado contiene byte NUL, no representable como string");
+            }
+            out[out_len++] = (char)b;
+            padding_done = true;
+        } else if (clean[i+3] == '=') {
+            int v2 = b64_val(clean[i+2]);
+            if (v2 < 0) {
+                free(clean); free(out);
+                raise("bytes.fromBase64(): carácter inválido");
+            }
+            uint32_t triple = ((uint32_t)v0 << 18) | ((uint32_t)v1 << 12) | ((uint32_t)v2 << 6);
+            unsigned char b1 = (triple >> 16) & 0xFF;
+            unsigned char b2 = (triple >> 8) & 0xFF;
+            if (b1 == 0 || b2 == 0) {
+                free(clean); free(out);
+                raise("bytes.fromBase64(): el resultado contiene byte NUL, no representable como string");
+            }
+            out[out_len++] = (char)b1;
+            out[out_len++] = (char)b2;
+            padding_done = true;
+        } else {
+            int v2 = b64_val(clean[i+2]);
+            int v3 = b64_val(clean[i+3]);
+            if (v2 < 0 || v3 < 0) {
+                free(clean); free(out);
+                raise("bytes.fromBase64(): carácter inválido");
+            }
+            uint32_t triple = ((uint32_t)v0 << 18) | ((uint32_t)v1 << 12) | ((uint32_t)v2 << 6) | (uint32_t)v3;
+            unsigned char b1 = (triple >> 16) & 0xFF;
+            unsigned char b2 = (triple >> 8) & 0xFF;
+            unsigned char b3 = triple & 0xFF;
+            if (b1 == 0 || b2 == 0 || b3 == 0) {
+                free(clean); free(out);
+                raise("bytes.fromBase64(): el resultado contiene byte NUL, no representable como string");
+            }
+            out[out_len++] = (char)b1;
+            out[out_len++] = (char)b2;
+            out[out_len++] = (char)b3;
+        }
+    }
+    out[out_len] = '\0';
+
     infernal_return_type("string");
-    infernal_return_value("%s", p ? p : "");
+    infernal_return_value("%s", out);
+    free(clean);
+    free(out);
 }
 
-/* cutBeforeLastbytes(s, sep) — desde el inicio de la última aparición. */
-LAVA_EXPORT void lava_cutBeforeLastbytes(const char *s, const char *sep) {
-    if (*sep == '\0') {
-        infernal_return_type("string");
-        infernal_return_value("%s", s);
-        return;
+/* crc32(s) — CRC-32 (polinomio 0xEDB88320) en hex mayúsculas de 8 dígitos. */
+LAVA_EXPORT void lava_crc32(const char *s) {
+    uint32_t crc = 0xFFFFFFFF;
+    for (const unsigned char *p = (const unsigned char *)s; *p; p++) {
+        crc ^= *p;
+        for (int i = 0; i < 8; i++) {
+            if (crc & 1) crc = (crc >> 1) ^ 0xEDB88320;
+            else crc >>= 1;
+        }
     }
-    const char *last = NULL, *p = s;
-    while ((p = strstr(p, sep)) != NULL) { last = p; p++; }
-    infernal_return_type("string");
-    infernal_return_value("%s", last ? last : "");
-}
-
-/* cutHeadbytes(s, n) — quita los primeros n bytes. */
-LAVA_EXPORT void lava_cutHeadbytes(const char *s, int n) {
-    if (n < 0) raise("bytes.cutHeadbytes(): no acepta índices negativos");
-    size_t len = strlen(s);
-    if ((size_t)n >= len) {
-        infernal_return_type("string");
-        infernal_return_value("%s", "");
-        return;
-    }
-    infernal_return_type("string");
-    infernal_return_value("%s", s + n);
-}
-
-/* cutTailbytes(s, n) — quita los últimos n bytes. */
-LAVA_EXPORT void lava_cutTailbytes(const char *s, int n) {
-    if (n < 0) raise("bytes.cutTailbytes(): no acepta índices negativos");
-    size_t len = strlen(s);
-    if ((size_t)n >= len) {
-        infernal_return_type("string");
-        infernal_return_value("%s", "");
-        return;
-    }
-    size_t keep = len - (size_t)n;
-    char *buf = malloc(keep + 1);
-    if (!buf) raise("bytes.cutTailbytes(): memoria insuficiente");
-    memcpy(buf, s, keep);
-    buf[keep] = '\0';
-
+    crc = ~crc;
+    char buf[9];
+    snprintf(buf, sizeof(buf), "%08X", crc);
     infernal_return_type("string");
     infernal_return_value("%s", buf);
-    free(buf);
+}
+
+/* checksum(s) — suma de todos los bytes módulo 256. */
+LAVA_EXPORT void lava_checksum(const char *s) {
+    unsigned int sum = 0;
+    for (const unsigned char *p = (const unsigned char *)s; *p; p++) {
+        sum += *p;
+    }
+    sum %= 256;
+    infernal_return_type("int");
+    infernal_return_value("%d", (int)sum);
+}
+
+/* compare(s1, s2) — comparación lexicográfica byte a byte: -1, 0, 1. */
+LAVA_EXPORT void lava_compare(const char *s1, const char *s2) {
+    size_t len1 = strlen(s1);
+    size_t len2 = strlen(s2);
+    size_t min_len = len1 < len2 ? len1 : len2;
+    int cmp = memcmp(s1, s2, min_len);
+    if (cmp == 0) {
+        if (len1 < len2) cmp = -1;
+        else if (len1 > len2) cmp = 1;
+    } else {
+        cmp = cmp < 0 ? -1 : 1;
+    }
+    infernal_return_type("int");
+    infernal_return_value("%d", cmp);
 }
 
 /* ==================================================================
@@ -465,21 +435,16 @@ LAVA_EXPORT void lava_cutTailbytes(const char *s, int n) {
  * ================================================================== */
 
 LAVA_MODULE {
-    LAVA_REGISTER("countbytes",         lava_countbytes,         "s");
-    LAVA_REGISTER("indexofbytes",       lava_indexofbytes,       "ss");
-    LAVA_REGISTER("headbytes",          lava_headbytes,          "si");
-    LAVA_REGISTER("tailbytes",          lava_tailbytes,          "si");
-    LAVA_REGISTER("replacebytes",       lava_replacebytes,       "sss");
-    LAVA_REGISTER("reversebytes",       lava_reversebytes,       "s");
-    LAVA_REGISTER("lengthbytes",        lava_lengthbytes,        "s");
-    LAVA_REGISTER("binbytes",           lava_binbytes,           "s");
-    LAVA_REGISTER("hexbytes",           lava_hexbytes,           "s");
-    LAVA_REGISTER("utf8bytes",          lava_utf8bytes,          "s");
-    LAVA_REGISTER("unicodeCodepoints",  lava_unicodeCodepoints,  "s");
-    LAVA_REGISTER("cutAfterbytes",      lava_cutAfterbytes,      "ss");
-    LAVA_REGISTER("cutAfterLastbytes",  lava_cutAfterLastbytes,  "ss");
-    LAVA_REGISTER("cutBeforebytes",     lava_cutBeforebytes,     "ss");
-    LAVA_REGISTER("cutBeforeLastbytes", lava_cutBeforeLastbytes, "ss");
-    LAVA_REGISTER("cutHeadbytes",       lava_cutHeadbytes,       "si");
-    LAVA_REGISTER("cutTailbytes",       lava_cutTailbytes,       "si");
+    LAVA_REGISTER("length",              lava_length,              "s");
+    LAVA_REGISTER("bin",                 lava_bin,                 "s");
+    LAVA_REGISTER("hex",                 lava_hex,                 "s");
+    LAVA_REGISTER("utf8",                lava_utf8,                "s");
+    LAVA_REGISTER("unicodeCodepoints",   lava_unicodeCodepoints,   "s");
+    LAVA_REGISTER("byteAt",              lava_byteAt,              "si");
+    LAVA_REGISTER("slice",               lava_slice,               "sii");
+    LAVA_REGISTER("base64",              lava_base64,              "s");
+    LAVA_REGISTER("fromBase64",          lava_fromBase64,          "s");
+    LAVA_REGISTER("crc32",               lava_crc32,               "s");
+    LAVA_REGISTER("checksum",            lava_checksum,            "s");
+    LAVA_REGISTER("compare",             lava_compare,             "ss");
 }
