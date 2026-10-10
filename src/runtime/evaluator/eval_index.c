@@ -102,43 +102,76 @@ Value eval_index(ASTNode *expr) {
 
     switch (base.type) {
         case VAL_LIST: {
+            /* --- Validación del índice ---
+             *
+             * Antes de tocar la lista, damos un error específico según lo
+             * que realmente falló. Así el usuario no ve el mensaje genérico
+             * "Índice fuera de rango..." cuando en realidad pasó un string,
+             * un bool, una lista o un decimal como índice. */
+
+            /* Fase 1: tipo del índice. Solo int y float son válidos. */
+            if (idx.type != VAL_INT && idx.type != VAL_FLOAT) {
+                eval_index_error(&base, &idx, line,
+                                 "El índice de una lista debe ser un número entero (int), "
+                                 "pero se recibió un valor de tipo '%s'.\n"
+                                 "    Para acceder a un elemento por su posición usa un entero:\n"
+                                 "        mi_lista[1]       (primer elemento)\n"
+                                 "        mi_lista[$i]      (donde $i es una variable int)\n"
+                                 "    Recuerda que los índices de list en Infernal empiezan en 1.",
+                                 value_type_name(idx.type));
+            }
+
+            /* Fase 2: si es float, debe ser finito y sin parte decimal. */
+            if (idx.type == VAL_FLOAT) {
+                double f = idx.data.fval;
+                if (!isfinite(f)) {
+                    eval_index_error(&base, &idx, line,
+                                     "El índice de una lista debe ser un número entero (int), "
+                                     "pero se recibió un valor no finito (%g).",
+                                     f);
+                }
+                if (trunc(f) != f) {
+                    eval_index_error(&base, &idx, line,
+                                     "El índice de una lista debe ser un número entero (int), "
+                                     "pero se recibió el decimal %g.\n"
+                                     "    Los índices de list no admiten parte decimal.",
+                                     f);
+                }
+                /* Float entero: lo pasamos a int para unificar la validación
+                 * de rango y el resto de la lógica. */
+                idx.type = VAL_INT;
+                idx.data.ival = (int)f;
+            }
+
+            /* Fase 3: rango. Los índices de list van de 1 a count. */
+            if (idx.data.ival < 1 || idx.data.ival > base.data.list.count) {
+                if (idx.data.ival < 1) {
+                    eval_index_error(&base, &idx, line,
+                                     "Índice fuera de rango: %d. Los índices de una lista "
+                                     "empiezan en 1, así que no puede ser 0 ni negativo.",
+                                     idx.data.ival);
+                } else {
+                    eval_index_error(&base, &idx, line,
+                                     "Índice fuera de rango: %d. La lista tiene %d elemento(s) "
+                                     "(los índices válidos van de 1 a %d).",
+                                     idx.data.ival, base.data.list.count, base.data.list.count);
+                }
+            }
+
+            /* Devolvemos referencia si la lista base es una variable sin '$'
+             * (para que `files[i] = x` pueda modificar la lista original). */
             if (expr->data.idx.list && expr->data.idx.list->kind == NODE_VAR &&
                 !expr->data.idx.list->data.var.clone) {
-                if (idx.type == VAL_FLOAT) {
-                    double f = idx.data.fval;
-                    if (!isfinite(f) || f < 1.0 || f > (double)base.data.list.count || trunc(f) != f)
-                        eval_index_error(&base, &idx, line, "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
-                    idx.type = VAL_INT;
-                    idx.data.ival = (int)f;
-                }
-                if (idx.type != VAL_INT || idx.data.ival < 1 || idx.data.ival > base.data.list.count)
-                    eval_index_error(&base, &idx, line, "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
                 const char *name = expr->data.idx.list->data.var.name;
-                result = val_reference(name, idx.data.ival);
-                value_free(&base);
-                value_free(&idx);
-                return result;
+            result = val_reference(name, idx.data.ival);
+            value_free(&base);
+            value_free(&idx);
+            return result;
                 }
-                if (idx.type != VAL_INT) {
-                    if (idx.type == VAL_FLOAT) {
-                        double f = idx.data.fval;
-                        if (!isfinite(f) || f < 1.0 || f > (double)base.data.list.count || trunc(f) != f)
-                            eval_index_error(&base, &idx, line, "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
-                        int i = (int)f;
-                        if (base.data.list.items == NULL)
-                            eval_index_error(&base, &idx, line, "Lista corrupta: items es NULL");
-                        result = copy_value_secure(base.data.list.items[i-1]);
-                        break;
-                    } else {
-                        eval_index_error(&base, &idx, line, "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
-                    }
-                }
-                int i = idx.data.ival;
-                if (i < 1 || i > base.data.list.count)
-                    eval_index_error(&base, &idx, line, "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
-            if (base.data.list.items == NULL)
-                eval_index_error(&base, &idx, line, "Lista corrupta: items es NULL");
-            result = copy_value_secure(base.data.list.items[i-1]);
+
+                if (base.data.list.items == NULL)
+                    eval_index_error(&base, &idx, line, "Lista corrupta: items es NULL");
+            result = copy_value_secure(base.data.list.items[idx.data.ival - 1]);
             break;
         }
         case VAL_STRING: {
