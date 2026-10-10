@@ -156,7 +156,7 @@ void scope_assign(Scope *scope, const char *name, Value val, int line) {
             return;
         }
         // Si el tipo fijo es 0 o inválido (>= TOK_EOF), permitir cualquier valor
-        if (e->vtype == 0 || e->vtype >= TOK_EOF) {
+        if (e->vtype == 0) {
             Value copied = copy_value_secure(val);
             value_free(&e->value);
             e->value = copied;

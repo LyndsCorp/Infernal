@@ -406,7 +406,23 @@ void exec_stmt(ASTNode *stmt) {
             if (constants_is_reserved(stmt->data.assign.name))
                 error(stmt->line, "La constante '%s' no se puede sobreescribir", stmt->data.assign.name);
 
-            Value val = val_make_null();
+            /* Si la asignación no trae tipo explícito (vtype == 0) y la variable
+             * ya existe en el scope, heredamos su tipo declarado. Así
+             *     list files = ls $dirActual
+             *     ...
+             *     files = ls            # sigue siendo list, no string
+             * mantiene la coherencia de tipos sin obligar a repetir `list` en cada
+             * reasignación. El tipo explícito y el scope (local/global) siguen
+             * reservados para la declaración inicial. */
+            int effective_vtype = stmt->data.assign.vtype;
+            if (effective_vtype == 0 &&
+                !stmt->data.assign.is_local &&
+                !stmt->data.assign.is_global) {
+                VarEntry *existing = scope_find(current_scope, stmt->data.assign.name);
+            if (existing) effective_vtype = existing->vtype;
+                }
+
+                Value val = val_make_null();
 
             if (stmt->data.assign.is_cmd) {
                 char *cmd = stmt->data.assign.cmd_str;
@@ -421,179 +437,179 @@ void exec_stmt(ASTNode *stmt) {
                 if (bare_func && bare_func->kind == FUNC_BUILTIN &&
                     strpbrk(expanded_cmd, " \t\r\n") == NULL) {
                     val = bare_func->builtin(0, NULL);
-                    free(expanded_cmd);
-                    goto assign_value;
-                }
-
-                size_t expanded_cmd_len = strlen(expanded_cmd);
-                int is_embedded = (expanded_cmd_len >= 2 &&
-                                    expanded_cmd[0] == '!' &&
-                                    expanded_cmd[expanded_cmd_len - 1] == '!');
-
-                char *cmd_with_redir = NULL;
-                if (is_embedded) {
-                    cmd_with_redir = strdup(expanded_cmd);
-                } else {
-                    if (stmt->data.assign.vtype == TOK_BOOL) {
-                        asprintf(&cmd_with_redir, "%s 2>/dev/null", expanded_cmd);
-                    } else {
-                        asprintf(&cmd_with_redir, "%s 2>&1", expanded_cmd);
-                    }
-                }
                 free(expanded_cmd);
-
-                if (!cmd_with_redir) {
-                    error(stmt->line, "Memoria insuficiente para redirigir comando");
-                }
-
-                FILE *fp = NULL;
-                char *temp_path = NULL;
-
-                if (is_embedded) {
-                    size_t embedded_len = strlen(cmd_with_redir);
-                    if (embedded_len < 2) {
-                        free(cmd_with_redir);
-                        error(stmt->line, "Comando embebido inválido");
+                goto assign_value;
                     }
-                    char *trimmed = strdup(cmd_with_redir + 1);
-                    if (!trimmed) {
-                        free(cmd_with_redir);
-                        error(stmt->line, "Memoria insuficiente para preparar comando embebido");
-                    }
-                    trimmed[embedded_len - 2] = '\0';
-                    fp = popen_embedded_with_path(trimmed, "r", &temp_path);
-                    free(trimmed);
-                } else {
-                    fp = popen_infernal_shell(cmd_with_redir, "r");
-                }
 
-                free(cmd_with_redir);
+                    size_t expanded_cmd_len = strlen(expanded_cmd);
+                    int is_embedded = (expanded_cmd_len >= 2 &&
+                    expanded_cmd[0] == '!' &&
+                    expanded_cmd[expanded_cmd_len - 1] == '!');
 
-                if (!fp) {
-                    error(stmt->line, "Error al ejecutar comando: %s", cmd);
-                }
-
-                if (stmt->data.assign.vtype == TOK_BOOL) {
-                    char buf[1024];
-                    while (fgets(buf, sizeof(buf), fp) != NULL) {}
-                    int status = pclose(fp);
-                    if (WIFEXITED(status)) {
-                        exit_code = WEXITSTATUS(status);
+                    char *cmd_with_redir = NULL;
+                    if (is_embedded) {
+                        cmd_with_redir = strdup(expanded_cmd);
                     } else {
-                        exit_code = -1;
+                        if (effective_vtype == TOK_BOOL) {
+                            asprintf(&cmd_with_redir, "%s 2>/dev/null", expanded_cmd);
+                        } else {
+                            asprintf(&cmd_with_redir, "%s 2>&1", expanded_cmd);
+                        }
                     }
-                    if (temp_path) {
-                        unlink(temp_path);
-                        free(temp_path);
+                    free(expanded_cmd);
+
+                    if (!cmd_with_redir) {
+                        error(stmt->line, "Memoria insuficiente para redirigir comando");
                     }
-                    val = val_bool(exit_code == 0);
-                } else {
-                    char buf[4096];
-                    char *out = strdup("");
-                    if (!out) {
-                        pclose(fp);
-                        if (temp_path) { unlink(temp_path); free(temp_path); }
-                        error(stmt->line, "Memoria insuficiente para capturar salida");
+
+                    FILE *fp = NULL;
+                    char *temp_path = NULL;
+
+                    if (is_embedded) {
+                        size_t embedded_len = strlen(cmd_with_redir);
+                        if (embedded_len < 2) {
+                            free(cmd_with_redir);
+                            error(stmt->line, "Comando embebido inválido");
+                        }
+                        char *trimmed = strdup(cmd_with_redir + 1);
+                        if (!trimmed) {
+                            free(cmd_with_redir);
+                            error(stmt->line, "Memoria insuficiente para preparar comando embebido");
+                        }
+                        trimmed[embedded_len - 2] = '\0';
+                        fp = popen_embedded_with_path(trimmed, "r", &temp_path);
+                        free(trimmed);
+                    } else {
+                        fp = popen_infernal_shell(cmd_with_redir, "r");
                     }
-                    while (fgets(buf, sizeof(buf), fp)) {
-                        size_t old_len = strlen(out);
-                        size_t add_len = strlen(buf);
-                        if (old_len > MAX_COMMAND_OUTPUT || add_len > MAX_COMMAND_OUTPUT - old_len - 1) {
-                            free(out);
+
+                    free(cmd_with_redir);
+
+                    if (!fp) {
+                        error(stmt->line, "Error al ejecutar comando: %s", cmd);
+                    }
+
+                    if (effective_vtype == TOK_BOOL) {
+                        char buf[1024];
+                        while (fgets(buf, sizeof(buf), fp) != NULL) {}
+                        int status = pclose(fp);
+                        if (WIFEXITED(status)) {
+                            exit_code = WEXITSTATUS(status);
+                        } else {
+                            exit_code = -1;
+                        }
+                        if (temp_path) {
+                            unlink(temp_path);
+                            free(temp_path);
+                        }
+                        val = val_bool(exit_code == 0);
+                    } else {
+                        char buf[4096];
+                        char *out = strdup("");
+                        if (!out) {
                             pclose(fp);
                             if (temp_path) { unlink(temp_path); free(temp_path); }
-                            error(stmt->line, "Salida de comando demasiado grande");
+                            error(stmt->line, "Memoria insuficiente para capturar salida");
                         }
-                        char *tmp_out = realloc(out, old_len + add_len + 1);
-                        if (!tmp_out) {
-                            free(out);
-                            pclose(fp);
-                            if (temp_path) { unlink(temp_path); free(temp_path); }
-                            error(stmt->line, "Memoria insuficiente para salida de comando");
-                        }
-                        out = tmp_out;
-                        memcpy(out + old_len, buf, add_len + 1);
-                    }
-
-                    int status = pclose(fp);
-
-                    if (status != 0 && status != -1 && command_fail_error) {
-                        int code = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
-
-                        char err_output[1024] = "";
-                        if (out && out[0]) {
-                            size_t out_len = strlen(out);
-                            while (out_len > 0 &&
-                                   (out[out_len - 1] == '\n' || out[out_len - 1] == '\r')) {
-                                out[out_len - 1] = '\0';
-                                out_len--;
+                        while (fgets(buf, sizeof(buf), fp)) {
+                            size_t old_len = strlen(out);
+                            size_t add_len = strlen(buf);
+                            if (old_len > MAX_COMMAND_OUTPUT || add_len > MAX_COMMAND_OUTPUT - old_len - 1) {
+                                free(out);
+                                pclose(fp);
+                                if (temp_path) { unlink(temp_path); free(temp_path); }
+                                error(stmt->line, "Salida de comando demasiado grande");
                             }
-                            snprintf(err_output, sizeof(err_output), "%.900s", out);
+                            char *tmp_out = realloc(out, old_len + add_len + 1);
+                            if (!tmp_out) {
+                                free(out);
+                                pclose(fp);
+                                if (temp_path) { unlink(temp_path); free(temp_path); }
+                                error(stmt->line, "Memoria insuficiente para salida de comando");
+                            }
+                            out = tmp_out;
+                            memcpy(out + old_len, buf, add_len + 1);
                         }
 
-                        if (code == 127) {
-                            char first_token[256] = "";
-                            sscanf(cmd, "%255s", first_token);
+                        int status = pclose(fp);
+
+                        if (status != 0 && status != -1 && command_fail_error) {
+                            int code = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+
+                            char err_output[1024] = "";
+                            if (out && out[0]) {
+                                size_t out_len = strlen(out);
+                                while (out_len > 0 &&
+                                    (out[out_len - 1] == '\n' || out[out_len - 1] == '\r')) {
+                                    out[out_len - 1] = '\0';
+                                out_len--;
+                                    }
+                                    snprintf(err_output, sizeof(err_output), "%.900s", out);
+                            }
+
+                            if (code == 127) {
+                                char first_token[256] = "";
+                                sscanf(cmd, "%255s", first_token);
+                                free(out);
+                                if (temp_path) { unlink(temp_path); free(temp_path); }
+                                VarEntry *same_name = scope_find(current_scope, first_token);
+                                if (same_name) {
+                                    error(stmt->line,
+                                          "El comando '%s' falló: comando no encontrado.\n"
+                                          "    Se ejecutó un comando que no existe y que tiene el mismo nombre que una variable.\n"
+                                          "    Quizás querías obtener su valor. Usa '$%s' para clonar su valor.\n"
+                                          "    El '$' también representa que vas a trabajar con variables en lugar de comandos.",
+                                          cmd, first_token);
+                                } else {
+                                    error(stmt->line,
+                                          "El comando '%s' falló: comando no encontrado ('%s').",
+                                          cmd, first_token);
+                                }
+                            }
+
                             free(out);
                             if (temp_path) { unlink(temp_path); free(temp_path); }
-                            VarEntry *same_name = scope_find(current_scope, first_token);
-                            if (same_name) {
+                            if (err_output[0]) {
                                 error(stmt->line,
-                                      "El comando '%s' falló: comando no encontrado.\n"
-                                      "    Se ejecutó un comando que no existe y que tiene el mismo nombre que una variable.\n"
-                                      "    Quizás querías obtener su valor. Usa '$%s' para clonar su valor.\n"
-                                      "    El '$' también representa que vas a trabajar con variables en lugar de comandos.",
-                                      cmd, first_token);
+                                      "El comando '%s' falló (código de salida %d).\n"
+                                      "    Salida del comando:\n        %s",
+                                      cmd, code, err_output);
                             } else {
                                 error(stmt->line,
-                                      "El comando '%s' falló: comando no encontrado ('%s').",
-                                      cmd, first_token);
+                                      "El comando '%s' falló (código de salida %d)",
+                                      cmd, code);
                             }
                         }
 
-                        free(out);
-                        if (temp_path) { unlink(temp_path); free(temp_path); }
-                        if (err_output[0]) {
-                            error(stmt->line,
-                                  "El comando '%s' falló (código de salida %d).\n"
-                                  "    Salida del comando:\n        %s",
-                                  cmd, code, err_output);
-                        } else {
-                            error(stmt->line,
-                                  "El comando '%s' falló (código de salida %d)",
-                                  cmd, code);
+                        if (temp_path) {
+                            unlink(temp_path);
+                            free(temp_path);
                         }
-                    }
+                        size_t len = strlen(out);
+                        if (len > 0 && out[len-1] == '\n') out[len-1] = '\0';
 
-                    if (temp_path) {
-                        unlink(temp_path);
-                        free(temp_path);
-                    }
-                    size_t len = strlen(out);
-                    if (len > 0 && out[len-1] == '\n') out[len-1] = '\0';
-
-                    if (stmt->data.assign.vtype == TOK_LIST) {
-                        Value list = val_list_empty();
-                        char *dup = strdup(out);
-                        if (!dup) {
-                            value_free(&list);
+                        if (effective_vtype == TOK_LIST) {
+                            Value list = val_list_empty();
+                            char *dup = strdup(out);
+                            if (!dup) {
+                                value_free(&list);
+                                free(out);
+                                error(stmt->line, "Memoria insuficiente para dividir la salida en líneas");
+                            }
+                            char *saveptr = NULL;
+                            char *line = strtok_r(dup, "\n", &saveptr);
+                            while (line) {
+                                val_list_append(&list, val_string(line));
+                                line = strtok_r(NULL, "\n", &saveptr);
+                            }
+                            free(dup);
                             free(out);
-                            error(stmt->line, "Memoria insuficiente para dividir la salida en líneas");
+                            val = list;
+                        } else {
+                            val = val_string(out);
+                            free(out);
                         }
-                        char *saveptr = NULL;
-                        char *line = strtok_r(dup, "\n", &saveptr);
-                        while (line) {
-                            val_list_append(&list, val_string(line));
-                            line = strtok_r(NULL, "\n", &saveptr);
-                        }
-                        free(dup);
-                        free(out);
-                        val = list;
-                    } else {
-                        val = val_string(out);
-                        free(out);
                     }
-                }
             } else {
                 // Asignación normal (no comando)
                 if (stmt->data.assign.value != NULL && stmt->data.assign.lhs_index) {
@@ -694,46 +710,46 @@ void exec_stmt(ASTNode *stmt) {
             }
 
             assign_value: {
-            int vtype = stmt->data.assign.vtype;
+                int vtype = effective_vtype;
 
-            if (vtype == TOK_STRING && val.type == VAL_LIST) {
-                if (!try_convert_value(&val, TOK_STRING)) {
-                    error(stmt->line, "No se pudo convertir la lista a string en la asignación a '%s'",
-                          stmt->data.assign.name);
-                }
-            }
-
-            if (vtype != 0) {
-                int actual_type = valtype_to_tokentype(val.type);
-                if (vtype != actual_type) {
-                    if (!try_convert_value(&val, vtype)) {
-                        error(stmt->line, "Error de tipado fijo: se esperaba %s pero se obtuvo %s",
-                              type_name(vtype), type_name(actual_type));
+                if (vtype == TOK_STRING && val.type == VAL_LIST) {
+                    if (!try_convert_value(&val, TOK_STRING)) {
+                        error(stmt->line, "No se pudo convertir la lista a string en la asignación a '%s'",
+                              stmt->data.assign.name);
                     }
                 }
-            }
 
-            DEBUG_INFO("NODE_ASSIGN: is_global=%d, is_local=%d, nombre='%s'",
-                       stmt->data.assign.is_global, stmt->data.assign.is_local, stmt->data.assign.name);
-            if (stmt->data.assign.is_global) {
-                DEBUG_INFO("Definiendo global '%s' en super_global_scope", stmt->data.assign.name);
-                scope_define(super_global_scope, stmt->data.assign.name, vtype, val);
-            } else if (stmt->data.assign.is_local) {
-                DEBUG_INFO("Definiendo local '%s' en current_scope", stmt->data.assign.name);
-                scope_define(current_scope, stmt->data.assign.name, vtype, val);
-            } else {
-                VarEntry *var = scope_find(current_scope, stmt->data.assign.name);
-                if (var) {
-                    DEBUG_INFO("Variable '%s' encontrada en ámbito %p, actualizando", stmt->data.assign.name, (void*)var);
-                    scope_assign(current_scope, stmt->data.assign.name, val, stmt->line);
-                    value_free(&val);
-                    if (vtype != 0) var->vtype = vtype;
-                } else {
-                    DEBUG_INFO("Variable '%s' no encontrada, definiendo en global_scope", stmt->data.assign.name);
-                    scope_define(global_scope, stmt->data.assign.name, vtype, val);
+                if (vtype != 0) {
+                    int actual_type = valtype_to_tokentype(val.type);
+                    if (vtype != actual_type) {
+                        if (!try_convert_value(&val, vtype)) {
+                            error(stmt->line, "Error de tipado fijo: se esperaba %s pero se obtuvo %s",
+                                  type_name(vtype), type_name(actual_type));
+                        }
+                    }
                 }
-            }
-            break;
+
+                DEBUG_INFO("NODE_ASSIGN: is_global=%d, is_local=%d, nombre='%s'",
+                           stmt->data.assign.is_global, stmt->data.assign.is_local, stmt->data.assign.name);
+                if (stmt->data.assign.is_global) {
+                    DEBUG_INFO("Definiendo global '%s' en super_global_scope", stmt->data.assign.name);
+                    scope_define(super_global_scope, stmt->data.assign.name, vtype, val);
+                } else if (stmt->data.assign.is_local) {
+                    DEBUG_INFO("Definiendo local '%s' en current_scope", stmt->data.assign.name);
+                    scope_define(current_scope, stmt->data.assign.name, vtype, val);
+                } else {
+                    VarEntry *var = scope_find(current_scope, stmt->data.assign.name);
+                    if (var) {
+                        DEBUG_INFO("Variable '%s' encontrada en ámbito %p, actualizando", stmt->data.assign.name, (void*)var);
+                        scope_assign(current_scope, stmt->data.assign.name, val, stmt->line);
+                        value_free(&val);
+                        if (vtype != 0) var->vtype = vtype;
+                    } else {
+                        DEBUG_INFO("Variable '%s' no encontrada, definiendo en global_scope", stmt->data.assign.name);
+                        scope_define(global_scope, stmt->data.assign.name, vtype, val);
+                    }
+                }
+                break;
             }
         }
 
