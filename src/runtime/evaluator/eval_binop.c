@@ -599,6 +599,71 @@ Value eval_binop(ASTNode *expr) {
 
     if (expr->data.binop.op == TOK_LT_OP || expr->data.binop.op == TOK_GT_OP ||
         expr->data.binop.op == TOK_LE || expr->data.binop.op == TOK_GE) {
+
+        /* --- Conversión automática string → número -----------------------
+         *
+         * Si un operando es un string y el otro es numérico (int, float o
+         * bool), intentamos convertir el string al tipo del operando
+         * numérico. Esto permite escribir cosas como:
+         *
+         *     local n = input("> ")       # input() devuelve string
+         *     if n < 3 then ...           # "3" se convierte a int
+         *
+         * sin tener que anotar el tipo a mano en cada comparación. Es el
+         * mismo criterio que ya se aplica en asignaciones tipadas
+         * (`int n = input("> ")`) y en el switch.
+         *
+         * Si el string no representa un número válido, damos un mensaje
+         * que explica el problema y las alternativas. El caso "otro lado
+         * es int pero el string tiene decimales" se resuelve probando
+         * float como alternativa razonable, para no ser más estrictos
+         * aquí que en cualquier otra operación numérica. */
+        if (left.type == VAL_STRING && value_is_numeric(right)) {
+            int target = (right.type == VAL_FLOAT) ? TOK_FLOAT : TOK_INT;
+            if (!try_convert_value(&left, target)) {
+                if (target == TOK_INT && try_convert_value(&left, TOK_FLOAT)) {
+                    /* El string tenía decimales; comparamos como float. */
+                } else {
+                    char bad[256];
+                    snprintf(bad, sizeof(bad), "%.200s",
+                             left.data.sval ? left.data.sval : "");
+                    value_free(&left);
+                    value_free(&right);
+                    error(expr->line,
+                          "No se puede comparar un string con un número: el string \"%s\" "
+                          "no representa un valor numérico.\n"
+                          "    Para comparar el texto como tal, usa '==' o '!=' con comillas.\n"
+                          "    Para comparar como número, escribe un valor que se pueda interpretar\n"
+                          "    como int o float, por ejemplo \"3\", \"3.14\" o \"-1\".\n"
+                          "    Si querías comparar el número como texto, conviértelo con:\n"
+                          "        \"\" + $numero",
+                          bad);
+                }
+            }
+        } else if (right.type == VAL_STRING && value_is_numeric(left)) {
+            int target = (left.type == VAL_FLOAT) ? TOK_FLOAT : TOK_INT;
+            if (!try_convert_value(&right, target)) {
+                if (target == TOK_INT && try_convert_value(&right, TOK_FLOAT)) {
+                    /* El string tenía decimales; comparamos como float. */
+                } else {
+                    char bad[256];
+                    snprintf(bad, sizeof(bad), "%.200s",
+                             right.data.sval ? right.data.sval : "");
+                    value_free(&left);
+                    value_free(&right);
+                    error(expr->line,
+                          "No se puede comparar un número con un string: el string \"%s\" "
+                          "no representa un valor numérico.\n"
+                          "    Para comparar el texto como tal, usa '==' o '!=' con comillas.\n"
+                          "    Para comparar como número, escribe un valor que se pueda interpretar\n"
+                          "    como int o float, por ejemplo \"3\", \"3.14\" o \"-1\".\n"
+                          "    Si querías comparar el número como texto, conviértelo con:\n"
+                          "        \"\" + $numero",
+                          bad);
+                }
+            }
+        }
+
         if (!value_is_numeric(left) || !value_is_numeric(right)) {
             const char *lt = value_type_name(left.type);
             const char *rt = value_type_name(right.type);
@@ -608,11 +673,11 @@ Value eval_binop(ASTNode *expr) {
                   lt, rt);
         }
         double lv = (left.type == VAL_INT) ? left.data.ival
-                  : (left.type == VAL_FLOAT) ? left.data.fval
-                  : (left.data.bval ? 1.0 : 0.0);
+        : (left.type == VAL_FLOAT) ? left.data.fval
+        : (left.data.bval ? 1.0 : 0.0);
         double rv = (right.type == VAL_INT) ? right.data.ival
-                  : (right.type == VAL_FLOAT) ? right.data.fval
-                  : (right.data.bval ? 1.0 : 0.0);
+        : (right.type == VAL_FLOAT) ? right.data.fval
+        : (right.data.bval ? 1.0 : 0.0);
         bool result = false;
         switch (expr->data.binop.op) {
             case TOK_LT_OP: result = (lv < rv); break;
@@ -625,7 +690,7 @@ Value eval_binop(ASTNode *expr) {
         value_free(&left);
         value_free(&right);
         return result_value;
-    }
+        }
 
     if (expr->data.binop.op == TOK_POW) {
         if (left.type == VAL_INT && right.type == VAL_INT && right.data.ival >= 0) {
