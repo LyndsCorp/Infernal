@@ -27,6 +27,8 @@
 #include <stdarg.h>
 #include <string.h>
 #include <unistd.h>
+#include <math.h>
+#include <limits.h>
 
 #define MAX_COMMAND_OUTPUT (8u * 1024u * 1024u)
 
@@ -247,7 +249,8 @@ static char *utf8_replace_char(const char *s, int pos,
  * `var_value` debe ser un map, un list o un string; `lhs_index` es el
  * NODE_INDEX más externo (aquel cuyo .index es la última clave). */
 static void assign_nested_index(Value *var_value, ASTNode *lhs_index,
-                                Value new_val, int line) {
+                                Value new_val, int line,
+                                const char *var_name) {
     ASTNode *stack[64];
     int depth = 0;
     ASTNode *cur = lhs_index;
@@ -259,7 +262,9 @@ static void assign_nested_index(Value *var_value, ASTNode *lhs_index,
         error(line, "Estructura de índice inválida en asignación");
     }
 
+    const char *name = var_name ? var_name : "(sin nombre)";
     Value *container = var_value;
+
     for (int i = depth - 1; i >= 0; i--) {
         ASTNode *idx_expr = stack[i]->data.idx.index;
         Value key = eval_expr(idx_expr);
@@ -271,7 +276,9 @@ static void assign_nested_index(Value *var_value, ASTNode *lhs_index,
         if (container->type == VAL_MAP) {
             if (key.type != VAL_STRING) {
                 value_free(&key);
-                error(line, "La clave de mapa debe ser string");
+                error(line,
+                      "La clave de %s[...] debe ser string (se recibió '%s').",
+                      name, value_type_name(key.type));
             }
             if (is_last) {
                 val_map_set(container, key.data.sval, new_val);
@@ -294,15 +301,51 @@ static void assign_nested_index(Value *var_value, ASTNode *lhs_index,
                 }
             }
         } else if (container->type == VAL_LIST) {
-            if (key.type != VAL_INT) {
+            if (key.type != VAL_INT && key.type != VAL_FLOAT) {
                 value_free(&key);
-                error(line, "Índice de lista debe ser entero");
+                error(line,
+                      "No se puede hacer %s[%s] = ...: el índice debe ser int (se recibió '%s').",
+                      name, key.type == VAL_STRING ? key.data.sval : "?",
+                      value_type_name(key.type));
             }
+            if (key.type == VAL_FLOAT) {
+                double f = key.data.fval;
+                if (!isfinite(f) || trunc(f) != f ||
+                    f < (double)INT_MIN || f > (double)INT_MAX) {
+                    value_free(&key);
+                error(line,
+                      "No se puede hacer %s[%g] = ...: el índice debe ser int.",
+                      name, f);
+                    }
+                    key.type = VAL_INT;
+                    key.data.ival = (int)f;
+            }
+
             int k = key.data.ival;
-            if (k < 1 || k > container->data.list.count) {
+            int total = container->data.list.count;
+
+            /* Caso especial: lista vacía + índice 1.
+             *
+             * En Infernal los índices empiezan en 1, así que no hay ninguna
+             * posición válida todavía. Pero "escribir en la posición 1 de una
+             * lista vacía" es la forma natural de crear el primer elemento, así
+             * que lo tratamos como un append en lugar de un error. */
+            if (is_last && total == 0 && k == 1) {
+                val_list_append(container, copy_value_secure(new_val));
                 value_free(&key);
-                error(line, "Índice fuera de rango");
+                continue;
             }
+
+            if (k < 1 || k > total) {
+                value_free(&key);
+                error(line,
+                      "No se puede hacer %s[%d] = ...: índice fuera de rango. Rango válido: 1-%d.\n"
+                      "    Si querías añadirlo al final usa, %s += valor\n"
+                      "    o si lo quieres en una posición concreta usa  %s += valor[n]",
+                      name, k, total > 0 ? total : 1,
+                      name, name);
+            }
+
             if (is_last) {
                 value_free(&container->data.list.items[k - 1]);
                 container->data.list.items[k - 1] = copy_value_secure(new_val);
@@ -310,45 +353,39 @@ static void assign_nested_index(Value *var_value, ASTNode *lhs_index,
                 container = &container->data.list.items[k - 1];
             }
         } else if (container->type == VAL_STRING) {
-            /* Los strings de Infernal son "listas de caracteres" pero
-             * almacenados como bytes UTF-8, no como array de Value. Solo
-             * podemos asignar en el último nivel del recorrido, y no
-             * podemos navegar "dentro" de un carácter. */
             if (!is_last) {
                 value_free(&key);
-                error(line, "No se puede indexar un carácter de string como si fuera un contenedor");
+                error(line,
+                      "No se puede indexar un carácter del string '%s' como contenedor.",
+                      name);
             }
             if (key.type != VAL_INT) {
                 value_free(&key);
-                error(line, "Índice de string debe ser entero");
-            }
-            if (new_val.type != VAL_STRING) {
-                value_free(&key);
                 error(line,
-                      "Solo se puede asignar un string de 1 carácter a una posición de un string "
-                      "(se recibió un valor de tipo '%s')",
-                      value_type_name(new_val.type));
+                      "No se puede hacer %s[?] = ...: el índice del string '%s' debe ser int.",
+                      name, name);
             }
-            size_t ins_chars = utf8_char_count_stmt(new_val.data.sval);
-            if (ins_chars != 1) {
+            if (new_val.type != VAL_STRING ||
+                utf8_char_count_stmt(new_val.data.sval) != 1) {
                 value_free(&key);
-                error(line,
-                      "Solo se puede asignar 1 carácter a la vez a un string "
-                      "(se recibió un string de %zu caracteres)",
-                      ins_chars);
-            }
-            int k = key.data.ival;
-            char *new_str = utf8_replace_char(container->data.sval, k,
-                                              new_val.data.sval, line);
-            free(container->data.sval);
-            container->data.sval = new_str;
+            error(line,
+                  "No se puede hacer %s[%d] = ...: solo se admite 1 carácter.",
+                  name, key.data.ival);
+                }
+                int k = key.data.ival;
+                char *new_str = utf8_replace_char(container->data.sval, k,
+                                                  new_val.data.sval, line);
+                free(container->data.sval);
+                container->data.sval = new_str;
         } else {
             value_free(&key);
-            error(line, "No se puede indexar este tipo de valor");
+            error(line,
+                  "No se puede hacer %s[...] = ...: '%s' es de tipo '%s'. Solo list, map y string admiten [...].",
+                  name, name, value_type_name(container->type));
         }
         value_free(&key);
     }
-}
+                                }
 
 /* --- Implementación de exec_stmt --- */
 void exec_stmt(ASTNode *stmt) {
@@ -653,7 +690,8 @@ void exec_stmt(ASTNode *stmt) {
                     }
 
                     assign_nested_index(&var->value, stmt->data.assign.lhs_index,
-                                        new_val, stmt->line);
+                                        new_val, stmt->line,
+                                        stmt->data.assign.name);
                     memcpy(&exception_env, &assign_saved_env, sizeof(jmp_buf));
                     exception_raised = assign_saved_raised;
                     value_free(&new_val);
