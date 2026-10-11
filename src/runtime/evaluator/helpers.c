@@ -393,3 +393,44 @@ bool try_convert_value(Value *val, int target_tok_type) {
 
         return false;
 }
+
+/* Busca recursivamente la primera NODE_CALL del árbol. Se usa para
+ * nombrar la función sospechosa en el mensaje de error cuando el valor
+ * resultante es null. */
+static ASTNode *find_first_call(ASTNode *node) {
+    if (!node) return NULL;
+    switch (node->kind) {
+        case NODE_CALL:
+            return node;
+        case NODE_BINOP: {
+            ASTNode *l = find_first_call(node->data.binop.left);
+            if (l) return l;
+            return find_first_call(node->data.binop.right);
+        }
+        case NODE_UNARY:
+            return find_first_call(node->data.unary.operand);
+        case NODE_INDEX:
+            return find_first_call(node->data.idx.list);
+        case NODE_SLICE:
+            return find_first_call(node->data.slice.list);
+        default:
+            return NULL;
+    }
+}
+
+void report_null_from_missing_return(ASTNode *expr, int expected_vtype, int line) {
+    ASTNode *call = find_first_call(expr);
+    if (!call) return;
+    error(line,
+          "La función '%s' no devolvió ningún valor.\n"
+          "    Se está usando en un contexto que espera un valor de tipo %s.\n"
+          "    Asegúrate de que todas las rutas de la función terminen con:\n"
+          "        return valor\n"
+          "    donde 'valor' sea de tipo %s.\n"
+          "    Si la función no debe devolver nada, no la uses en una asignación\n"
+          "    ni en ninguna expresión que espere un valor.",
+          call->data.call.name,
+          type_name(expected_vtype),
+          type_name(expected_vtype));
+    /* error() hace longjmp: nunca llegamos aquí. */
+}

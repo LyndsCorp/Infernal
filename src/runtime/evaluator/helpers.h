@@ -18,5 +18,6 @@ Value resolve_reference(Value v, int line);
 void assign_reference(Value *reference, Value value, int line);
 int extract_integer_index(ASTNode *node, int line);
 bool try_convert_value(Value *val, int target_tok_type);
+void report_null_from_missing_return(ASTNode *expr, int expected_vtype, int line);
 
 #endif

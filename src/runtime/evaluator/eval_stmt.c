@@ -723,8 +723,16 @@ void exec_stmt(ASTNode *stmt) {
                     int actual_type = valtype_to_tokentype(val.type);
                     if (vtype != actual_type) {
                         if (!try_convert_value(&val, vtype)) {
+                            /* Si el valor es null, casi siempre viene de una función que
+                             * terminó sin ejecutar 'return'. Nombramos la función si la
+                             * encontramos en el árbol de la expresión. */
+                            if (val.type == VAL_NULL) {
+                                report_null_from_missing_return(stmt->data.assign.value,
+                                                                vtype, stmt->line);
+                            }
                             error(stmt->line, "Error de tipado fijo: se esperaba %s pero se obtuvo %s",
-                                  type_name(vtype), type_name(actual_type));
+                                  type_name(vtype),
+                                  val.type == VAL_NULL ? "null" : type_name(actual_type));
                         }
                     }
                 }
