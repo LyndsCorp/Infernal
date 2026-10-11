@@ -95,8 +95,34 @@ Value eval_call(ASTNode *expr) {
 
         current_scope = new_scope;
         for (int i = 0; i < func->data.func.param_count; i++) {
-            Value arg = (i < expr->data.call.argc) ? eval_expr(expr->data.call.args[i]) : val_make_null();
-            scope_define(new_scope, func->data.func.params[i], func->data.func.ptypes[i], arg);
+            ASTNode *arg_node = (i < expr->data.call.argc) ? expr->data.call.args[i] : NULL;
+            int ptype = func->data.func.ptypes[i];
+            Value arg;
+
+            /* Si el argumento es un '[]' ambiguo y el parámetro tiene un tipo
+             * explícito, resolvemos el literal vacío a partir del tipo del
+             * parámetro. Así `f([])` funciona cuando f declara ese parámetro
+             * como 'list' o 'map'. Si el parámetro es de tipo automático
+             * (ptype == 0), no hay información para desambiguar y se mantiene
+             * el error, pero con un mensaje que apunta al parámetro concreto. */
+            if (arg_node && arg_node->kind == NODE_EMPTY_AMBIGUOUS) {
+                if (ptype == TOK_LIST) {
+                    arg = val_list_empty();
+                } else if (ptype == TOK_MAP) {
+                    arg = val_map_empty();
+                } else {
+                    error(arg_node->line,
+                          "'[]' es ambiguo: el parámetro %d de '%s' no tiene un tipo declarado,\n"
+                          "    así que no se puede saber si debería ser list o map.\n"
+                          "    Declara el parámetro como 'list' o 'map' en la definición de '%s',\n"
+                          "    o pasa explícitamente una colección (variable por ejemplo) vacía del tipo deseado.",
+                          i + 1, expr->data.call.name, expr->data.call.name);
+                }
+            } else {
+                arg = arg_node ? eval_expr(arg_node) : val_make_null();
+            }
+
+            scope_define(new_scope, func->data.func.params[i], ptype, arg);
         }
         return_value = val_make_null();
         control_flow = CF_NONE;
