@@ -306,10 +306,40 @@ static Value builtin_mkvar(int argc, Value *args) {
 
 
 /* ============================================================
+ *  varexists()
+ * ============================================================ */
+
+static Value builtin_varexists(int argc, Value *args) {
+    if (argc != 1)
+        error(current_eval_line,
+              "varexists() espera exactamente 1 argumento: varexists(nombre)");
+        if (args[0].type != VAL_STRING)
+            error(current_eval_line,
+                  "varexists() espera un string con el nombre de la variable");
+
+            const char *name = args[0].data.sval;
+        if (!name || !*name)
+            error(current_eval_line, "varexists(): el nombre de la variable está vacío");
+
+    /* scope_find ya recorre la cadena de scopes + global_scope
+     * + super_global_scope. Da igual dónde viva la variable. */
+    if (scope_find(current_scope, name) != NULL)
+        return val_bool(true);
+
+    /* Las constantes también se leen como si fueran variables,
+     * así que varexists("_PID") debe devolver true. */
+    if (constants_is_reserved(name))
+        return val_bool(true);
+
+    return val_bool(false);
+}
+
+/* ============================================================
  *  Registro
  * ============================================================ */
 
 void register_variables_builtins(void) {
     func_register_builtin("delvar", builtin_delvar);
     func_register_builtin("mkvar",  builtin_mkvar);
+    func_register_builtin("varexists", builtin_varexists);
 }
