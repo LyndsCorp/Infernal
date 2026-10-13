@@ -800,36 +800,48 @@ void exec_stmt(ASTNode *stmt) {
         }
 
         case NODE_IF: {
-            ASTNode *cond_node = stmt->data.if_stmt.cond;
-            bool truthy = false;
+            Value cond = val_make_null();
+            bool cond_is_var = (stmt->data.if_stmt.cond->kind == NODE_VAR);
 
-            ASTNode *value_node = cond_node;
-            bool negate = false;
-            if (value_node && value_node->kind == NODE_UNARY &&
-                value_node->data.unary.op == TOK_NOT) {
-                negate = true;
-                value_node = value_node->data.unary.operand;
-            }
+            jmp_buf saved_env;
+            memcpy(&saved_env, &exception_env, sizeof(jmp_buf));
+            int saved_raised = exception_raised;
 
-            if (value_node && value_node->kind == NODE_VAR) {
-                const char *name = value_node->data.var.name;
-                if (name[0] == '$' || name[0] == '?') name++;
+            if (setjmp(exception_env) != 0) {
+                memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
+                exception_raised = saved_raised;
 
-                VarEntry *entry = scope_find(current_scope, name);
-                if (!entry) {
-                    truthy = false;
-                } else if (entry->value.type == VAL_BOOL) {
-                    truthy = entry->value.data.bval;
+                if (cond_is_var) {
+                    error(stmt->line,
+                          "La condición del 'if' usa la variable '%s', pero no existe.\n"
+                          "    - Si querías preguntar si existe, usa:  varexists(\"%s\")\n"
+                          "    - Si querías comparar su valor, primero defínela y luego usa una comparación explícita:  ==, !=, <, >, <=, >=.\n",
+                          stmt->data.if_stmt.cond->data.var.name,
+                          stmt->data.if_stmt.cond->data.var.name);
                 } else {
-                    truthy = true;
+                    /* Otro error dentro de la condición (variable anidada, función, etc.).
+                     * Lo dejamos propagar tal cual. */
+                    longjmp(exception_env, 1);
                 }
-
-                if (negate) truthy = !truthy;
-            } else {
-                Value cond = eval_expr(cond_node);
-                truthy = val_is_truthy(cond);
-                value_free(&cond);
             }
+
+            cond = eval_expr(stmt->data.if_stmt.cond);
+
+            memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
+            exception_raised = saved_raised;
+
+            if (cond.type != VAL_BOOL) {
+                const char *tname = value_type_name(cond.type);
+                value_free(&cond);
+                error(stmt->line,
+                      "La condición de un 'if' debe ser bool (true/false), "
+                      "pero se recibió un valor de tipo '%s'.\n"
+                      "   - Si quieres comparar un valor, usa una comparación explícita:  ==, !=, <, >, <=, >=.\n",
+                      tname);
+            }
+
+            bool truthy = cond.data.bval;
+            value_free(&cond);
 
             if (truthy) {
                 exec_block_impl(&stmt->data.if_stmt.then_block);
