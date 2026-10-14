@@ -750,6 +750,19 @@ void exec_stmt(ASTNode *stmt) {
             assign_value: {
                 int vtype = effective_vtype;
 
+                /* Si la expresión de la derecha evaluó a una referencia
+                 * (por ejemplo, 'lista[$i]' donde 'lista' es una variable
+                 * sin '$'), resolvemos la referencia para obtener el valor
+                 * apuntado. Una referencia no es un valor con tipo propio:
+                 * apunta a un valor que sí lo tiene. En un contexto de
+                 * asignación (RHS) siempre queremos el valor apuntado,
+                 * nunca la referencia. Sin esto, 'string x = lista[$i]'
+                 * fallaría con "se obtuvo desconocido" aunque 'lista[$i]'
+                 * sea un string. */
+                if (val.type == VAL_REFERENCE) {
+                    val = resolve_reference(val, stmt->line);
+                }
+
                 if (vtype == TOK_STRING && val.type == VAL_LIST) {
                     if (!try_convert_value(&val, TOK_STRING)) {
                         error(stmt->line, "No se pudo convertir la lista a string en la asignación a '%s'",
