@@ -73,7 +73,12 @@ static char *extract_literal_command(int line) {
 
 static char *clean_var_name(const char *raw) {
     if (!raw) return NULL;
-    if (raw[0] == '$' || raw[0] == '?') {
+    /* Solo '$' marca una variable Infernal. '?' NO es un alias de '$':
+     * '?nombre' solo tiene sentido dentro de comandos shell, donde
+     * expand_command() lo traduce a '$nombre' para que lo expanda el
+     * propio shell con SU entorno. En una expresión, '?nombre' es un
+     * error (lo detecta eval_var en eval_literal.c). */
+    if (raw[0] == '$') {
         return strdup(raw + 1);
     }
     return strdup(raw);
@@ -498,7 +503,7 @@ ASTNode *parse_assignment_expr(int line) {
     if (op == TOK_EQ) {
         Token next_token = ts_peek();
         DEBUG_INFO("parse_assignment_expr: valor siguiente '%s' (tipo %d)", next_token.lexeme, next_token.type);
-        if (next_token.type == TOK_IDENT && next_token.lexeme[0] != '$' && next_token.lexeme[0] != '?') {
+        if (next_token.type == TOK_IDENT && next_token.lexeme[0] != '$') {
             int save_pos = ts.pos;
             ts_advance();                 /* consumir el identificador */
             Token next_next = ts_peek();
@@ -1665,7 +1670,7 @@ NodeList parse_block(const char *terminator) {
                         Token next_token = ts_peek();
                         bool try_cmd = (lhs_index == NULL) &&
                         next_token.type == TOK_IDENT &&
-                        next_token.lexeme[0] != '$' && next_token.lexeme[0] != '?';
+                        next_token.lexeme[0] != '$';
                         if (try_cmd) {
                             int save_pos = ts.pos;
                             ts_advance();                 /* consumir el identificador */
@@ -1827,7 +1832,7 @@ NodeList parse_block(const char *terminator) {
                 Token next_token = ts_peek();
                 bool try_cmd = (lhs_index == NULL) &&
                 next_token.type == TOK_IDENT &&
-                next_token.lexeme[0] != '$' && next_token.lexeme[0] != '?';
+                next_token.lexeme[0] != '$';
                 if (try_cmd) {
                     int save_pos = ts.pos;
                     ts_advance();                 /* consumir el identificador */

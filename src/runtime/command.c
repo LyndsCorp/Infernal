@@ -88,47 +88,88 @@ static bool grow_text_buffer(char **buffer, size_t *cap, size_t needed) {
 }
 
 /* --- Expansión de comandos --- */
+/* --- Expansión de comandos ---
+ *
+ * Dos sintaxis de variables diferentes:
+ *
+ *   '$nombre'  -> se sustituye por el valor de la variable Infernal
+ *                 'nombre'. Si no existe, es un error.
+ *
+ *   '?'        -> se sustituye por un '$' LITERAL y se deja tal
+ *                 cual para que el SHELL lo expanda con SU propio
+ *                 entorno. Infernal NO consulta su tabla de variables.
+ *                 Así:
+ *
+ *                     ?HOME   llega al shell como  $HOME
+ *                     ?        llega al shell como  $
+ *                     ??       llega al shell como  $$  (PID del shell)
+ *                     ?1       llega al shell como  $1  (arg posicional)
+ *
+ *   '\?'       -> se conserva como '?' literal para el shell (útil
+ *                 para un glob de un solo carácter, por ejemplo).
+ *
+ * Cualquier otro '$' que no vaya seguido de un nombre válido se copia
+ * tal cual. */
+static bool is_var_name_start(unsigned char c) {
+    return isalpha(c) || c == '_' || c >= 0x80;
+}
+
+static bool is_var_name_cont(unsigned char c) {
+    return isalnum(c) || c == '_' || c >= 0x80;
+}
+
 char *expand_command(const char *cmd) {
     if (!cmd) return NULL;
 
-    /* Pre-proceso: todo '?' se convierte en '$' para que lo trate el
-     * shell o nuestro propio expansor. La excepción es '\?', que se
-     * conserva tal cual para que el shell lo interprete como '?'. */
     size_t raw_len = strlen(cmd);
-    char *pre = malloc(raw_len + 1);
-    if (!pre) error(current_eval_line, "Memoria insuficiente al expandir comando");
-    size_t pre_len = 0;
-    for (size_t i = 0; i < raw_len; i++) {
-        if (cmd[i] == '\\' && i + 1 < raw_len && cmd[i + 1] == '?') {
-            pre[pre_len++] = '?';   /* '?' literal, sin backslash */
-            i++;                     /* consumir el '?' */
-            continue;
-        }
-        pre[pre_len++] = (cmd[i] == '?') ? '$' : cmd[i];
-    }
-    pre[pre_len] = '\0';
-
-    if (pre_len > (SIZE_MAX - 65) / 2) {
-        free(pre);
+    if (raw_len > (SIZE_MAX - 65) / 2) {
         error(current_eval_line, "Comando demasiado largo");
     }
-    size_t cap = pre_len * 2 + 64;
+    size_t cap = raw_len * 2 + 64;
     char *result = malloc(cap);
     if (!result) {
-        free(pre);
         error(current_eval_line, "Memoria insuficiente al expandir comando");
     }
     size_t len = 0;
-    const char *p = pre;
+    const char *p = cmd;
 
     while (*p) {
-        /* Ya no hace falta comprobar '?' aquí: pre ya solo contiene
-         * '$' donde había '?' sin escape. */
-        if (*p == '$' && (isalpha((unsigned char)p[1]) || p[1] == '_' ||
-                          (unsigned char)p[1] >= 0x80)) {
+        /* '\?' -> '?' literal para el shell (sin tocar). */
+        if (p[0] == '\\' && p[1] == '?') {
+            if (len > SIZE_MAX - 2) {
+                free(result);
+                error(current_eval_line, "Comando expandido demasiado largo");
+            }
+            if (!grow_text_buffer(&result, &cap, len + 2)) {
+                free(result);
+                error(current_eval_line, "Memoria insuficiente al expandir comando");
+            }
+            result[len++] = '?';
+            p += 2;
+            continue;
+        }
+
+        /* Cualquier '?' -> '$' LITERAL, para que lo expanda el shell
+         * con SU propio entorno. '?HOME' -> '$HOME', '??' -> '$$' (PID
+         * del shell), '?1' -> '$1' (arg posicional), etc. */
+        if (p[0] == '?') {
+            if (len > SIZE_MAX - 2) {
+                free(result);
+                error(current_eval_line, "Comando expandido demasiado largo");
+            }
+            if (!grow_text_buffer(&result, &cap, len + 2)) {
+                free(result);
+                error(current_eval_line, "Memoria insuficiente al expandir comando");
+            }
+            result[len++] = '$';
+            p++;
+            continue;
+        }
+
+        /* '$nombre' -> valor de la variable Infernal 'nombre'. */
+        if (p[0] == '$' && is_var_name_start((unsigned char)p[1])) {
             const char *start = p + 1;
-            while (isalnum((unsigned char)*start) || *start == '_' ||
-                   (unsigned char)*start >= 0x80) start++;
+            while (is_var_name_cont((unsigned char)*start)) start++;
             size_t nlen = (size_t)(start - (p + 1));
             if (nlen > 127) nlen = 127;
             char name[128];
@@ -138,20 +179,20 @@ char *expand_command(const char *cmd) {
             char *val = get_var_string(name);
             if (!val) {
                 free(result);
-                free(pre);
-                error(current_eval_line, "Variable '%s' no definida", name);
+                error(current_eval_line,
+                      "Variable '%s' no definida. "
+                      "Para variables del shell usa '?%s'.",
+                      name, name);
             }
             size_t vlen = strlen(val);
             if (len > SIZE_MAX - vlen - 1) {
                 free(val);
                 free(result);
-                free(pre);
                 error(current_eval_line, "Comando expandido demasiado largo");
             }
             if (!grow_text_buffer(&result, &cap, len + vlen + 1)) {
                 free(val);
                 free(result);
-                free(pre);
                 error(current_eval_line, "Memoria insuficiente al expandir comando");
             }
             memcpy(result + len, val, vlen);
@@ -160,21 +201,20 @@ char *expand_command(const char *cmd) {
             p = start;
             continue;
         }
+
+        /* Cualquier otro byte se copia tal cual. */
         if (len > SIZE_MAX - 2) {
             free(result);
-            free(pre);
             error(current_eval_line, "Comando expandido demasiado largo");
         }
         if (!grow_text_buffer(&result, &cap, len + 2)) {
             free(result);
-            free(pre);
             error(current_eval_line, "Memoria insuficiente al expandir comando");
         }
         result[len++] = *p++;
     }
     result[len] = '\0';
     char *tmp = realloc(result, len + 1);
-    free(pre);
     return tmp ? tmp : result;
 }
 

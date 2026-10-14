@@ -28,7 +28,16 @@ Value eval_literal(ASTNode *expr) {
 
 Value eval_var(ASTNode *expr) {
     const char *name = expr->data.var.name;
-    if (name[0] == '$' || name[0] == '?') name++;
+    if (name[0] == '$') name++;
+    if (name[0] == '?') {
+        error(expr->line,
+              "'?' no es un prefijo de variable en Infernal.\n"
+              "    '?nombre' solo tiene sentido dentro de un comando shell,\n"
+              "    donde se traduce a '$nombre' para que el shell lo expanda\n"
+              "    con SU entorno (por ejemplo, '?HOME' llega al shell como\n"
+              "    '$HOME'). En una expresión de Infernal, usa '$nombre'\n"
+              "    para leer la variable Infernal 'nombre'.");
+    }
     if (*name == '\0')
         error(expr->line, "Nombre de variable vacío");
 

@@ -22,7 +22,12 @@
 /* --- LIMPIEZA DE NOMBRE DE VARIABLE (elimina $ o ?) --- */
 static char *clean_var_name(const char *raw) {
     if (!raw) return NULL;
-    if (raw[0] == '$' || raw[0] == '?') {
+    /* Solo '$' marca una variable Infernal. '?' NO es un alias de '$':
+     * '?nombre' solo tiene sentido dentro de comandos shell, donde
+     * expand_command() lo traduce a '$nombre' para que lo expanda el
+     * propio shell con SU entorno. En una expresión, '?nombre' es un
+     * error (lo detecta eval_var en eval_literal.c). */
+    if (raw[0] == '$') {
         return strdup(raw + 1);
     }
     return strdup(raw);

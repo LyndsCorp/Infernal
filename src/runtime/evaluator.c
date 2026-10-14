@@ -45,7 +45,12 @@ Value eval_expr(ASTNode *expr) {
                 error(expr->line, "Incremento/decremento solo soportado para variables");
             const char *raw_name = var_node->data.var.name;
             const char *name = raw_name;
-            if (name[0] == '$' || name[0] == '?') name++;
+            if (name[0] == '$') name++;
+            if (name[0] == '?') {
+                error(expr->line,
+                      "'?' no es un prefijo de variable en Infernal. "
+                      "'?nombre' solo tiene sentido en un comando shell.");
+            }
 
             if (constants_is_reserved(name))
                 error(expr->line, "La constante '%s' no se puede modificar", name);
