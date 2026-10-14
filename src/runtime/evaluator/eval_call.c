@@ -18,7 +18,60 @@
 
 Value eval_call(ASTNode *expr) {
     FuncObject *fobj = func_lookup(expr->data.call.name);
-    if (!fobj) error(expr->line, "Función no definida: %s", expr->data.call.name);
+    if (!fobj) {
+        const char *name = expr->data.call.name;
+        const char *dot  = strrchr(name, '.');
+
+        /* Un nombre con forma 'modulo.funcion' NO es una función suelta
+         * que el usuario olvidó definir: es una llamada a una función de
+         * un módulo. El error, por tanto, no es "función no definida"
+         * sino "el módulo no está importado" o "el módulo no expone esa
+         * función". Distinguimos ambos casos mirando si existe alguna
+         * función ya registrada con el prefijo del módulo. */
+        if (dot && dot != name && dot[1] != '\0') {
+            char module[256];
+            size_t module_len = (size_t)(dot - name);
+            if (module_len >= sizeof(module)) module_len = sizeof(module) - 1;
+            memcpy(module, name, module_len);
+            module[module_len] = '\0';
+            const char *func = dot + 1;
+            size_t prefix_len = module_len + 1;   /* incluye el '.' */
+
+            bool module_loaded = false;
+            for (FuncEntry *e = func_table; e; e = e->next) {
+                if (strncmp(e->name, name, prefix_len) == 0) {
+                    module_loaded = true;
+                    break;
+                }
+            }
+            if (!module_loaded) {
+                for (FuncEntry *e = super_func_table; e; e = e->next) {
+                    if (strncmp(e->name, name, prefix_len) == 0) {
+                        module_loaded = true;
+                        break;
+                    }
+                }
+            }
+
+            if (module_loaded) {
+                error(expr->line,
+                      "El módulo '%s' no expone ninguna función llamada '%s'.\n"
+                      "    '%s' se interpreta como una función del módulo '%s' porque contiene un punto.\n"
+                      "    Revisa el nombre: puede estar mal escrito, o el módulo no exporta esa función.\n"
+                      "    Si querías llamar a una función propia del script, no uses puntos en el nombre.",
+                      module, func, name, module);
+            } else {
+                error(expr->line,
+                      "El módulo '%s' no está importado, así que '%s' no existe.\n"
+                      "    '%s' se interpreta como una función del módulo '%s' porque contiene un punto.\n"
+                      "    Añade 'import %s' (o 'import %s as <alias>') antes de esta llamada.\n"
+                      "    Si querías llamar a una función propia del script, no uses puntos en el nombre.",
+                      module, name, name, module, module, module);
+            }
+        }
+
+        error(expr->line, "Función no definida: %s", name);
+    }
 
     if (fobj->kind == FUNC_BUILTIN) {
         int argc = expr->data.call.argc;
