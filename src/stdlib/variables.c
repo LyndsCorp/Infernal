@@ -29,10 +29,10 @@
 static bool is_valid_var_name(const char *name) {
     if (!name || !*name) return false;
     unsigned char c0 = (unsigned char)name[0];
-    if (!(isalpha(c0) || c0 == '_')) return false;
+    if (!(isalpha(c0) || c0 == '_' || c0 >= 0x80)) return false;
     for (const char *p = name + 1; *p; p++) {
         unsigned char c = (unsigned char)*p;
-        if (!(isalnum(c) || c == '_')) return false;
+        if (!(isalnum(c) || c == '_' || c >= 0x80)) return false;
     }
     return true;
 }

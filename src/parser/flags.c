@@ -18,10 +18,12 @@
 #include "core/memory.h"
 
 static bool is_valid_flag_name(const char *s) {
-    if (!s || !(isalpha((unsigned char)s[0]) || s[0] == '_'))
+    if (!s || !(isalpha((unsigned char)s[0]) || s[0] == '_' ||
+                (unsigned char)s[0] >= 0x80))
         return false;
     for (const char *p = s + 1; *p; p++) {
-        if (!(isalnum((unsigned char)*p) || *p == '_'))
+        if (!(isalnum((unsigned char)*p) || *p == '_' ||
+              (unsigned char)*p >= 0x80))
             return false;
     }
     return true;

@@ -153,7 +153,7 @@ static bool valid_module_name(const char *name) {
 
         for (size_t i = 0; i < seg_len; i++) {
             unsigned char c = (unsigned char)seg_start[i];
-            if (!(isalnum(c) || c == '_' || c == '-' || c == '.')) return false;
+            if (!(isalnum(c) || c == '_' || c == '-' || c == '.' || c >= 0x80)) return false;
         }
         if (*p == '/') p++;
     }
@@ -177,9 +177,11 @@ static bool valid_module_name(const char *name) {
 */
 static bool valid_module_alias(const char *name) {
     if (!name || !*name) return false;
-    if (!(isalpha((unsigned char)name[0]) || name[0] == '_')) return false;
+    if (!(isalpha((unsigned char)name[0]) || name[0] == '_' ||
+          (unsigned char)name[0] >= 0x80)) return false;
     for (const char *p = name + 1; *p; p++) {
-        if (!(isalnum((unsigned char)*p) || *p == '_')) return false;
+        if (!(isalnum((unsigned char)*p) || *p == '_' ||
+              (unsigned char)*p >= 0x80)) return false;
     }
     return true;
 }

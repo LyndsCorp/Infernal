@@ -137,9 +137,11 @@ char *expand_command(const char *cmd) {
     while (*p) {
         /* Ya no hace falta comprobar '?' aquí: pre ya solo contiene
          * '$' donde había '?' sin escape. */
-        if (*p == '$' && (isalpha((unsigned char)p[1]) || p[1] == '_')) {
+        if (*p == '$' && (isalpha((unsigned char)p[1]) || p[1] == '_' ||
+                          (unsigned char)p[1] >= 0x80)) {
             const char *start = p + 1;
-            while (isalnum((unsigned char)*start) || *start == '_') start++;
+            while (isalnum((unsigned char)*start) || *start == '_' ||
+                   (unsigned char)*start >= 0x80) start++;
             size_t nlen = (size_t)(start - (p + 1));
             if (nlen > 127) nlen = 127;
             char name[128];

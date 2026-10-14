@@ -188,11 +188,12 @@ static int append_map_key(char **buffer, size_t *cap, size_t *len,
                           const char *key) {
     if (!key) key = "";
     bool simple = (key[0] != '\0' &&
-                   (isalpha((unsigned char)key[0]) || key[0] == '_'));
+                   (isalpha((unsigned char)key[0]) || key[0] == '_' ||
+                    (unsigned char)key[0] >= 0x80));
     if (simple) {
         for (const char *p = key + 1; *p; p++) {
             unsigned char uc = (unsigned char)*p;
-            if (isalnum(uc) || uc == '_' || uc == '.') continue;
+            if (isalnum(uc) || uc == '_' || uc == '.' || uc >= 0x80) continue;
             if (uc == '-') {
                 /* '--' se tokeniza como TOK_DEC y rompería la clave. */
                 if (p[1] == '-') { simple = false; break; }
@@ -423,12 +424,13 @@ static char *parse_map_key(TextParser *p) {
             error(current_eval_line, "Clave de mapa inválida");
         return key;
     }
-    if (isalpha((unsigned char)c) || c == '_') {
+    if (isalpha((unsigned char)c) || c == '_' || (unsigned char)c >= 0x80) {
         size_t start = p->pos;
         p->pos++;
         while (p->pos < p->len) {
             char cc = p->input[p->pos];
-            if (isalnum((unsigned char)cc) || cc == '_' || cc == '.') {
+            if (isalnum((unsigned char)cc) || cc == '_' || cc == '.' ||
+                (unsigned char)cc >= 0x80) {
                 p->pos++;
                 continue;
             }

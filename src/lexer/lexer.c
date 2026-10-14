@@ -415,10 +415,13 @@ void tokenize_file(FILE *fp) {
                 continue;
             }
 
-            if ((*p == '$' || *p == '?') && (isalpha(*(p+1)) || *(p+1) == '_')) {
+            if ((*p == '$' || *p == '?') &&
+                (isalpha(*(p+1)) || *(p+1) == '_' ||
+                 (unsigned char)*(p+1) >= 0x80)) {
                 char *start = p;
                 p++;
-                while (isalnum(*p) || *p == '_') p++;
+                while (isalnum(*p) || *p == '_' ||
+                       (unsigned char)*p >= 0x80) p++;
                 size_t len = (size_t)(p - start);
                 char *lexeme = strndup(start, len);
                 if (!lexeme) error(lineno, "Memoria insuficiente para identificador");
@@ -427,11 +430,13 @@ void tokenize_file(FILE *fp) {
                 continue;
             }
 
-            if (isalpha((unsigned char)*p) || *p == '_' || *p == '.' || *p == '~') {
+            if (isalpha((unsigned char)*p) || *p == '_' || *p == '.' || *p == '~' ||
+                (unsigned char)*p >= 0x80) {
                 char *start = p;
                 bool path_prefix = (*start == '.' || *start == '~');
                 while (isalnum((unsigned char)*p) || *p == '_' || *p == '.' ||
-                       *p == '~' || (path_prefix && *p == '/') ||
+                       *p == '~' || (unsigned char)*p >= 0x80 ||
+                       (path_prefix && *p == '/') ||
                        (*p == '-' && *(p + 1) != '-')) {
                     p++;
                 }
