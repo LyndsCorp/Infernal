@@ -300,6 +300,75 @@ bool try_convert_value(Value *val, int target_tok_type) {
             }
             return false;
         }
+
+        if (target_tok_type == TOK_LIST) {
+            /* STRING -> LIST
+             *
+             * Si el string contiene saltos de línea, cada línea (ya
+             * trimmeada, sin líneas vacías) es un elemento. Si no los
+             * contiene, se divide por espacios en blanco (palabras).
+             * Un string vacío o solo con whitespace produce lista vacía.
+             *
+             * Los separadores son siempre ASCII; los bytes >= 0x80 de
+             * caracteres UTF-8 multibyte no se tocan, así que "café au
+             * lait" produce ["café", "au", "lait"]. */
+            const char *src = s ? s : "";
+            const char *p = src;
+            Value list = val_list_empty();
+
+            if (strchr(src, '\n') != NULL) {
+                /* Modo líneas. */
+                for (;;) {
+                    const char *eol = strchr(p, '\n');
+                    const char *line_end = eol ? eol : p + strlen(p);
+                    const char *line_start = p;
+                    while (line_start < line_end &&
+                           isspace((unsigned char)*line_start))
+                        line_start++;
+                    while (line_end > line_start &&
+                           isspace((unsigned char)*(line_end - 1)))
+                        line_end--;
+                    if (line_end > line_start) {
+                        size_t len = (size_t)(line_end - line_start);
+                        char *copy = malloc(len + 1);
+                        if (!copy) {
+                            value_free(&list);
+                            return false;
+                        }
+                        memcpy(copy, line_start, len);
+                        copy[len] = '\0';
+                        val_list_append(&list, val_string(copy));
+                        free(copy);
+                    }
+                    if (!eol) break;
+                    p = eol + 1;
+                }
+            } else {
+                /* Modo palabras. */
+                while (*p) {
+                    while (*p && isspace((unsigned char)*p)) p++;
+                    if (!*p) break;
+                    const char *word_start = p;
+                    while (*p && !isspace((unsigned char)*p)) p++;
+                    size_t len = (size_t)(p - word_start);
+                    char *copy = malloc(len + 1);
+                    if (!copy) {
+                        value_free(&list);
+                        return false;
+                    }
+                    memcpy(copy, word_start, len);
+                    copy[len] = '\0';
+                    val_list_append(&list, val_string(copy));
+                    free(copy);
+                }
+            }
+
+            free(val->data.sval);
+            val->type = VAL_LIST;
+            val->data.list = list.data.list;
+            return true;
+        }
+
         return false;
     }
     if (val->type == VAL_LIST && target_tok_type == TOK_STRING) {
