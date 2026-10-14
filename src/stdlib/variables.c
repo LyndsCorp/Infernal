@@ -19,6 +19,7 @@
 #include "runtime/globals.h"
 #include "runtime/error.h"
 #include "runtime/constants.h"
+#include "runtime/evaluator/helpers.h"
 #include "developer/debug.h"
 
 
@@ -335,6 +336,17 @@ static Value builtin_varexists(int argc, Value *args) {
 }
 
 /* ============================================================
+ *  vartype()
+ * ============================================================ */
+
+static Value builtin_vartype(int argc, Value *args) {
+    if (argc < 1) error(0, "vartype requiere un argumento");
+    Value arg = args[0];
+    const char *t = value_type_name(arg.type);
+    return val_string(t);
+}
+
+/* ============================================================
  *  Registro
  * ============================================================ */
 
@@ -342,4 +354,5 @@ void register_variables_builtins(void) {
     func_register_builtin("delvar", builtin_delvar);
     func_register_builtin("mkvar",  builtin_mkvar);
     func_register_builtin("varexists", builtin_varexists);
+    func_register_builtin("vartype",   builtin_vartype);
 }

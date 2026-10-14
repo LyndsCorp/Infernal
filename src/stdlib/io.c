@@ -282,14 +282,6 @@ static Value builtin_printAllBuiltins(int argc, Value *args) {
     return val_make_null();
 }
 
-/* --- vartype() --- */
-static Value builtin_vartype(int argc, Value *args) {
-    if (argc < 1) error(0, "vartype requiere un argumento");
-    Value arg = args[0];
-    const char *t = value_type_name(arg.type);
-    return val_string(t);
-}
-
 /* ================================================================
  *  input(): lectura de línea con edición en TTY
  * ================================================================ */
@@ -496,6 +488,5 @@ void register_io_builtins(void) {
     func_register_builtin("printAllVars",      builtin_printAllVars);
     func_register_builtin("printAllFunctions", builtin_printAllFunctions);
     func_register_builtin("printAllBuiltins",  builtin_printAllBuiltins);
-    func_register_builtin("vartype",           builtin_vartype);
     func_register_builtin("input",             builtin_input);
 }
