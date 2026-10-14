@@ -1130,7 +1130,7 @@ void exec_stmt(ASTNode *stmt) {
 
                 /* Si el contenedor es una variable simple, guardamos su VarEntry
                  * para poder recalcular `i` como la posición viva del elemento. */
-                VarEntry *live_var = NULL;
+                VarEntry * volatile live_var = NULL;
                 if (stmt->data.for_in.list_expr &&
                     stmt->data.for_in.list_expr->kind == NODE_VAR) {
                     const char *vname = stmt->data.for_in.list_expr->data.var.name;
@@ -1216,17 +1216,18 @@ void exec_stmt(ASTNode *stmt) {
                      * secuencia. --- */
                     int live_index = iter_idx + 1;  /* fallback: número de secuencia */
 
-                    if (live_var && live_var->value.type == VAL_LIST &&
+                    VarEntry *lv = (VarEntry *)live_var;
+                    if (lv && lv->value.type == VAL_LIST &&
                         iterable.type == VAL_LIST) {
-                        Value *live_items = live_var->value.data.list.items;
-                    int live_count = live_var->value.data.list.count;
-                    for (int j = 0; j < live_count; j++) {
-                        if (forin_values_equal(live_items[j], item)) {
-                            live_index = j + 1;
-                            break;
+                        Value *live_items = lv->value.data.list.items;
+                        int live_count = lv->value.data.list.count;
+                        for (int j = 0; j < live_count; j++) {
+                            if (forin_values_equal(live_items[j], item)) {
+                                live_index = j + 1;
+                                break;
+                            }
                         }
                     }
-                        }
 
                         /* --- Publicar las variables del bucle en el scope --- */
                         scope_define((Scope *)iter_scope, stmt->data.for_in.var, 0, (Value)item);

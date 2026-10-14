@@ -251,7 +251,8 @@ LAVA_EXPORT void lava_slice(const char *s, int start, int length) {
     }
     size_t start_idx = (size_t)start - 1;
     size_t available = len - start_idx;
-    size_t n = (length > available) ? available : (size_t)length;
+    size_t length_z = (size_t)length;  /* length >= 0 ya garantizado arriba */
+    size_t n = (length_z > available) ? available : length_z;
     char *buf = malloc(n + 1);
     if (!buf) raise("bytes.slice(): memoria insuficiente");
     memcpy(buf, s + start_idx, n);

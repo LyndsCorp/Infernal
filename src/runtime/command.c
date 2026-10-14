@@ -87,19 +87,6 @@ static bool grow_text_buffer(char **buffer, size_t *cap, size_t needed) {
     return true;
 }
 
-/* --- Función auxiliar para añadir '$' + nombre al buffer --- */
-static void append_dollar_name(char **result, size_t *len, size_t *cap, const char *name) {
-    size_t nlen = strlen(name);
-    if (*len > SIZE_MAX - nlen - 2)
-        error(current_eval_line, "Comando expandido demasiado largo");
-    size_t needed = *len + nlen + 2;
-    if (!grow_text_buffer(result, cap, needed))
-        error(current_eval_line, "Memoria insuficiente al expandir comando");
-    (*result)[(*len)++] = '$';
-    memcpy(*result + *len, name, nlen);
-    *len += nlen;
-}
-
 /* --- Expansión de comandos --- */
 char *expand_command(const char *cmd) {
     if (!cmd) return NULL;

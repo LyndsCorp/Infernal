@@ -314,13 +314,13 @@ static Value builtin_varexists(int argc, Value *args) {
     if (argc != 1)
         error(current_eval_line,
               "varexists() espera exactamente 1 argumento: varexists(nombre)");
-        if (args[0].type != VAL_STRING)
-            error(current_eval_line,
-                  "varexists() espera un string con el nombre de la variable");
+    if (args[0].type != VAL_STRING)
+        error(current_eval_line,
+              "varexists() espera un string con el nombre de la variable");
 
-            const char *name = args[0].data.sval;
-        if (!name || !*name)
-            error(current_eval_line, "varexists(): el nombre de la variable está vacío");
+    const char *name = args[0].data.sval;
+    if (!name || !*name)
+        error(current_eval_line, "varexists(): el nombre de la variable está vacío");
 
     /* scope_find ya recorre la cadena de scopes + global_scope
      * + super_global_scope. Da igual dónde viva la variable. */
