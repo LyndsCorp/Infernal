@@ -45,6 +45,7 @@ static ASTNode *parse_not(void);
 static ASTNode *parse_logic_and(void);
 static ASTNode *parse_logic_or(void);
 static void expect_index_close_bracket(int line);
+static ASTNode *parse_bracket_on(ASTNode *base, int line);
 
 static int parse_int_literal(const char *text, int line, const char *context) {
     char *end = NULL;
@@ -363,6 +364,50 @@ static void expect_index_close_bracket(int line) {
              at.lexeme);
 }
 
+/* --- Procesar el contenido de un '[...]' sobre una base ---
+ *
+ * Decide si lo que sigue al '[' ya consumido es un slice o un índice
+ * normal y construye el nodo correspondiente:
+ *
+ *   - Slice:   contenido empieza por '*', por '**', o por un número
+ *              seguido de ':', '*' o '**'.
+ *   - Índice:  cualquier otra cosa. Se parsea como una expresión
+ *              completa, así que se admiten binops (i + 1),
+ *              post-incrementos ($i++, i++), llamadas a función,
+ *              indexaciones anidadas, paréntesis, etc.
+ *
+ * El runtime (eval_index / eval_slice) es quien valida después que el
+ * tipo del índice sea compatible con el contenedor. */
+static ASTNode *parse_bracket_on(ASTNode *base, int line) {
+    bool is_slice = false;
+    if (ts.pos < ts.count) {
+        TokenType first = ts.tokens[ts.pos].type;
+        if (first == TOK_STAR || first == TOK_POW) {
+            is_slice = true;
+        } else if (first == TOK_NUMBER && ts.pos + 1 < ts.count) {
+            TokenType after = ts.tokens[ts.pos + 1].type;
+            if (after == TOK_COLON || after == TOK_STAR || after == TOK_POW) {
+                is_slice = true;
+            }
+        }
+    }
+
+    if (is_slice) {
+        ASTNode *slice = parse_slice_content(line);
+        slice->data.slice.list = base;
+        return slice;
+    }
+
+    /* Índice normal: número, variable, expresión aritmética, post-inc,
+     * llamada, indexación anidada... El runtime valida el tipo real. */
+    ASTNode *idx = parse_expression(0);
+    expect_index_close_bracket(line);
+    ASTNode *ni = node_create(NODE_INDEX, line);
+    ni->data.idx.list = base;
+    ni->data.idx.index = idx;
+    return ni;
+}
+
 /* --- parse_primary (declarada en .h) --- */
 ASTNode *parse_primary() {
     Token t = ts_peek();
@@ -391,22 +436,7 @@ ASTNode *parse_primary() {
          * la lista `var`. */
         while (ts_peek().type == TOK_LBRACKET) {
             Token lb = ts_advance();
-            Token next = ts_peek();
-            if (next.type == TOK_STAR ||
-                (next.type == TOK_NUMBER &&
-                (ts.tokens[ts.pos+1].type == TOK_COLON ||
-                ts.tokens[ts.pos+1].type == TOK_STAR))) {
-                ASTNode *slice = parse_slice_content(lb.line);
-            slice->data.slice.list = n;
-            n = slice;
-                } else {
-                    ASTNode *idx = parse_expression(0);
-                    expect_index_close_bracket(lb.line);
-                    ASTNode *ni = node_create(NODE_INDEX, lb.line);
-                    ni->data.idx.list = n;
-                    ni->data.idx.index = idx;
-                    n = ni;
-                }
+            n = parse_bracket_on(n, lb.line);
         }
         return n;
     }
@@ -417,19 +447,7 @@ ASTNode *parse_primary() {
         n->data.lit.sval = strdup(t.lexeme);
         while (ts_peek().type == TOK_LBRACKET) {
             Token lb = ts_advance();
-            Token next = ts_peek();
-            if (next.type == TOK_STAR || (next.type == TOK_NUMBER && (ts.tokens[ts.pos+1].type == TOK_COLON || ts.tokens[ts.pos+1].type == TOK_STAR))) {
-                ASTNode *slice = parse_slice_content(lb.line);
-                slice->data.slice.list = n;
-                n = slice;
-            } else {
-                ASTNode *idx = parse_expression(0);
-                expect_index_close_bracket(lb.line);
-                ASTNode *ni = node_create(NODE_INDEX, lb.line);
-                ni->data.idx.list = n;
-                ni->data.idx.index = idx;
-                n = ni;
-            }
+            n = parse_bracket_on(n, lb.line);
         }
         return n;
     }
@@ -501,25 +519,7 @@ ASTNode *parse_primary() {
              * string sin cambios adicionales. */
             while (ts_peek().type == TOK_LBRACKET) {
                 Token lb = ts_advance();
-                Token next = ts_peek();
-                if (next.type == TOK_STAR ||
-                    (next.type == TOK_NUMBER &&
-                    (ts.tokens[ts.pos + 1].type == TOK_COLON ||
-                     ts.tokens[ts.pos + 1].type == TOK_STAR))) {
-                    /* Slice sobre el resultado de la función. */
-                    ASTNode *slice = parse_slice_content(lb.line);
-                    slice->data.slice.list = n;
-                    n = slice;
-                } else {
-                    /* Índice normal: puede ser número (lista) o string
-                     * (mapa). El runtime valida el tipo real. */
-                    ASTNode *idx = parse_expression(0);
-                    expect_index_close_bracket(lb.line);
-                    ASTNode *ni = node_create(NODE_INDEX, lb.line);
-                    ni->data.idx.list = n;
-                    ni->data.idx.index = idx;
-                    n = ni;
-                }
+                n = parse_bracket_on(n, lb.line);
             }
 
             return n;
@@ -539,19 +539,7 @@ ASTNode *parse_primary() {
 
             while (ts_peek().type == TOK_LBRACKET) {
                 Token lb = ts_advance();
-                Token next = ts_peek();
-                if (next.type == TOK_STAR || (next.type == TOK_NUMBER && (ts.tokens[ts.pos+1].type == TOK_COLON || ts.tokens[ts.pos+1].type == TOK_STAR))) {
-                    ASTNode *slice = parse_slice_content(lb.line);
-                    slice->data.slice.list = n;
-                    n = slice;
-                } else {
-                    ASTNode *idx = parse_expression(0);
-                    expect_index_close_bracket(lb.line);
-                    ASTNode *ni = node_create(NODE_INDEX, lb.line);
-                    ni->data.idx.list = n;
-                    ni->data.idx.index = idx;
-                    n = ni;
-                }
+                n = parse_bracket_on(n, lb.line);
             }
             return n;
         }
