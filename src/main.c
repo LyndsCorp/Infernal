@@ -45,7 +45,7 @@ static void infernal_internal_signal(int sig) {
 }
 
 static void install_internal_error_handlers(void) {
-#ifndef DEBUG
+    #ifndef DEBUG
     struct sigaction sa;
     memset(&sa, 0, sizeof(sa));
     sigemptyset(&sa.sa_mask);
@@ -54,7 +54,7 @@ static void install_internal_error_handlers(void) {
     sigaction(SIGSEGV, &sa, NULL);
     sigaction(SIGBUS, &sa, NULL);
     sigaction(SIGFPE, &sa, NULL);
-#endif
+    #endif
 }
 
 static bool cleanup_done = false;
@@ -149,8 +149,11 @@ int main(int argc, char **argv) {
         return 0;
     }
 
-    // --- Procesar argumentos: --shell y script --------------
+    // --- Procesar argumentos: --shell, -c y script ----------
     char *script_file = NULL;
+    const char *code_string = NULL;   // código inline pasado con -c
+    int code_start_idx = -1;          // posición de "-c" en argv
+
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--shell") == 0) {
             if (i + 1 < argc && argv[i+1][0] != '-') {
@@ -166,6 +169,20 @@ int main(int argc, char **argv) {
                 return 0;
             }
         }
+
+        if (strcmp(argv[i], "-c") == 0) {
+            if (i + 1 >= argc) {
+                fprintf(stderr, "Error: -c requiere un argumento con el código a ejecutar.\n");
+                fprintf(stderr, "Uso: %s -c \"codigo\" [args...]\n", argv[0]);
+                return 1;
+            }
+            code_string = argv[i + 1];
+            code_start_idx = i;
+            // Los argumentos restantes (i+2 .. argc-1) son los args del script.
+            // No escaneamos más: a partir de aquí tratamos el resto tal cual.
+            break;
+        }
+
         // El primer argumento que NO empieza con '-' se toma como script
         if (argv[i][0] != '-') {
             script_file = argv[i];
@@ -173,23 +190,67 @@ int main(int argc, char **argv) {
         }
     }
 
-    if (!script_file) {
-        fprintf(stderr, "Error: no se especificó ningún archivo de script.\n");
+    if (!script_file && !code_string) {
+        fprintf(stderr, "Error: no se especificó ningún archivo de script ni código con -c.\n");
+        fprintf(stderr, "Uso: %s [opciones] archivo.fire [args...]\n", argv[0]);
+        fprintf(stderr, "     %s [opciones] -c \"codigo\"   [args...]\n", argv[0]);
         return 1;
     }
 
-    // Guardamos todos los argumentos para que el script los vea (incluyendo flags)
-    script_argc = argc;
-    script_argv = argv;
+    // --- Construir script_argc/script_argv ------------------
+    //
+    // En modo normal:     script_argv = argv, script_argc = argc
+    //                     (argv[0]=intérprete, argv[1]=script, argv[2+]=args)
+    //
+    // En modo -c:         fabricamos un argv sintético para que:
+    //                       script_argv[0] = intérprete
+    //                       script_argv[1] = "<inline>"   (marcador del "script")
+    //                       script_argv[2+] = args del usuario
+    //                     con lo cual flags_arg_index = 2 sigue siendo correcto
+    //                     y `flags(...)` funciona igual que en modo archivo.
+    if (code_string) {
+        int trailing = argc - code_start_idx - 2;
+        if (trailing < 0) trailing = 0;
+        script_argc = 2 + trailing;
+        script_argv = malloc((size_t)(script_argc + 1) * sizeof(char *));
+        if (!script_argv) {
+            fprintf(stderr, "Error: memoria insuficiente al preparar argv inline.\n");
+            return 1;
+        }
+        script_argv[0] = argv[0];
+        script_argv[1] = (char *)"<inline>";
+        for (int k = 0; k < trailing; k++) {
+            script_argv[2 + k] = argv[code_start_idx + 2 + k];
+        }
+        script_argv[script_argc] = NULL;
+    } else {
+        script_argc = argc;
+        script_argv = argv;
+    }
 
-    char *script_path = realpath(script_file, NULL);
-    if (script_path) {
-        char *dir = strdup(script_path);
-        char *last_slash = strrchr(dir, '/');
-        if (last_slash) {
-            *last_slash = '\0';
-            set_embedded_tmp_dir(dir);
-            script_dir = strdup(dir);
+    // --- Resolver directorio de trabajo --------------------
+    //
+    // En modo archivo: el directorio del propio script (para rutas
+    // relativas de `execute`, `tofile`, `fromfile`, etc.).
+    // En modo -c: no hay script, usamos el cwd.
+    if (script_file) {
+        char *script_path = realpath(script_file, NULL);
+        if (script_path) {
+            char *dir = strdup(script_path);
+            char *last_slash = strrchr(dir, '/');
+            if (last_slash) {
+                *last_slash = '\0';
+                set_embedded_tmp_dir(dir);
+                script_dir = strdup(dir);
+            } else {
+                char cwd[PATH_MAX];
+                if (getcwd(cwd, sizeof(cwd)) != NULL) {
+                    set_embedded_tmp_dir(cwd);
+                    script_dir = strdup(cwd);
+                }
+            }
+            free(dir);
+            free(script_path);
         } else {
             char cwd[PATH_MAX];
             if (getcwd(cwd, sizeof(cwd)) != NULL) {
@@ -197,17 +258,16 @@ int main(int argc, char **argv) {
                 script_dir = strdup(cwd);
             }
         }
-        free(dir);
-        free(script_path);
+        current_source_file = script_file;
     } else {
+        // modo -c
         char cwd[PATH_MAX];
         if (getcwd(cwd, sizeof(cwd)) != NULL) {
             set_embedded_tmp_dir(cwd);
             script_dir = strdup(cwd);
         }
+        current_source_file = (char *)"<command-line>";
     }
-
-    current_source_file = script_file;
 
     super_global_scope = scope_new(NULL, NULL);
     if (!infernal_shell)
@@ -270,20 +330,28 @@ int main(int argc, char **argv) {
     /* ~/.infernalrc ya no selecciona el shell: _INFERNAL_SHELL es la fuente de verdad. */
     DEBUG_INFO("Shell efectivo de Infernal: %s", infernal_shell);
 
-    FILE *volatile fp = fopen(script_file, "r");
-    if (!fp) {
-        perror("Error al abrir script");
-        cleanup_all();
-        return 1;
+    // --- Abrir archivo (solo si no es modo -c) ------------
+    FILE *volatile fp = NULL;
+    if (!code_string) {
+        fp = fopen(script_file, "r");
+        if (!fp) {
+            perror("Error al abrir script");
+            cleanup_all();
+            return 1;
+        }
     }
     ts_init();
 
     NodeList program = {NULL, 0, 0};
 
     if (!setjmp(exception_env)) {
-        tokenize_file(fp);
-        fclose(fp);
-        fp = NULL;
+        if (code_string) {
+            tokenize_buffer(code_string, strlen(code_string));
+        } else {
+            tokenize_file((FILE *)fp);
+            fclose((FILE *)fp);
+            fp = NULL;
+        }
 
         program = parse_block(NULL);
 
@@ -304,14 +372,14 @@ int main(int argc, char **argv) {
         /* Cerrar el archivo si la tokenización no llegó a cerrarlo.
          * `fp` es volatile precisamente para que este valor sea fiable
          * después del longjmp. */
-        if (fp) { fclose(fp); fp = NULL; }
+        if (fp) { fclose((FILE *)fp); fp = NULL; }
 
         /* No usamos `program` aquí: su valor es indeterminado tras el
          * longjmp. ast_free_all() ya se encarga de liberar todo el AST
          * registrado, así como los NodeList huérfanos. */
         parser_cleanup_on_error();      /* = ast_free_all() */
         cleanup_all();
-        fprintf(stderr, "%s\n", exception_msg);
+        fprintf(stderr, "%s\n", exception_env ? "" : exception_msg);
         return 1;
     }
 }
