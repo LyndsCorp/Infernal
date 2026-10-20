@@ -235,6 +235,14 @@ Value eval_binop(ASTNode *expr) {
         DEBUG_INFO("Resuelta referencia a lista, tipo: %d", left.type);
     }
 
+    /* NUEVO: void no es un operando válido. */
+    if (left.type == VAL_VOID) {
+        error(expr->line,
+              "El operando izquierdo de '%s' no tiene valor (void): "
+              "una función o expresión no devolvió nada.",
+              op_name);
+    }
+
     /* =================================================================
      *  ELIMINACIÓN DE ELEMENTOS EN LISTAS
      * ================================================================= */
@@ -563,6 +571,15 @@ Value eval_binop(ASTNode *expr) {
     memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
     exception_raised = saved_raised;
     DEBUG_INFO("Tipo de right: %d", right.type);
+
+    /* NUEVO: void no es un operando válido. */
+    if (right.type == VAL_VOID) {
+        value_free(&left);
+        error(expr->line,
+              "El operando derecho de '%s' no tiene valor (void): "
+              "una función o expresión no devolvió nada.",
+              op_name);
+    }
 
     if (expr->data.binop.op == TOK_AND || expr->data.binop.op == TOK_OR) {
         if (right.type != VAL_BOOL) {

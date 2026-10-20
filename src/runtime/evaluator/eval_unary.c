@@ -14,6 +14,14 @@
 Value eval_unary(ASTNode *expr) {
     if (expr->data.unary.op == TOK_NOT) {
         Value v = eval_expr(expr->data.unary.operand);
+
+        /* NUEVO: 'not' sobre void no tiene sentido lógico:
+         * 'nada' no es ni verdadero ni falso. */
+        if (v.type == VAL_VOID) {
+            error(expr->line,
+                  "No se puede aplicar 'not' a una expresión sin valor (void).");
+        }
+
         Value result = val_bool(!val_is_truthy(v));
         value_free(&v);
         return result;

@@ -102,6 +102,15 @@ Value eval_call(ASTNode *expr) {
                 args[i] = val_make_null();
                 arg = resolve_reference(reference, expr->line);
             }
+
+            /* NUEVO: rechazar 'nada' (void) como argumento a builtin. */
+            if (arg.type == VAL_VOID) {
+                error(expr->data.call.args[i]->line,
+                      "El argumento %d de '%s' no devolvió ningún valor (void).\n"
+                      "    No se puede pasar 'nada' a una función.",
+                      i + 1, expr->data.call.name);
+            }
+
             args[i] = arg;
         }
 
@@ -175,6 +184,14 @@ Value eval_call(ASTNode *expr) {
                 arg = arg_node ? eval_expr(arg_node) : val_make_null();
             }
 
+            /* NUEVO: rechazar 'nada' (void) como argumento. */
+            if (arg.type == VAL_VOID) {
+                error(arg_node ? arg_node->line : expr->line,
+                      "El argumento %d de '%s' no devolvió ningún valor (void).\n"
+                      "    No se puede pasar 'nada' a un parámetro.",
+                      i + 1, expr->data.call.name);
+            }
+
             scope_define(new_scope, func->data.func.params[i], ptype, arg);
         }
         return_value = val_make_null();
@@ -182,7 +199,7 @@ Value eval_call(ASTNode *expr) {
         function_state_active = true;
         exec_block(&func->data.func.body);
 
-        Value ret = (control_flow == CF_RETURN) ? return_value : val_make_null();
+        Value ret = (control_flow == CF_RETURN) ? return_value : val_void();
         if (control_flow == CF_RETURN) {
             return_value = val_make_null(); /* ownership transferred to ret */
         }

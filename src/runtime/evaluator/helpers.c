@@ -28,6 +28,7 @@ bool val_is_truthy(Value v) {
         case VAL_STRING: return v.data.sval && strlen(v.data.sval) > 0;
         case VAL_LIST:   return v.data.list.count > 0;
         case VAL_MAP:    return v.data.map && v.data.map->count > 0;
+        case VAL_VOID:   return false;   /* void es falsy */
         default:         return false;
     }
 }
@@ -57,6 +58,7 @@ const char *value_type_name(int val_type) {
         case VAL_MAP:       return "map";
         case VAL_REFERENCE: return "reference";
         case VAL_PTR:       return "ptr";
+        case VAL_VOID:      return "void";
         default:            return "desconocido";
     }
 }

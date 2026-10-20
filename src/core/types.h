@@ -81,6 +81,7 @@ typedef struct {
 #define VAL_REFERENCE 6
 #define VAL_PTR       7
 #define VAL_MAP       8
+#define VAL_VOID      9     /* función sin return: 'nada' */
 
 typedef struct MapData MapData;
 typedef struct Value Value;

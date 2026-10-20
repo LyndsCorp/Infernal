@@ -432,6 +432,12 @@ void exec_stmt(ASTNode *stmt) {
 
         case NODE_DEFINE: {
             Value value = eval_expr(stmt->data.define.value);
+            /* NUEVO: rechazar void como valor de constante. */
+            if (value.type == VAL_VOID) {
+                error(stmt->line,
+                      "La expresión de 'define %s' no devolvió ningún valor (void).",
+                      stmt->data.define.name);
+            }
             constants_define(stmt->data.define.name, value, stmt->line);
             DEBUG_INFO("Constante '%s' definida", stmt->data.define.name);
             break;
@@ -675,6 +681,14 @@ void exec_stmt(ASTNode *stmt) {
 
                     Value new_val = eval_expr(stmt->data.assign.value);
 
+                    /* NUEVO: rechazar void como valor a asignar. */
+                    if (new_val.type == VAL_VOID) {
+                        error(stmt->line,
+                              "La expresión a la derecha de '=' no devolvió ningún valor (void).\n"
+                              "    No se puede asignar 'nada' a '%s[...]'.",
+                              stmt->data.assign.name);
+                    }
+
                     /* assign_nested_index() puede lanzar desde eval_expr(),
                      * resolve_reference() o una validación de contenedor. El
                      * Value pertenece a este frame hasta que la asignación
@@ -763,6 +777,16 @@ void exec_stmt(ASTNode *stmt) {
                     val = resolve_reference(val, stmt->line);
                 }
 
+                /* NUEVO: rechazar void como valor a asignar. */
+                if (val.type == VAL_VOID) {
+                    error(stmt->line,
+                          "La función o expresión a la derecha de '=' no devolvió ningún valor (void).\n"
+                          "    No se puede asignar 'nada' a la variable '%s'.\n"
+                          "    Si la función no debe devolver nada, no la uses en una asignación\n"
+                          "    ni en ninguna expresión que espere un valor.",
+                          stmt->data.assign.name);
+                }
+
                 if (vtype == TOK_STRING && val.type == VAL_LIST) {
                     if (!try_convert_value(&val, TOK_STRING)) {
                         error(stmt->line, "No se pudo convertir la lista a string en la asignación a '%s'",
@@ -843,7 +867,12 @@ void exec_stmt(ASTNode *stmt) {
             memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
             exception_raised = saved_raised;
 
-            if (cond.type != VAL_BOOL) {
+            bool truthy;
+            if (cond.type == VAL_VOID) {
+                /* Una función sin 'return' en la condición del if:
+                 * la condición se considera falsa y NO es un error. */
+                truthy = false;
+            } else if (cond.type != VAL_BOOL) {
                 const char *tname = value_type_name(cond.type);
                 value_free(&cond);
                 error(stmt->line,
@@ -851,9 +880,9 @@ void exec_stmt(ASTNode *stmt) {
                       "pero se recibió un valor de tipo '%s'.\n"
                       "   - Si quieres comparar un valor, usa una comparación explícita:  ==, !=, <, >, <=, >=.\n",
                       tname);
+            } else {
+                truthy = cond.data.bval;
             }
-
-            bool truthy = cond.data.bval;
             value_free(&cond);
 
             if (truthy) {
@@ -1272,7 +1301,7 @@ void exec_stmt(ASTNode *stmt) {
             break;
 
         case NODE_RETURN: {
-            Value result = stmt->data.ret.expr ? eval_expr(stmt->data.ret.expr) : val_make_null();
+            Value result = stmt->data.ret.expr ? eval_expr(stmt->data.ret.expr) : val_void();
 
             if (stmt->data.ret.rtype != 0) {
                 int expected = stmt->data.ret.rtype;
@@ -1285,9 +1314,17 @@ void exec_stmt(ASTNode *stmt) {
 
                 int actual = valtype_to_tokentype(result.type);
                 if (actual != expected) {
+                    bool was_void = (result.type == VAL_VOID);
                     value_free(&result);
-                    error(stmt->line, "Tipado del retorno: se esperaba %s, se recibió %s",
-                          type_name(expected), type_name(actual));
+                    if (was_void) {
+                        error(stmt->line,
+                              "Tipado del retorno: se esperaba %s, "
+                              "pero la función no devolvió ningún valor (void).",
+                              type_name(expected));
+                    } else {
+                        error(stmt->line, "Tipado del retorno: se esperaba %s, se recibió %s",
+                              type_name(expected), type_name(actual));
+                    }
                 }
             }
 

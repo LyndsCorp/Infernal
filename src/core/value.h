@@ -24,6 +24,7 @@ typedef struct MapData {
 
 /* --- Funciones básicas de Value ---------------------------- */
 Value val_make_null(void);
+Value val_void(void);
 Value val_int(int x);
 Value val_float(double x);
 Value val_bool(bool x);

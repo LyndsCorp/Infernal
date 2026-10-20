@@ -17,6 +17,10 @@ Value val_make_null(void) {
     Value v; v.type = VAL_NULL; return v;
 }
 
+Value val_void(void) {
+    Value v; v.type = VAL_VOID; return v;
+}
+
 Value val_int(int x) {
     Value v; v.type = VAL_INT; v.data.ival = x; return v;
 }
