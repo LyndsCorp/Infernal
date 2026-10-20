@@ -379,7 +379,7 @@ int main(int argc, char **argv) {
          * registrado, así como los NodeList huérfanos. */
         parser_cleanup_on_error();      /* = ast_free_all() */
         cleanup_all();
-        fprintf(stderr, "%s\n", exception_env ? "" : exception_msg);
+        fprintf(stderr, "%s\n", exception_msg);
         return 1;
     }
 }
