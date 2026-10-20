@@ -16,4 +16,8 @@ void     ast_free(ASTNode *node);
 void     nodelist_free(NodeList *list);
 void     ast_free_all(void);
 
+/* Copia profunda de un subárbol AST. Se usa para duplicar el
+ * LHS de una asignación compuesta con índice (x[k] += v). */
+ASTNode *deep_copy_ast(ASTNode *node);
+
 #endif

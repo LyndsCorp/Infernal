@@ -1926,6 +1926,69 @@ NodeList parse_block(const char *terminator) {
                     if (next_tok.type == TOK_LBRACKET) {
                         ts.pos--;
                         ASTNode *idx_expr = parse_expression(0);
+                        /* NUEVO: asignación compuesta con índice: x[k] += v, -= v, etc. */
+                        if (ts_peek().type == TOK_PLUS_EQ || ts_peek().type == TOK_MINUS_EQ ||
+                            ts_peek().type == TOK_STAR_EQ || ts_peek().type == TOK_SLASH_EQ ||
+                            ts_peek().type == TOK_PERCENT_EQ) {
+                            TokenType compound = ts_advance().type;
+                            if (!is_expression_start(ts_peek().type)) {
+                                error_at(ts_peek().line,
+                                         ts_peek().start_col > 0 ? ts_peek().start_col : 1,
+                                         "Se esperaba un valor después del operador compuesto "
+                                         "en la asignación con índice");
+                            }
+                            ASTNode *rhs = parse_expression(0);
+                            require_statement_end("la asignación compuesta con índice");
+                        
+                            char *vname = NULL;
+                            if (idx_expr->kind == NODE_INDEX) {
+                                ASTNode *base = idx_expr;
+                                while (base->kind == NODE_INDEX) base = base->data.idx.list;
+                                if (base->kind == NODE_VAR) {
+                                    vname = strdup(base->data.var.name);
+                                }
+                            }
+                            if (!vname) {
+                                error(saved_t.line,
+                                      "Lado izquierdo inválido para asignación compuesta con índice");
+                            }
+                        
+                            TokenType binop_op;
+                            switch (compound) {
+                                case TOK_PLUS_EQ:    binop_op = TOK_PLUS;    break;
+                                case TOK_MINUS_EQ:   binop_op = TOK_MINUS;   break;
+                                case TOK_STAR_EQ:    binop_op = TOK_STAR;    break;
+                                case TOK_SLASH_EQ:   binop_op = TOK_SLASH;   break;
+                                case TOK_PERCENT_EQ: binop_op = TOK_PERCENT; break;
+                                default:             binop_op = TOK_PLUS;    break;
+                            }
+                        
+                            ASTNode *lhs_copy = deep_copy_ast(idx_expr);
+                            if (!lhs_copy) {
+                                free(vname);
+                                error(saved_t.line, "No se pudo copiar la expresión del índice");
+                            }
+                            ASTNode *binop = node_create(NODE_BINOP, saved_t.line);
+                            binop->data.binop.op = binop_op;
+                            binop->data.binop.left = lhs_copy;
+                            binop->data.binop.right = rhs;
+                        
+                            stmt = node_create(NODE_ASSIGN, saved_t.line);
+                            stmt->data.assign.name = vname;
+                            stmt->data.assign.value = binop;
+                            stmt->data.assign.vtype = 0;
+                            stmt->data.assign.is_local = false;
+                            stmt->data.assign.is_global = false;
+                            stmt->data.assign.is_cmd = false;
+                            stmt->data.assign.cmd_str = NULL;
+                            stmt->data.assign.lhs_index = idx_expr;
+                            nodelist_add(&block, stmt);
+                            DEBUG_INFO("parse_block: asignación compuesta con índice "
+                                       "para '%s' en línea %d", vname, stmt->line);
+                            ts_skip_newlines();
+                            continue;
+                        }
+                        
                         if (ts_peek().type == TOK_EQ) {
                             // stats["vida"] = 1000
                             ts_advance(); // consumir '='

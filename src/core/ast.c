@@ -9,6 +9,7 @@
 #include <stdint.h>
 #include "ast.h"
 #include "memory.h"
+#include "runtime/error.h"
 
 typedef struct ASTRegistryEntry {
     ASTNode *node;
@@ -386,6 +387,101 @@ void nodelist_free(NodeList *list) {
 
 void ast_free(ASTNode *node) {
     ast_free_internal(node);
+}
+
+ASTNode *deep_copy_ast(ASTNode *node) {
+    if (!node) return NULL;
+    ASTNode *copy = node_create(node->kind, node->line);
+    switch (node->kind) {
+        case NODE_VAR:
+            copy->data.var.name = node->data.var.name
+                ? infernal_strdup(node->data.var.name) : NULL;
+            copy->data.var.clone = node->data.var.clone;
+            break;
+        case NODE_LITERAL:
+            copy->data.lit.type = node->data.lit.type;
+            copy->data.lit.ival = node->data.lit.ival;
+            copy->data.lit.fval = node->data.lit.fval;
+            copy->data.lit.bval = node->data.lit.bval;
+            copy->data.lit.sval = node->data.lit.sval
+                ? infernal_strdup(node->data.lit.sval) : NULL;
+            break;
+        case NODE_INDEX:
+            copy->data.idx.list = deep_copy_ast(node->data.idx.list);
+            copy->data.idx.index = deep_copy_ast(node->data.idx.index);
+            break;
+        case NODE_BINOP:
+            copy->data.binop.op = node->data.binop.op;
+            copy->data.binop.left = deep_copy_ast(node->data.binop.left);
+            copy->data.binop.right = deep_copy_ast(node->data.binop.right);
+            break;
+        case NODE_UNARY:
+            copy->data.unary.op = node->data.unary.op;
+            copy->data.unary.operand = deep_copy_ast(node->data.unary.operand);
+            break;
+        case NODE_CALL:
+            copy->data.call.name = node->data.call.name
+                ? infernal_strdup(node->data.call.name) : NULL;
+            copy->data.call.argc = node->data.call.argc;
+            if (node->data.call.argc > 0) {
+                copy->data.call.args = infernal_malloc(
+                    (size_t)node->data.call.argc * sizeof(ASTNode *));
+                for (int i = 0; i < node->data.call.argc; i++)
+                    copy->data.call.args[i] = deep_copy_ast(node->data.call.args[i]);
+            } else {
+                copy->data.call.args = NULL;
+            }
+            break;
+        case NODE_LIST:
+            copy->data.list_lit.count = node->data.list_lit.count;
+            if (node->data.list_lit.count > 0) {
+                copy->data.list_lit.items = infernal_malloc(
+                    (size_t)node->data.list_lit.count * sizeof(ASTNode *));
+                for (int i = 0; i < node->data.list_lit.count; i++)
+                    copy->data.list_lit.items[i] =
+                        deep_copy_ast(node->data.list_lit.items[i]);
+            } else {
+                copy->data.list_lit.items = NULL;
+            }
+            break;
+        case NODE_SLICE:
+            copy->data.slice.mode = node->data.slice.mode;
+            copy->data.slice.start = node->data.slice.start;
+            copy->data.slice.end = node->data.slice.end;
+            copy->data.slice.list = deep_copy_ast(node->data.slice.list);
+            break;
+        case NODE_MAP:
+            copy->data.map.pair_count = node->data.map.pair_count;
+            if (node->data.map.pair_count > 0) {
+                copy->data.map.pairs = infernal_malloc(
+                    (size_t)node->data.map.pair_count *
+                    sizeof(*node->data.map.pairs));
+                for (int i = 0; i < node->data.map.pair_count; i++) {
+                    copy->data.map.pairs[i].key = node->data.map.pairs[i].key
+                        ? infernal_strdup(node->data.map.pairs[i].key) : NULL;
+                    copy->data.map.pairs[i].value_type =
+                        node->data.map.pairs[i].value_type;
+                    copy->data.map.pairs[i].value =
+                        deep_copy_ast(node->data.map.pairs[i].value);
+                }
+            } else {
+                copy->data.map.pairs = NULL;
+            }
+            break;
+        case NODE_POST_INC:
+        case NODE_POST_DEC:
+            copy->data.post_op.var = deep_copy_ast(node->data.post_op.var);
+            copy->data.post_op.statement_context =
+                node->data.post_op.statement_context;
+            break;
+        case NODE_EMPTY_AMBIGUOUS:
+            break;
+        default:
+            error(node->line,
+                  "deep_copy_ast: tipo de nodo no soportado (%d)",
+                  node->kind);
+    }
+    return copy;
 }
 
 void ast_free_all(void) {

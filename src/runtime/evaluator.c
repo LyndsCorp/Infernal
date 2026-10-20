@@ -2,7 +2,7 @@
  * Infernal: orquestador de evaluación
  * Copyright (C) 2026, David Baña Szymaniak
  * Este software se distribuye bajo la licencia Apache 2.0
- * Código fuente de Infernal: runtime/evaluator/evaluator.c
+ * Código fuente de Infernal: runtime/evaluator.c
  *
  * Orquestador de evaluator
 */
@@ -25,6 +25,18 @@
 #include "runtime/command.h"
 #include <stdlib.h>
 
+/* --- Helper: aplica +/- 1 sobre un Value numérico --- */
+static Value compute_incdec(Value base, int delta, int line) {
+    if (base.type == VAL_INT)
+        return val_int(base.data.ival + delta);
+    if (base.type == VAL_FLOAT)
+        return val_float(base.data.fval + (double)delta);
+    error(line, delta > 0
+                ? "Incremento solo aplicable a números"
+                : "Decremento solo aplicable a números");
+    return val_make_null();
+}
+
 /* --- eval_expr (orquestador de expresiones) --- */
 Value eval_expr(ASTNode *expr) {
     switch (expr->kind) {
@@ -40,76 +52,117 @@ Value eval_expr(ASTNode *expr) {
         case NODE_EMBEDDED:  return eval_embedded(expr);
         case NODE_POST_INC:
         case NODE_POST_DEC: {
-            ASTNode *var_node = expr->data.post_op.var;
-            if (var_node->kind != NODE_VAR)
-                error(expr->line, "Incremento/decremento solo soportado para variables");
-            const char *raw_name = var_node->data.var.name;
-            const char *name = raw_name;
-            if (name[0] == '$') name++;
-            if (name[0] == '?') {
-                error(expr->line,
-                      "'?' no es un prefijo de variable en Infernal. "
-                      "'?nombre' solo tiene sentido en un comando shell.");
-            }
+            int delta = (expr->kind == NODE_POST_INC) ? 1 : -1;
+            ASTNode *target = expr->data.post_op.var;
 
-            if (constants_is_reserved(name))
-                error(expr->line, "La constante '%s' no se puede modificar", name);
+            if (target->kind == NODE_VAR) {
+                const char *raw_name = target->data.var.name;
+                const char *name = raw_name;
+                if (name[0] == '$') name++;
+                if (name[0] == '?') {
+                    error(expr->line,
+                          "'?' no es un prefijo de variable en Infernal. "
+                          "'?nombre' solo tiene sentido en un comando shell.");
+                }
 
-            VarEntry *e = scope_find(current_scope, name);
-            if (!e) {
-                /* Un post-op que NO está en contexto de sentencia (por
-                 * ejemplo el incremento de un for, o dentro de una
-                 * expresión) nunca puede ser un comando. Es simplemente
-                 * una variable que no existe. */
-                if (var_node->data.var.clone || !expr->data.post_op.statement_context) {
+                if (constants_is_reserved(name))
+                    error(expr->line, "La constante '%s' no se puede modificar", name);
+
+                VarEntry *e = scope_find(current_scope, name);
+                if (!e) {
+                    if (target->data.var.clone || !expr->data.post_op.statement_context) {
+                        error(expr->line, "Variable '%s' no definida", name);
+                    }
+                    char *command = NULL;
+                    if (asprintf(&command, "%s%s", name,
+                                 expr->kind == NODE_POST_INC ? "++" : "--") < 0 || !command) {
+                        error(expr->line, "Memoria insuficiente al resolver '%s'", name);
+                    }
+                    int status = run_command_get_exit_code(command);
+                    free(command);
+                    if (status == 0) {
+                        return val_make_null();
+                    }
                     error(expr->line, "Variable '%s' no definida", name);
                 }
 
-                /* Solo cuando el post-op aparece como sentencia suelta
-                 * (g++) permitimos interpretarlo como comando. */
-                char *command = NULL;
-                if (asprintf(&command, "%s%s", name,
-                             expr->kind == NODE_POST_INC ? "++" : "--") < 0 || !command) {
-                    error(expr->line, "Memoria insuficiente al resolver '%s'", name);
-                }
-                int status = run_command_get_exit_code(command);
-                free(command);
-                if (status == 0) {
-                    return val_make_null();
-                }
-                error(expr->line, "Variable '%s' no definida", name);
-            }
+                Value base = copy_value_secure(e->value);
+                Value new_val = compute_incdec(base, delta, expr->line);
+                value_free(&base);
 
-            Value base = copy_value_secure(e->value);
-            Value new_val;
-            if (expr->kind == NODE_POST_INC) {
-                if (base.type == VAL_INT) new_val = val_int(base.data.ival + 1);
-                else if (base.type == VAL_FLOAT) new_val = val_float(base.data.fval + 1.0);
-                else {
-                    value_free(&base);
-                    error(expr->line, "Incremento solo aplicable a números");
+                if (target->data.var.clone) {
+                    return new_val;
                 }
-            } else {
-                if (base.type == VAL_INT) new_val = val_int(base.data.ival - 1);
-                else if (base.type == VAL_FLOAT) new_val = val_float(base.data.fval - 1.0);
-                else {
-                    value_free(&base);
-                    error(expr->line, "Decremento solo aplicable a números");
-                }
-            }
-            value_free(&base);
 
-            if (var_node->data.var.clone) {
-                /* $ es la máquina de clonación: la operación solo modifica la
-                 * copia temporal y devuelve el resultado de esa copia. */
+                value_free(&e->value);
+                e->value = copy_value_secure(new_val);
                 return new_val;
             }
 
-            /* Aunque la sintaxis sea x++, en Infernal la operación devuelve
-             * el valor ya incrementado/decrementado. */
-            value_free(&e->value);
-            e->value = copy_value_secure(new_val);
-            return new_val;
+            if (target->kind == NODE_INDEX) {
+                ASTNode *base_node = target->data.idx.list;
+                if (base_node->kind != NODE_VAR || base_node->data.var.clone) {
+                    error(expr->line,
+                          "Incremento/decremento en índice requiere un elemento "
+                          "de una variable sin '$' como base");
+                }
+                const char *base_name = base_node->data.var.name;
+                if (base_name[0] == '$') base_name++;
+                if (constants_is_reserved(base_name))
+                    error(expr->line, "La constante '%s' no se puede modificar", base_name);
+
+                VarEntry *container_entry = scope_find(current_scope, base_name);
+                if (!container_entry)
+                    error(expr->line, "Variable '%s' no definida", base_name);
+
+                if (container_entry->value.type == VAL_MAP) {
+                    Value key = eval_expr(target->data.idx.index);
+                    if (key.type == VAL_REFERENCE) key = resolve_reference(key, expr->line);
+                    if (key.type != VAL_STRING) {
+                        value_free(&key);
+                        error(expr->line,
+                              "El índice de un mapa debe ser string (se recibió '%s')",
+                              value_type_name(key.type));
+                    }
+
+                    Value current;
+                    if (val_map_has(container_entry->value, key.data.sval)) {
+                        current = val_map_get(container_entry->value, key.data.sval);
+                    } else {
+                        current = val_int(0);
+                    }
+
+                    Value new_val = compute_incdec(current, delta, expr->line);
+                    value_free(&current);
+
+                    val_map_set(&container_entry->value, key.data.sval,
+                                copy_value_secure(new_val));
+                    value_free(&key);
+                    return new_val;
+                }
+
+                if (container_entry->value.type == VAL_LIST) {
+                    Value ref = eval_index(target);
+                    if (ref.type != VAL_REFERENCE) {
+                        error(expr->line,
+                              "Incremento/decremento en lista requiere un elemento válido");
+                    }
+                    Value current = resolve_reference(ref, expr->line);
+                    Value new_val = compute_incdec(current, delta, expr->line);
+                    value_free(&current);
+
+                    Value ref2 = eval_index(target);
+                    assign_reference(&ref2, copy_value_secure(new_val), expr->line);
+                    value_free(&ref2);
+                    return new_val;
+                }
+
+                error(expr->line,
+                      "'%s' es de tipo '%s' y no admite incremento/decremento con índice",
+                      base_name, value_type_name(container_entry->value.type));
+            }
+
+            error(expr->line, "Incremento/decremento no soportado en este contexto");
         }
         case NODE_EMPTY_AMBIGUOUS:
             error(expr->line,

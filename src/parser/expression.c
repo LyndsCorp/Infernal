@@ -711,10 +711,13 @@ static ASTNode *parse_postfix(void) {
     while (1) {
         if (ts_peek().type == TOK_INC || ts_peek().type == TOK_DEC) {
             Token op = ts_advance();
-            if (expr->kind != NODE_VAR) {
-                error(expr->line, "Solo se puede incrementar/decrementar una variable");
+            if (expr->kind != NODE_VAR && expr->kind != NODE_INDEX) {
+                error(expr->line,
+                      "Solo se puede incrementar/decrementar una variable "
+                      "o un elemento de lista/mapa");
             }
-            /* Se permite cualquier nombre de variable, incluyendo $ y ? */
+            /* Se permite cualquier nombre de variable, incluyendo $ y ?
+             * NODE_INDEX cubre x[k]++, x[k]--, lst[i]++, etc. */
             ASTNode *node = node_create((op.type == TOK_INC) ? NODE_POST_INC : NODE_POST_DEC, expr->line);
             node->data.post_op.var = expr;
             node->data.post_op.statement_context = false;
