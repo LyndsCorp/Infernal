@@ -608,6 +608,13 @@ Value eval_binop(ASTNode *expr) {
                 default: equal = false;
             }
         }
+        /* int vs float: comparación numérica (como Python). */
+        else if (left.type == VAL_INT && right.type == VAL_FLOAT) {
+            equal = ((double)left.data.ival == right.data.fval);
+        }
+        else if (left.type == VAL_FLOAT && right.type == VAL_INT) {
+            equal = (left.data.fval == (double)right.data.ival);
+        }
         Value result = val_bool(expr->data.binop.op == TOK_EEQ ? equal : !equal);
         value_free(&left);
         value_free(&right);
