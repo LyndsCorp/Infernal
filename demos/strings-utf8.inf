@@ -1,0 +1,50 @@
+# ============================================
+# test_string.inf — test suite para stdlib/string.c
+# Uso: infernal test_string.inf
+# ============================================
+
+print("=== Caja ===")
+
+print(lower("ABC"))          # abc
+print(upper("abc"))          # ABC
+print(capitalize("aBC"))     # Abc
+print(lower("ñANDÚ"))        # ñandú
+print(upper("Ñandú"))        # ÑANDÚ
+print(capitalize("ñandú"))   # Ñandú
+print(upper("ÿ"))            # Ÿ
+print(lower("Ÿ"))            # ÿ
+print(upper("ı"))            # I
+print(lower("İ"))            # İ      (fuera de rango)
+print(upper("ß"))            # ß      (fuera de rango)
+print(upper("ς"))            # Σ      (sigma final)
+print(capitalize("1abc"))    # 1abc
+print(capitalize(""))        # (vacío)
+
+
+print("=== UTF-8 inválido (decoder estricto) ===")
+
+# Overlong C0 80: se trata como 2 bytes Latin-1 → 2 codepoints
+print(lower("\xC0\x80"))     # À€  (C3 80 C2 80 en bytes)
+print(length("\xC0\x80"))    # 2
+print(length("\xED\xA0\x80"))# 1   (surrogate rechazado)
+print(reverse("\xC0\x80"))   # €À  (C2 80 C3 80 en bytes)
+
+
+print("=== trim / ltrim / rtrim / delspaces / trimcenter ===")
+
+print(trim("\u00A0hola\u00A0"))          # hola
+print(trim("\u2003x\u2003"))             # x
+print(ltrim("\u00A0 x"))                 # x
+print(rtrim("x \u00A0"))                 # x
+print(delspaces("a\u00A0b\u2003c"))      # abc
+print(trimcenter("  h\u2003o  "))        # "  h o  "
+print(trimcenter("ñ\u00A0ñ"))            # ñ ñ
+
+
+print("=== head / tail con codepoints ===")
+
+print(head("añb", 2))        # añ
+print(tail("añb", 2))        # ñb
+print(tail("añb", 0))        # (vacío)
+print(tail("añb", 99))       # añb
+print(head("", 5))           # (vacío)
