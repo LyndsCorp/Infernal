@@ -93,7 +93,22 @@ static void validate_var_name(const char *name, int line) {
 static bool is_block_closer(TokenType type) {
     return type == TOK_FI || type == TOK_ELSE || type == TOK_ELSEIF ||
     type == TOK_CASE || type == TOK_DEFAULT || type == TOK_CATCH ||
-    type == TOK_EOF;
+    type == TOK_RBRACE || type == TOK_EOF;
+}
+
+/* Determina si `type` es el token que cierra un bloque delimitado por
+ * `terminator`. El caso terminator == "}" se trata aparte porque "}" no
+ * es un keyword: lookup_keyword("}") devuelve TOK_IDENT, y compararlo
+ * contra el tipo del token actual rompería el bloque en el primer
+ * identificador que aparezca. Ese fue el bug que impedía usar bloques
+ * embebidos `{ ... }` con contenido real (identificadores, asignaciones,
+ * llamadas a función, etc.).
+ *
+ * Terminadores válidos hoy en día: NULL, "fi", "catch", "}". */
+static bool is_terminator_token(const char *terminator, TokenType type) {
+    if (!terminator) return false;
+    if (strcmp(terminator, "}") == 0) return type == TOK_RBRACE;
+    return lookup_keyword(terminator) == type;
 }
 
 static bool is_expression_start(TokenType type) {
@@ -581,7 +596,7 @@ NodeList parse_block(const char *terminator) {
         ts_skip_newlines();
         Token t = ts_peek();
         if (t.type == TOK_EOF) break;
-        if (terminator && lookup_keyword(terminator) == t.type) break;
+        if (is_terminator_token(terminator, t.type)) break;
         if (terminator && strcmp(terminator, "fi") == 0 &&
             (t.type == TOK_ELSE || t.type == TOK_ELSEIF)) break;
         if (terminator && strcmp(terminator, "}") == 0 && t.type == TOK_RBRACE) break;
@@ -2122,7 +2137,7 @@ NodeList parse_block(const char *terminator) {
             DEBUG_INFO("parse_block: añadida sentencia tipo %d en línea %d", stmt->kind, stmt->line);
         }
         ts_skip_newlines();
-        if (terminator && ts_peek().type == lookup_keyword(terminator)) break;
+        if (is_terminator_token(terminator, ts_peek().type)) break;
         if (terminator && strcmp(terminator, "}") == 0 && ts_peek().type == TOK_RBRACE) break;
     }
 
