@@ -123,6 +123,7 @@ static void require_statement_end(const char *what) {
     Token next = ts_peek();
     if (next.type == TOK_NEWLINE || next.type == TOK_EOF || next.type == TOK_THEN || is_block_closer(next.type))
         return;
+    check_unescaped_quote(ts.pos - 1, what);
     error_at(next.line, next.start_col > 0 ? next.start_col : 1,
              "Sobra '%s' después de %s; quizá falta un operador o un salto de línea",
              next.lexeme, what);

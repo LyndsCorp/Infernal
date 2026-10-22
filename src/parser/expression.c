@@ -223,6 +223,40 @@ ASTNode *parse_index_or_slice(int line) {
     return node;
 }
 
+/* --- Detección de comillas dobles sin escapar ---
+ *
+ * Si el token actual sigue pegado (sin espacio) a un string literal
+ * anterior, la causa más probable es que el usuario haya olvidado
+ * escapar una comilla doble dentro del string. En ese caso el lexer
+ * cierra el string antes de tiempo y el parser ve un identificador
+ * pegado al cierre, lo que produce un error genérico poco útil.
+ *
+ * Este helper detecta el patrón y emite un mensaje específico. */
+void check_unescaped_quote(int prev_pos, const char *context) {
+    if (prev_pos < 0 || prev_pos >= ts.count) return;
+    if (ts.pos >= ts.count) return;
+    Token prev = ts.tokens[prev_pos];
+    Token cur  = ts.tokens[ts.pos];
+    if (prev.type != TOK_STRING_LITERAL) return;
+    if (prev.line != cur.line) return;
+    if (cur.start_col != prev.end_col) return;  /* hay espacio: no aplica */
+    if (cur.type != TOK_IDENT &&
+        cur.type != TOK_STRING_LITERAL &&
+        cur.type != TOK_NUMBER) return;
+
+    error_at(cur.line, cur.start_col > 0 ? cur.start_col : 1,
+             "El token '%s' aparece pegado al string anterior%s.\n"
+             "    Probablemente olvidaste escapar una comilla doble dentro del string.\n"
+             "    Para incluir \" dentro de un string, escríbelo como \\\" (barra invertida + comilla):\n"
+             "        \"Hola, dijo \\\"adiós\\\" y se fue\"\n"
+             "O también puedes usar ' que a veces es más cómodo:\n"
+             "        'Hola, dijo \"miau\".'\n"
+             "\n"
+             "    Para concatenar strings usa el operador +:\n"
+             "        \"Hola, \" + $nombre + \"!\"",
+             cur.lexeme, context ? context : "");
+}
+
 /* --- parse_map_literal (interna) --- */
 static ASTNode *parse_map_literal(int line) {
     ASTNode *node = node_create(NODE_MAP, line);
@@ -319,6 +353,7 @@ static ASTNode *parse_map_literal(int line) {
 
         if (!saw_sep) {
             Token bad = ts_peek();
+            check_unescaped_quote(ts.pos - 1, " dentro de un mapa");
             error_at(bad.line, bad.start_col > 0 ? bad.start_col : 1,
                      "Se esperaba ',', ']' o un salto de línea después del valor del par '%s' del mapa",
                      key_name);
@@ -484,10 +519,11 @@ ASTNode *parse_primary() {
                     Token next = ts_peek();
                     if (next.type != TOK_COMMA && next.type != TOK_RPAREN) {
                         // Si el siguiente token es algo que podría ser el inicio de otra expresión,
-                        // el usuario ha omitido una coma.
+                        // el usuario ha omitido una coma (o una comilla de escape).
                         if (next.type == TOK_STRING_LITERAL || next.type == TOK_NUMBER ||
                             next.type == TOK_IDENT || next.type == TOK_TRUE || next.type == TOK_FALSE ||
                             next.type == TOK_LBRACKET || next.type == TOK_LPAREN || next.type == TOK_LBRACE) {
+                            check_unescaped_quote(ts.pos - 1, " en la llamada a función");
                             error(t.line, "Falta una coma entre argumentos en la llamada a función '%s'", func_name);
                             }
                     }
@@ -633,9 +669,11 @@ ASTNode *parse_primary() {
                         ts_skip_newlines();
                         if (ts_peek().type != TOK_COMMA && ts_peek().type != TOK_RBRACKET) {
                             Token bad = ts_peek();
-                            if (token_starts_expression(bad.type))
+                            if (token_starts_expression(bad.type)) {
+                                check_unescaped_quote(ts.pos - 1, " dentro de una lista");
                                 error_at(bad.line, bad.start_col,
                                          "Falta ',' entre elementos de la lista");
+                            }
                         }
                     } while (ts_match(TOK_COMMA) && ts_peek().type != TOK_RBRACKET);
                     if (ts_peek().type == TOK_RBRACKET && ts.pos > 0 &&
