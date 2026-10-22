@@ -9,6 +9,9 @@ Opciones:
   --version    Muestra la versión del intérprete.
   --edition    Muestra la edición del intérprete.
 
+  -c "código"  Ejecuta el código entre comillas con Infernal.
+  --shell      Muestra el shell configurado para Infernal.
+
 Sin argumentos muestra el mensaje de bienvenida.
 
 Documentación: https://github.com/LyndsCorp/Infernal-Documentation
