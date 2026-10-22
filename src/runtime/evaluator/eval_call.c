@@ -92,8 +92,32 @@ Value eval_call(ASTNode *expr) {
             longjmp(exception_env, 1);
         }
 
+        /* varexists(NOMBRE) y delvar(NOMBRE) reciben el NOMBRE como string,
+         * no el valor de la variable. Si el argumento es un identificador
+         * sin '$' (NODE_VAR con clone=false), pasamos su nombre como string
+         * SIN evaluarlo. Esto permite comprobar/eliminar variables que
+         * todavía no existen (el caso típico de varexists) sin que
+         * eval_expr dispare "Variable 'X' no definida" antes de que el
+         * builtin pueda hacer su trabajo.
+         *
+         *   varexists(NOMBRE)    -> comprueba si existe "NOMBRE"
+         *   varexists($NOMBRE)   -> comprueba si existe la variable cuyo
+         *                           nombre está guardado en $NOMBRE */
+        const char *fname = expr->data.call.name;
+        bool arg_is_name = (strcmp(fname, "varexists") == 0 ||
+                            strcmp(fname, "delvar") == 0);
+
         for (int i = 0; i < argc; i++) {
-            Value arg = eval_expr(expr->data.call.args[i]);
+            ASTNode *arg_node = expr->data.call.args[i];
+            if (arg_is_name && arg_node->kind == NODE_VAR &&
+                !arg_node->data.var.clone) {
+                const char *vname = arg_node->data.var.name;
+                if (vname[0] == '$') vname++;
+                args[i] = val_string(vname);
+                continue;
+            }
+
+            Value arg = eval_expr(arg_node);
             if (arg.type == VAL_REFERENCE) {
                 /* resolve_reference() toma propiedad de la referencia y la libera
                  * incluso cuando lanza un error. Dejamos el slot en NULL durante
