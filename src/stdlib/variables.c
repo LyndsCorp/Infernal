@@ -201,6 +201,166 @@ static Value builtin_delvar(int argc, Value *args) {
     if (!name || !*name)
         error(current_eval_line, "delvar(): el nombre de la variable está vacío");
 
+    /* ── Forma con ruta: delvar("mapa[clave1][clave2]...") ──
+     *
+     * Un `map` es una caja de variables: `pages[web]` se comporta como
+     * una variable llamada "web" dentro de la caja `pages`. Esta forma
+     * elimina la clave del contenedor, liberando ese "hueco" para que
+     * pueda volver a asignarse con otro tipo.
+     *
+     * Soporta tanto claves entre comillas como identificadores simples:
+     *     delvar("pages[web]")
+     *     delvar("pages[\"web\"]")
+     *     delvar("pages[web][sub]")
+     */
+    const char *open = strchr(name, '[');
+    if (open) {
+        size_t base_len = (size_t)(open - name);
+        if (base_len == 0)
+            error(current_eval_line, "delvar(): ruta inválida \"%s\"", name);
+
+        jmp_buf saved_env;
+        memcpy(&saved_env, &exception_env, sizeof(jmp_buf));
+        int saved_raised = exception_raised;
+
+        char *base = NULL;
+        char **keys = NULL;
+        int key_count = 0;
+        int key_cap = 0;
+
+        if (setjmp(exception_env) != 0) {
+            free(base);
+            for (int i = 0; i < key_count; i++) free(keys[i]);
+            free(keys);
+            memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
+            exception_raised = saved_raised;
+            longjmp(exception_env, 1);
+        }
+
+        base = malloc(base_len + 1);
+        if (!base) error(current_eval_line, "delvar(): memoria insuficiente");
+        memcpy(base, name, base_len);
+        base[base_len] = '\0';
+
+        if (constants_is_reserved(base))
+            error(current_eval_line,
+                  "delvar(): '%s' es una constante y no se puede eliminar", base);
+        if (!is_valid_var_name(base))
+            error(current_eval_line,
+                  "delvar(): \"%s\" no es un nombre de variable válido", base);
+
+        /* Parsear las claves entre corchetes. */
+        const char *p = open;
+        while (*p) {
+            if (*p != '[')
+                error(current_eval_line,
+                      "delvar(): ruta inválida \"%s\" (se esperaba '[' en posición %ld)",
+                      name, (long)(p - name));
+            p++;
+
+            char quote = 0;
+            if (*p == '"' || *p == '\'') {
+                quote = *p;
+                p++;
+            }
+
+            const char *key_start = p;
+            if (quote) {
+                while (*p && *p != quote) {
+                    if (*p == '\\' && *(p + 1)) p++;
+                    p++;
+                }
+                if (*p != quote)
+                    error(current_eval_line,
+                          "delvar(): falta cerrar la comilla '%c' en la ruta \"%s\"",
+                          quote, name);
+            } else {
+                while (*p && *p != ']') p++;
+            }
+            size_t klen = (size_t)(p - key_start);
+            if (klen == 0)
+                error(current_eval_line,
+                      "delvar(): clave vacía en la ruta \"%s\"", name);
+
+            if (key_count >= key_cap) {
+                int new_cap = key_cap == 0 ? 4 : key_cap * 2;
+                char **tmp = realloc(keys, (size_t)new_cap * sizeof(char *));
+                if (!tmp) error(current_eval_line, "delvar(): memoria insuficiente");
+                keys = tmp;
+                key_cap = new_cap;
+            }
+            char *key = malloc(klen + 1);
+            if (!key) error(current_eval_line, "delvar(): memoria insuficiente");
+            memcpy(key, key_start, klen);
+            key[klen] = '\0';
+            keys[key_count++] = key;
+
+            if (quote) {
+                if (*p != quote)
+                    error(current_eval_line,
+                          "delvar(): falta cerrar la comilla en la ruta \"%s\"", name);
+                p++;
+            }
+            if (*p != ']')
+                error(current_eval_line,
+                      "delvar(): falta ']' en la ruta \"%s\"", name);
+            p++;
+        }
+
+        if (key_count == 0)
+            error(current_eval_line, "delvar(): ruta inválida \"%s\"", name);
+
+        /* Buscar la variable base. */
+        VarEntry *entry = NULL;
+        Scope *owner = find_scope_owner(current_scope, base, &entry);
+        if (!owner || !entry)
+            error(current_eval_line,
+                  "delvar(): la variable \"%s\" no existe (en la ruta \"%s\")",
+                  base, name);
+
+        /* Recorrer hasta el penúltimo nivel. */
+        Value *container = &entry->value;
+        for (int i = 0; i < key_count - 1; i++) {
+            if (container->type != VAL_MAP)
+                error(current_eval_line,
+                      "delvar(): no se puede acceder a [\"%s\"] en la ruta \"%s\": "
+                      "el contenedor no es un mapa",
+                      keys[i], name);
+            if (!val_map_has(*container, keys[i]))
+                error(current_eval_line,
+                      "delvar(): la clave \"%s\" no existe en la ruta \"%s\"",
+                      keys[i], name);
+            MapData *md = container->data.map;
+            for (int j = 0; j < md->count; j++) {
+                if (strcmp(md->pairs[j].key, keys[i]) == 0) {
+                    container = &md->pairs[j].value;
+                    break;
+                }
+            }
+        }
+
+        if (container->type != VAL_MAP)
+            error(current_eval_line,
+                  "delvar(): el contenedor final de \"%s\" no es un mapa", name);
+        if (!val_map_has(*container, keys[key_count - 1]))
+            error(current_eval_line,
+                  "delvar(): la clave \"%s\" no existe en la ruta \"%s\"",
+                  keys[key_count - 1], name);
+
+        val_map_delete(container, keys[key_count - 1]);
+
+        free(base);
+        for (int i = 0; i < key_count; i++) free(keys[i]);
+        free(keys);
+
+        memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
+        exception_raised = saved_raised;
+
+        DEBUG_INFO("delvar(): ruta \"%s\" eliminada", name);
+        return val_make_null();
+    }
+
+    /* ── Forma simple: delvar("nombre") ── */
     if (constants_is_reserved(name))
         error(current_eval_line, "delvar(): '%s' es una constante y no se puede eliminar", name);
     if (!is_valid_var_name(name))

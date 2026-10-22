@@ -204,6 +204,70 @@ static char *utf8_insert_at(const char *s, const char *to_insert,
 }
 
 /* ====================================================================
+ *  Extracción de clave para eliminación de mapas
+ * ====================================================================
+ *
+ * La forma `mapa - [clave]` necesita convertir el operando derecho en
+ * una clave string. Acepta:
+ *
+ *     ["clave"]   → string literal
+ *     [clave]     → si `clave` es una variable string, su valor;
+ *                   si no está definida, el identificador literal
+ *                   "clave" (útil para trabajar con mapas sin declarar
+ *                   una variable por cada clave)
+ *     "clave"     → string literal directo
+ *
+ * Devuelve un buffer malloc'd (liberar con free) o NULL si no se puede
+ * obtener una clave string. */
+static char *extract_map_key(ASTNode *node) {
+    if (!node) return NULL;
+
+    if (node->kind == NODE_LIST && node->data.list_lit.count == 1) {
+        ASTNode *item = node->data.list_lit.items[0];
+
+        if (item->kind == NODE_LITERAL && item->data.lit.type == TOK_STRING) {
+            return item->data.lit.sval ? strdup(item->data.lit.sval) : NULL;
+        }
+
+        if (item->kind == NODE_VAR && !item->data.var.clone) {
+            const char *name = item->data.var.name;
+            if (name[0] == '$') name++;
+            VarEntry *e = scope_find(current_scope, name);
+            if (!e) {
+                /* Identificador sin definir: se trata como clave literal. */
+                return strdup(name);
+            }
+            if (e->value.type == VAL_STRING && e->value.data.sval) {
+                return strdup(e->value.data.sval);
+            }
+            return NULL;
+        }
+
+        Value v = eval_expr(item);
+        if (v.type == VAL_STRING && v.data.sval) {
+            char *r = strdup(v.data.sval);
+            value_free(&v);
+            return r;
+        }
+        value_free(&v);
+        return NULL;
+    }
+
+    if (node->kind == NODE_LITERAL && node->data.lit.type == TOK_STRING) {
+        return node->data.lit.sval ? strdup(node->data.lit.sval) : NULL;
+    }
+
+    Value v = eval_expr(node);
+    if (v.type == VAL_STRING && v.data.sval) {
+        char *r = strdup(v.data.sval);
+        value_free(&v);
+        return r;
+    }
+    value_free(&v);
+    return NULL;
+}
+
+/* ====================================================================
  *  eval_binop
  * ==================================================================== */
 
@@ -380,6 +444,62 @@ Value eval_binop(ASTNode *expr) {
 
     if (left.type == VAL_LIST) {
         error(expr->line, "Operación no soportada con lista y operador '%s'", op_name);
+    }
+
+    /* =================================================================
+     *  ELIMINACIÓN DE CLAVES EN MAPAS
+     * =================================================================
+     *
+     * Un `map` es una caja de variables: cada clave es como una
+     * variable con tipo fijo. Para "cambiarle el tipo" a una clave
+     * hay que eliminar el par y volver a asignarlo; `mapa -= [clave]`
+     * es la forma natural de hacerlo.
+     *
+     *   $mapa -= ["web"]
+     *   $mapa -= [web]        (web variable string, o clave literal "web")
+     */
+    if (expr->data.binop.op == TOK_MINUS && left.type == VAL_MAP) {
+        jmp_buf map_saved_env;
+        memcpy(&map_saved_env, &exception_env, sizeof(jmp_buf));
+        int map_saved_raised = exception_raised;
+        if (setjmp(exception_env) != 0) {
+            value_free(&left);
+            memcpy(&exception_env, &map_saved_env, sizeof(jmp_buf));
+            exception_raised = map_saved_raised;
+            longjmp(exception_env, 1);
+        }
+
+        char *key = extract_map_key(expr->data.binop.right);
+        if (!key) {
+            value_free(&left);
+            memcpy(&exception_env, &map_saved_env, sizeof(jmp_buf));
+            exception_raised = map_saved_raised;
+            error(expr->line,
+                  "No se puede eliminar de un mapa: se esperaba una clave string.\n"
+                  "    Ejemplos válidos:\n"
+                  "        $mapa -= [\"clave\"]   (elimina la clave literal 'clave')\n"
+                  "        $mapa -= [$var]         (elimina la clave cuyo nombre está en $var)\n"
+                  "        $mapa -= [clave]        (elimina 'clave'; si 'clave' es una variable\n"
+                  "                                 string, se usa su valor)");
+        }
+
+        Value new_map = val_map_copy(&left);
+        val_map_delete(&new_map, key);
+        free(key);
+        value_free(&left);
+
+        memcpy(&exception_env, &map_saved_env, sizeof(jmp_buf));
+        exception_raised = map_saved_raised;
+        return new_map;
+    }
+
+    /* Un `map` no admite otras operaciones aritméticas. Sin este check,
+     * `mapa + 5` caería en la aritmética general y devolvería 5.0 de
+     * forma silenciosa. */
+    if (left.type == VAL_MAP) {
+        value_free(&left);
+        error(expr->line,
+              "Operación no soportada con mapa y operador '%s'", op_name);
     }
 
     /* =================================================================

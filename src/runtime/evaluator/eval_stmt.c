@@ -655,12 +655,19 @@ void exec_stmt(ASTNode *stmt) {
                     }
             } else {
                 // Asignación normal (no comando)
-                if (stmt->data.assign.value != NULL && stmt->data.assign.lhs_index) {
+                if (stmt->data.assign.lhs_index) {
                     /* Asignación con índice, potencialmente anidado:
                      *   lista[2] = 5
                      *   stats["vida"] = 1000
                      *   texto[1] = "X"            (string)
-                     *   pages[web][pagina] = []   (declaración con tipo) */
+                     *   pages[web][pagina] = []   (declaración con tipo)
+                     *   map pages[web]            (sin valor: default del tipo)
+                     *
+                     * El último caso (sin `= valor`) antes ignoraba el
+                     * índice y sólo inicializaba `pages`. Ahora respeta la
+                     * ruta: `map pages[web]` crea `pages[web]` como mapa
+                     * vacío, coherente con el modelo "map = caja de
+                     * variables". */
                     VarEntry * volatile var = scope_find(current_scope, stmt->data.assign.name);
                     if (!var) {
                         int vtype = stmt->data.assign.vtype;
@@ -679,10 +686,30 @@ void exec_stmt(ASTNode *stmt) {
                         }
                     }
 
-                    Value new_val = eval_expr(stmt->data.assign.value);
+                    Value new_val;
+                    if (stmt->data.assign.value != NULL) {
+                        new_val = eval_expr(stmt->data.assign.value);
+                    } else {
+                        /* Declaración con índice sin valor: usamos el
+                         * valor por defecto del tipo declarado. */
+                        int vtype = stmt->data.assign.vtype;
+                        if (vtype == TOK_INT)         new_val = val_int(0);
+                        else if (vtype == TOK_FLOAT)  new_val = val_float(0.0);
+                        else if (vtype == TOK_BOOL)   new_val = val_bool(false);
+                        else if (vtype == TOK_STRING) new_val = val_string("");
+                        else if (vtype == TOK_LIST)   new_val = val_list_empty();
+                        else if (vtype == TOK_MAP)    new_val = val_map_empty();
+                        else {
+                            error(stmt->line,
+                                  "Declaración con índice sin tipo ni valor: "
+                                  "no se puede determinar el tipo de %s[...]",
+                                  stmt->data.assign.name);
+                        }
+                    }
 
-                    /* NUEVO: rechazar void como valor a asignar. */
+                    /* Rechazar void como valor a asignar. */
                     if (new_val.type == VAL_VOID) {
+                        value_free(&new_val);
                         error(stmt->line,
                               "La expresión a la derecha de '=' no devolvió ningún valor (void).\n"
                               "    No se puede asignar 'nada' a '%s[...]'.",
