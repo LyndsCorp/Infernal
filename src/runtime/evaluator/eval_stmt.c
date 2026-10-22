@@ -590,37 +590,63 @@ void exec_stmt(ASTNode *stmt) {
                                     snprintf(err_output, sizeof(err_output), "%.900s", out);
                             }
 
+                            /* Reexpandir `cmd` para mostrar el comando TAL
+                             * COMO lo vio el shell (con $VAR resueltas y ?
+                             * ya traducido a $). Sin esto, el mensaje muestra
+                             * el texto fuente con $VAR y ? sin resolver, y el
+                             * usuario cree que la expansión no funcionó.
+                             *
+                             * Es seguro reexpandir: el primer expand_command()
+                             * ya tuvo éxito y el estado de Infernal no ha
+                             * cambiado (el shell corrió como subproceso). Si
+                             * por algún motivo la reexpansión falla (no debería),
+                             * caemos al texto fuente original `cmd`. */
+                            char *display_cmd = expand_command(cmd);
+                            if (!display_cmd) display_cmd = (char *)cmd;
+
                             if (code == 127) {
                                 char first_token[256] = "";
-                                sscanf(cmd, "%255s", first_token);
+                                sscanf(display_cmd, "%255s", first_token);
                                 free(out);
                                 if (temp_path) { unlink(temp_path); free(temp_path); }
                                 VarEntry *same_name = scope_find(current_scope, first_token);
                                 if (same_name) {
-                                    error(stmt->line,
-                                          "El comando '%s' falló: comando no encontrado.\n"
-                                          "    Se ejecutó un comando que no existe y que tiene el mismo nombre que una variable.\n"
-                                          "    Quizás querías obtener su valor. Usa '$%s' para clonar su valor.\n"
-                                          "    El '$' también representa que vas a trabajar con variables en lugar de comandos.",
-                                          cmd, first_token);
+                                    char msg[4096];
+                                    snprintf(msg, sizeof(msg),
+                                             "El comando '%s' falló: comando no encontrado.\n"
+                                             "    Se ejecutó un comando que no existe y que tiene el mismo nombre que una variable.\n"
+                                             "    Quizás querías obtener su valor. Usa '$%s' para clonar su valor.\n"
+                                             "    El '$' también representa que vas a trabajar con variables en lugar de comandos.",
+                                             display_cmd, first_token);
+                                    if (display_cmd != cmd) free(display_cmd);
+                                    error(stmt->line, "%s", msg);
                                 } else {
-                                    error(stmt->line,
-                                          "El comando '%s' falló: comando no encontrado ('%s').",
-                                          cmd, first_token);
+                                    char msg[4096];
+                                    snprintf(msg, sizeof(msg),
+                                             "El comando '%s' falló: comando no encontrado ('%s').",
+                                             display_cmd, first_token);
+                                    if (display_cmd != cmd) free(display_cmd);
+                                    error(stmt->line, "%s", msg);
                                 }
                             }
 
                             free(out);
                             if (temp_path) { unlink(temp_path); free(temp_path); }
                             if (err_output[0]) {
-                                error(stmt->line,
-                                      "El comando '%s' falló (código de salida %d).\n"
-                                      "    Salida del comando:\n        %s",
-                                      cmd, code, err_output);
+                                char msg[4096];
+                                snprintf(msg, sizeof(msg),
+                                         "El comando '%s' falló (código de salida %d).\n"
+                                         "    Salida del comando:\n        %s",
+                                         display_cmd, code, err_output);
+                                if (display_cmd != cmd) free(display_cmd);
+                                error(stmt->line, "%s", msg);
                             } else {
-                                error(stmt->line,
-                                      "El comando '%s' falló (código de salida %d)",
-                                      cmd, code);
+                                char msg[4096];
+                                snprintf(msg, sizeof(msg),
+                                         "El comando '%s' falló (código de salida %d)",
+                                         display_cmd, code);
+                                if (display_cmd != cmd) free(display_cmd);
+                                error(stmt->line, "%s", msg);
                             }
                         }
 

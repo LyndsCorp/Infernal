@@ -232,9 +232,65 @@ static void command_append(char **cmd, size_t *len, size_t *cap, const char *tex
 
 static void command_append_token(char **cmd, size_t *len, size_t *cap, Token tok, bool add_space) {
     if (add_space && *len > 0) command_append(cmd, len, cap, " ");
-    if (tok.type == TOK_STRING_LITERAL) command_append(cmd, len, cap, "\"");
-    command_append(cmd, len, cap, tok.lexeme);
-    if (tok.type == TOK_STRING_LITERAL) command_append(cmd, len, cap, "\"");
+
+    if (tok.type != TOK_STRING_LITERAL) {
+        command_append(cmd, len, cap, tok.lexeme);
+        return;
+    }
+
+    /* String literal dentro de un comando shell.
+     *
+     * Si el string referencia una variable Infernal (`$` o `?`), sus
+     * `*` no escapados se emiten FUERA de las comillas en el comando
+     * resultante, para que el shell haga glob sobre ellos. Ejemplo:
+     *
+     *     "$tofind*"   →   "$tofind"*
+     *     "$dir/*"     →   "$dir/"*
+     *     "*$var"      →   *"$var"     (bash concatena y luego glob-ea)
+     *
+     * Si el string NO tiene variables, se cita entero como siempre,
+     * para que `grep "a*"` siga pasando `a*` como regex literal (no
+     * glob) y `"*.log"` no se convierta en glob inesperadamente.
+     * En esos casos, para glob, escribir el `*` FUERA de las comillas
+     * o no poner comillas.
+     *
+     * `\\*` (escape) siempre se queda como `*` DENTRO de las comillas,
+     * es decir, literal `*`, aunque el string tenga variables.
+     *
+     * Multi-byte UTF-8: procesamos byte a byte, pero ningún byte de
+     * una secuencia UTF-8 multibyte coincide con `*` (0x2A) ni `\\`
+     * (0x5C), así que concatenar byte-a-byte reconstruye el string
+     * original sin corromper la codificación. */
+    const char *s = tok.lexeme ? tok.lexeme : "";
+    bool has_var = (strchr(s, '$') != NULL || strchr(s, '?') != NULL);
+    bool in_quote = false;
+    bool emitted = false;
+    const char *p = s;
+    while (*p) {
+        if (*p == '\\' && *(p + 1) == '*') {
+            /* `\*` → literal `*` dentro de comillas, siempre. */
+            if (!in_quote) { command_append(cmd, len, cap, "\""); in_quote = true; }
+            command_append(cmd, len, cap, "*");
+            emitted = true;
+            p += 2;
+        } else if (*p == '*' && has_var) {
+            /* `*` con variable en el string → cerrar comillas, emitir
+             * `*` suelto, reabrir si hace falta. El shell hará glob. */
+            if (in_quote) { command_append(cmd, len, cap, "\""); in_quote = false; }
+            command_append(cmd, len, cap, "*");
+            emitted = true;
+            p++;
+        } else {
+            /* Resto de caracteres: entre comillas, como siempre. */
+            if (!in_quote) { command_append(cmd, len, cap, "\""); in_quote = true; }
+            char single[2] = { *p, '\0' };
+            command_append(cmd, len, cap, single);
+            emitted = true;
+            p++;
+        }
+    }
+    if (in_quote) command_append(cmd, len, cap, "\"");
+    if (!emitted) command_append(cmd, len, cap, "\"\"");
 }
 
 char *build_command_from_tokens(int start_pos, int end_pos) {
