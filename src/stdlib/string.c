@@ -476,6 +476,16 @@ static Value builtin_replace(int argc, Value *args) {
     CharSegment *to_segs   = utf8_to_segments(to_str, &to_seg_count);
     if (!to_segs) { free(src_segs); free(from_segs); error(current_eval_line, "memoria insuficiente en replace"); }
 
+    /* malloc(0) es implementación-definido: puede devolver
+     * NULL y disparar un falso "memoria insuficiente" cuando
+     * el string de origen está vacío. Devolvemos directamente
+     * la cadena vacía en ese caso. */
+    if (src_seg_count == 0) {
+        free(src_segs);
+        free(from_segs);
+        free(to_segs);
+        return val_string("");
+    }
     int *replace_pos = malloc((size_t)src_seg_count * sizeof(int));
     if (!replace_pos) { free(src_segs); free(from_segs); free(to_segs); error(current_eval_line, "memoria insuficiente en replace"); }
 

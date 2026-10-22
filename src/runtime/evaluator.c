@@ -135,8 +135,10 @@ Value eval_expr(ASTNode *expr) {
                     Value new_val = compute_incdec(current, delta, expr->line);
                     value_free(&current);
 
-                    val_map_set(&container_entry->value, key.data.sval,
-                                copy_value_secure(new_val));
+                    /* val_map_set ya copia internamente; el
+                     * copy_value_secure extra se filtraba en
+                     * cada x[i]++ sobre un mapa. */
+                    val_map_set(&container_entry->value, key.data.sval, new_val);
                     value_free(&key);
                     return new_val;
                 }
@@ -152,7 +154,10 @@ Value eval_expr(ASTNode *expr) {
                     value_free(&current);
 
                     Value ref2 = eval_index(target);
-                    assign_reference(&ref2, copy_value_secure(new_val), expr->line);
+                    /* assign_reference ya copia internamente; el
+                     * copy_value_secure extra se filtraba en
+                     * cada x[i]++ sobre una lista. */
+                    assign_reference(&ref2, new_val, expr->line);
                     value_free(&ref2);
                     return new_val;
                 }

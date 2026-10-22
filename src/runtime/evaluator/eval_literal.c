@@ -113,7 +113,24 @@ Value eval_map(ASTNode *expr) {
                   value_node->data.var.name, value_node->data.var.name);
         }
 
-        Value val = eval_expr(value_node);
+        Value val;
+        if (value_node && value_node->kind == NODE_EMPTY_AMBIGUOUS && declared_type != 0) {
+            /* `[]` en un par de mapa con tipo declarado: el tipo
+             * del par resuelve la ambigüedad. Sin esto,
+             * `[list l = []]` fallaba con "'[]' es ambiguo". */
+            if (declared_type == TOK_LIST) {
+                val = val_list_empty();
+            } else if (declared_type == TOK_MAP) {
+                val = val_map_empty();
+            } else {
+                error(expr->line,
+                      "'[]' no es válido para la clave '%s' del mapa con tipo '%s'",
+                      key, type_name(declared_type));
+                val = val_make_null();  /* inalcanzable */
+            }
+        } else {
+            val = eval_expr(value_node);
+        }
         if (declared_type != 0 && valtype_to_tokentype(val.type) != declared_type) {
             int actual_type = valtype_to_tokentype(val.type);
             value_free(&val);

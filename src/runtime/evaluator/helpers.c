@@ -118,6 +118,13 @@ int get_node_line(ASTNode *node) {
                 if (l) return l;
             }
             break;
+        case NODE_POST_INC:
+        case NODE_POST_DEC:
+            if (node->data.post_op.var) {
+                int l = get_node_line(node->data.post_op.var);
+                if (l) return l;
+            }
+            break;
         default:
             break;
     }
@@ -409,9 +416,11 @@ bool try_convert_value(Value *val, int target_tok_type) {
             p += len;
         }
         *p = '\0';
+        /* value_free libera strings, listas y mapas anidados;
+         * el bucle original sólo liberaba strings y filtraba
+         * los items que fueran list o map. */
         for (int i = 0; i < val->data.list.count; i++) {
-            if (val->data.list.items[i].type == VAL_STRING)
-                free(val->data.list.items[i].data.sval);
+            value_free(&val->data.list.items[i]);
         }
         free(val->data.list.items);
         val->type = VAL_STRING;
@@ -424,8 +433,15 @@ bool try_convert_value(Value *val, int target_tok_type) {
         return true;
     }
     if (val->type == VAL_FLOAT && target_tok_type == TOK_INT) {
+        double f = val->data.fval;
+        /* Un float fuera del rango de int produce UB al
+         * castear. El caller convertirá el false en un
+         * error de tipado en vez de disparar UB. */
+        if (!isfinite(f) || f < (double)INT_MIN || f > (double)INT_MAX) {
+            return false;
+        }
         val->type = VAL_INT;
-        val->data.ival = (int)val->data.fval;
+        val->data.ival = (int)f;
         return true;
     }
 

@@ -80,6 +80,20 @@ void exec_flag_spec_impl(FlagSpec *spec) {
 void exec_flags(ASTNode *node) {
     int mode = node->data.flags.mode;
     bool *handled = calloc(script_argc, sizeof(bool));
+
+    /* Un body de flag puede lanzar error() (variable no definida,
+     * comando shell que falla, etc.). Sin este setjmp, `handled`
+     * se filtraba en cada error capturado por un `try` externo. */
+    jmp_buf saved_env;
+    memcpy(&saved_env, &exception_env, sizeof(jmp_buf));
+    int saved_raised = exception_raised;
+    if (setjmp(exception_env) != 0) {
+        free(handled);
+        memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
+        exception_raised = saved_raised;
+        longjmp(exception_env, 1);
+    }
+
     FlagSpec *catch_all = NULL;
     for (int s = 0; s < node->data.flags.spec_count; s++) {
         if (node->data.flags.specs[s].catch_all) {
@@ -216,5 +230,8 @@ void exec_flags(ASTNode *node) {
             free(arg_dup);
         }
     }
+
     free(handled);
+    memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
+    exception_raised = saved_raised;
 }
