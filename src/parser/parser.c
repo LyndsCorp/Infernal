@@ -245,7 +245,7 @@ static void command_append_token(char **cmd, size_t *len, size_t *cap, Token tok
      * resultante, para que el shell haga glob sobre ellos. Ejemplo:
      *
      *     "$tofind*"   →   "$tofind"*
-     *     "$dir/*"     →   "$dir/"*
+     *     "$dir/x*"     →   "$dir/x"*
      *     "*$var"      →   *"$var"     (bash concatena y luego glob-ea)
      *
      * Si el string NO tiene variables, se cita entero como siempre,
