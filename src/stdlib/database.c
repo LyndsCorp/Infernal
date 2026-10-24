@@ -807,11 +807,38 @@ static void serialize_value_binary_rec(ByteBuffer *buf, Value v, int depth) {
 }
 
 static char *serialize_value_binary(Value v, size_t *out_len) {
-    ByteBuffer buf;
-    buf_init(&buf);
-    serialize_value_binary_rec(&buf, v, 0);
-    *out_len = buf.len;
-    return (char*)buf.data;
+    /* Usamos un buffer en el heap (no en la pila) para que el
+     * setjmp/longjmp de abajo pueda liberarlo sin depender de si
+     * el compilador mantiene la variable en un registro. */
+    ByteBuffer *buf = malloc(sizeof(ByteBuffer));
+    if (!buf) error(current_eval_line, "Memoria insuficiente");
+    buf->cap = 1024;
+    buf->data = malloc(buf->cap);
+    if (!buf->data) {
+        free(buf);
+        error(current_eval_line, "Memoria insuficiente");
+    }
+    buf->len = 0;
+
+    jmp_buf saved_env;
+    memcpy(&saved_env, &exception_env, sizeof(jmp_buf));
+    int saved_raised = exception_raised;
+    if (setjmp(exception_env) != 0) {
+        free(buf->data);
+        free(buf);
+        memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
+        exception_raised = saved_raised;
+        longjmp(exception_env, 1);
+    }
+
+    serialize_value_binary_rec(buf, v, 0);
+    *out_len = buf->len;
+    char *result = (char*)buf->data;
+    free(buf);
+
+    memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
+    exception_raised = saved_raised;
+    return result;
 }
 
 static Value deserialize_value_binary(const unsigned char *buffer, size_t *offset,
