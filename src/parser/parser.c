@@ -1485,8 +1485,36 @@ NodeList parse_block(const char *terminator) {
 
                 char *old_prefix = current_import_prefix;
                 current_import_prefix = module_alias ? module_alias : prefix_base;
-                NodeList module_block = parse_block(NULL);
+
+                jmp_buf block_saved_env;
+                memcpy(&block_saved_env, &exception_env, sizeof(jmp_buf));
+                int block_saved_raised = exception_raised;
+                NodeList module_block;
+                if (setjmp(exception_env) != 0) {
+                    /* Error de sintaxis en el módulo: restauramos ts,
+                     * source_lines y current_import_prefix antes de
+                     * re-propagar, para no dejar el parser apuntando a
+                     * los tokens del módulo. */
+                    current_import_prefix = old_prefix;
+                    if (ts.tokens) {
+                        for (int i = 0; i < ts.count; i++) free(ts.tokens[i].lexeme);
+                        free(ts.tokens);
+                    }
+                    ts = old_ts;
+                    if (source_lines) {
+                        for (int i = 0; i < source_line_count; i++) free(source_lines[i]);
+                        free(source_lines);
+                    }
+                    source_lines = old_source_lines;
+                    source_line_count = old_source_line_count;
+                    memcpy(&exception_env, &block_saved_env, sizeof(jmp_buf));
+                    exception_raised = block_saved_raised;
+                    longjmp(exception_env, 1);
+                }
+                module_block = parse_block(NULL);
                 current_import_prefix = old_prefix;
+                memcpy(&exception_env, &block_saved_env, sizeof(jmp_buf));
+                exception_raised = block_saved_raised;
 
                 for (int i = 0; i < ts.count; i++) free(ts.tokens[i].lexeme);
                 free(ts.tokens);
