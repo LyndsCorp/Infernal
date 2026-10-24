@@ -1409,6 +1409,18 @@ static int try_load_at(const char *path, const char *prefix,
     append_tried(tried, tried_size, used, path);
 
     if (access(path, R_OK) != 0) return 0;
+
+    /* No intentar dlopen() sobre archivos que no sean ELF. Un .fire u
+     * otro archivo de texto acabaría en "invalid ELF header" impreso a
+     * stderr, aunque el import se resuelva por la vía del parser .fire. */
+    FILE *probe = fopen(path, "rb");
+    if (!probe) return 0;
+    unsigned char magic[4];
+    size_t n = fread(magic, 1, sizeof(magic), probe);
+    fclose(probe);
+    if (n != sizeof(magic) || memcmp(magic, "\x7f" "ELF", 4) != 0)
+        return 0;
+
     return lava_load_from_path(path, prefix);
 }
 
