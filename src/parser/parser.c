@@ -85,7 +85,7 @@ static char *clean_var_name(const char *raw) {
 }
 
 static void validate_var_name(const char *name, int line) {
-    const char invalid[] = "@[](){}";
+    const char invalid[] = "@[](){}.?";
     for (const char *p = name; *p; p++)
         if (strchr(invalid, *p)) error(line, "Carácter inválido '%c' en nombre de variable", *p);
 }
