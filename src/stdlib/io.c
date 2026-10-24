@@ -324,12 +324,24 @@ static Value input_line_editor(void) {
     printf("\033[s");
     fflush(stdout);
 
+    jmp_buf saved_env;
+    memcpy(&saved_env, &exception_env, sizeof(jmp_buf));
+    int saved_raised = exception_raised;
+    if (setjmp(exception_env) != 0) {
+        /* Red de seguridad: si algún error dentro del editor no restauró
+         * el terminal por su cuenta, lo hacemos aquí antes de re-propagar.
+         * tcsetattr es idempotente. */
+        tcsetattr(STDIN_FILENO, TCSANOW, &original);
+        memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
+        exception_raised = saved_raised;
+        longjmp(exception_env, 1);
+    }
+
     size_t capacity = 128;
     size_t length = 0;
     size_t cursor = 0;
     char *buffer = malloc(capacity);
     if (!buffer) {
-        tcsetattr(STDIN_FILENO, TCSANOW, &original);
         error(current_eval_line, "Memoria insuficiente en input()");
     }
     buffer[0] = '\0';
@@ -350,6 +362,8 @@ static Value input_line_editor(void) {
                 fflush(stdout);
                 free(buffer);
                 tcsetattr(STDIN_FILENO, TCSANOW, &original);
+                memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
+                exception_raised = saved_raised;
                 return val_string("");
             }
             continue;
@@ -439,6 +453,8 @@ static Value input_line_editor(void) {
     tcsetattr(STDIN_FILENO, TCSANOW, &original);
     Value result = val_string(buffer);
     free(buffer);
+    memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
+    exception_raised = saved_raised;
     return result;
 }
 
