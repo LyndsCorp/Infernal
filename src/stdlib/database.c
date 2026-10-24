@@ -1146,7 +1146,7 @@ static Value builtin_tofile(int argc, Value *args) {
 
     /* Verificamos el destino ANTES de asignar nada, para no tener que
      * limpiar en el error. */
-    char *resolved = resolve_script_relative_path(args[1].data.sval);
+    char *volatile resolved = resolve_script_relative_path(args[1].data.sval);
     if (!resolved) error(current_eval_line, "Memoria insuficiente al resolver la ruta de destino");
 
     struct stat st;
@@ -1249,7 +1249,7 @@ static Value builtin_tobinfile(int argc, Value *args) {
     if (argc != 2) error(current_eval_line, "tobinfile() espera exactamente 2 argumentos");
     if (args[1].type != VAL_STRING) error(current_eval_line, "tobinfile() espera un string como segundo argumento");
 
-    char *resolved = resolve_script_relative_path(args[1].data.sval);
+    char *volatile resolved = resolve_script_relative_path(args[1].data.sval);
     if (!resolved) error(current_eval_line, "Memoria insuficiente al resolver la ruta de destino");
 
     jmp_buf saved_env;
