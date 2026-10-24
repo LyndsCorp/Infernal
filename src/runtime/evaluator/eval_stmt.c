@@ -936,13 +936,25 @@ void exec_stmt(ASTNode *stmt) {
         }
 
         case NODE_SWITCH: {
-            Value selector = eval_expr(stmt->data.switch_stmt.expr);
+            volatile Value selector = val_make_null();
+            jmp_buf sw_saved_env;
+            memcpy(&sw_saved_env, &exception_env, sizeof(jmp_buf));
+            int sw_saved_raised = exception_raised;
+            if (setjmp(exception_env) != 0) {
+                Value sw_tmp = selector;
+                value_free(&sw_tmp);
+                memcpy(&exception_env, &sw_saved_env, sizeof(jmp_buf));
+                exception_raised = sw_saved_raised;
+                longjmp(exception_env, 1);
+            }
+            selector = eval_expr(stmt->data.switch_stmt.expr);
 
             int start_idx = -1;
             for (int i = 0; i < stmt->data.switch_stmt.case_count; i++) {
                 SwitchCase *swcase = &stmt->data.switch_stmt.cases[i];
                 Value case_value = eval_expr(swcase->value);
-                bool equal = switch_values_equal(selector, case_value);
+                Value sel_copy = selector;
+                bool equal = switch_values_equal(sel_copy, case_value);
                 value_free(&case_value);
                 if (equal) {
                     start_idx = i;
@@ -963,7 +975,12 @@ void exec_stmt(ASTNode *stmt) {
                         break;
                     }
                     if (control_flow == CF_RETURN || control_flow == CF_REPEAT_LINE) {
-                        value_free(&selector);
+                        {
+                            Value sw_tmp = selector;
+                            value_free(&sw_tmp);
+                        }
+                        memcpy(&exception_env, &sw_saved_env, sizeof(jmp_buf));
+                        exception_raised = sw_saved_raised;
                         return;
                     }
                 }
@@ -974,7 +991,12 @@ void exec_stmt(ASTNode *stmt) {
                         control_flow = CF_NONE;
                     }
                     if (control_flow == CF_RETURN || control_flow == CF_REPEAT_LINE) {
-                        value_free(&selector);
+                        {
+                            Value sw_tmp = selector;
+                            value_free(&sw_tmp);
+                        }
+                        memcpy(&exception_env, &sw_saved_env, sizeof(jmp_buf));
+                        exception_raised = sw_saved_raised;
                         return;
                     }
                 }
@@ -984,12 +1006,22 @@ void exec_stmt(ASTNode *stmt) {
                     control_flow = CF_NONE;
                 }
                 if (control_flow == CF_RETURN || control_flow == CF_REPEAT_LINE) {
-                    value_free(&selector);
+                    {
+                        Value sw_tmp = selector;
+                        value_free(&sw_tmp);
+                    }
+                    memcpy(&exception_env, &sw_saved_env, sizeof(jmp_buf));
+                    exception_raised = sw_saved_raised;
                     return;
                 }
             }
 
-            value_free(&selector);
+            {
+                Value sw_tmp = selector;
+                value_free(&sw_tmp);
+            }
+            memcpy(&exception_env, &sw_saved_env, sizeof(jmp_buf));
+            exception_raised = sw_saved_raised;
             break;
         }
 
