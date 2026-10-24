@@ -437,7 +437,7 @@ void tokenize_file(FILE *fp) {
                 char *start = p;
                 bool path_prefix = (*start == '.' || *start == '~');
                 while (isalnum((unsigned char)*p) || *p == '_' || *p == '.' ||
-                       *p == '~' || (unsigned char)*p >= 0x80 ||
+                       *p == '~' || *p == '&' || (unsigned char)*p >= 0x80 ||
                        (path_prefix && *p == '/') ||
                        (*p == '-' && *(p + 1) != '-')) {
                     p++;
