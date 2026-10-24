@@ -881,8 +881,15 @@ static ASTNode *parse_expr() {
             bool is_slice = false;
             if (look < ts.count) {
                 TokenType inner = ts.tokens[look].type;
-                if (inner == TOK_STAR || inner == TOK_NUMBER || inner == TOK_POW) {
+                if (inner == TOK_STAR || inner == TOK_POW) {
+                    /* [*] , [*5] , [**] , [**5] , [5*] ya se manejan aparte,
+                     * pero aquí solo estamos detectando el prefijo. */
                     is_slice = true;
+                } else if (inner == TOK_NUMBER && look + 1 < ts.count) {
+                    TokenType after = ts.tokens[look + 1].type;
+                    if (after == TOK_COLON || after == TOK_STAR || after == TOK_POW) {
+                        is_slice = true;
+                    }
                 }
             }
 
