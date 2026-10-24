@@ -272,7 +272,9 @@ static char *extract_map_key(ASTNode *node) {
  * ==================================================================== */
 
 Value eval_binop(ASTNode *expr) {
-    const char *op_name = "?";
+    /* 'volatile' porque op_name sobrevive a los setjmp de este función
+     * (usados para limpiar si un error en eval_expr lanza longjmp). */
+    const char * volatile op_name = "?";
     switch (expr->data.binop.op) {
         case TOK_PLUS:  op_name = "+"; break;
         case TOK_MINUS: op_name = "-"; break;
