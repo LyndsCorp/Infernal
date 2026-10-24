@@ -19,6 +19,10 @@
 #include <string.h>
 #include <stdio.h>
 #include <setjmp.h>
+#include <errno.h>
+#include <limits.h>
+#include <math.h>
+#include <strings.h>
 
 static char *clean_flag_value(const char *val_str) {
     if (!val_str) return strdup("");
@@ -103,10 +107,53 @@ static void bind_flag_value(FlagSpec *spec, const char *val_str, int line) {
     }
     Value v;
     switch (spec->vtype) {
-        case TOK_INT:    v = val_int(atoi(cleaned)); break;
-        case TOK_FLOAT:  v = val_float(atof(cleaned)); break;
-        case TOK_BOOL:   v = val_bool(strcmp(cleaned, "0") != 0 &&
-                                      strlen(cleaned) > 0); break;
+        case TOK_INT: {
+            char *end = NULL;
+            errno = 0;
+            long n = strtol(cleaned, &end, 10);
+            if (errno != 0 || end == cleaned || *end != '\0' ||
+                n < INT_MIN || n > INT_MAX) {
+                char bad[256];
+                snprintf(bad, sizeof(bad), "%.200s", cleaned);
+                free(cleaned);
+                error(line, "El flag '%s' espera un int, se recibió \"%s\"",
+                      spec->var_name, bad);
+            }
+            v = val_int((int)n);
+            break;
+        }
+        case TOK_FLOAT: {
+            char *end = NULL;
+            errno = 0;
+            double f = strtod(cleaned, &end);
+            if (errno != 0 || end == cleaned || *end != '\0' || !isfinite(f)) {
+                char bad[256];
+                snprintf(bad, sizeof(bad), "%.200s", cleaned);
+                free(cleaned);
+                error(line, "El flag '%s' espera un float, se recibió \"%s\"",
+                      spec->var_name, bad);
+            }
+            v = val_float(f);
+            break;
+        }
+        case TOK_BOOL: {
+            bool b;
+            if (strcasecmp(cleaned, "true") == 0 ||
+                strcmp(cleaned, "1") == 0) {
+                b = true;
+            } else if (strcasecmp(cleaned, "false") == 0 ||
+                       strcmp(cleaned, "0") == 0) {
+                b = false;
+            } else {
+                char bad[256];
+                snprintf(bad, sizeof(bad), "%.200s", cleaned);
+                free(cleaned);
+                error(line, "El flag '%s' espera un bool (true/false/1/0), se recibió \"%s\"",
+                      spec->var_name, bad);
+            }
+            v = val_bool(b);
+            break;
+        }
         case TOK_STRING: v = val_string(cleaned); break;
         default:         v = val_string(cleaned);
     }
