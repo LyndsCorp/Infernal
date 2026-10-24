@@ -326,16 +326,25 @@ static int find_switch_boundary(int start_pos) {
     for (int i = start_pos; i < ts.count; i++) {
         TokenType type = ts.tokens[i].type;
         if (type == TOK_IF || type == TOK_WHILE || type == TOK_FOR ||
-            type == TOK_FUNCTION || type == TOK_TRY || type == TOK_SWITCH) {
+            type == TOK_FUNCTION || type == TOK_TRY || type == TOK_SWITCH ||
+            type == TOK_LBRACE) {
             depth++;
-        continue;
-            }
-            if (type == TOK_FI) {
-                if (depth == 0) return i;
-                depth--;
-                continue;
-            }
-            if (depth == 0 && (type == TOK_CASE || type == TOK_DEFAULT)) return i;
+            continue;
+        }
+        if (type == TOK_FI) {
+            if (depth == 0) return i;
+            depth--;
+            continue;
+        }
+        if (type == TOK_RBRACE) {
+            /* Un '}' a profundidad 0 antes de 'fi' significa que el
+             * switch está mal cerrado: dejamos que el llamador
+             * emita el error correspondiente. */
+            if (depth == 0) return -1;
+            depth--;
+            continue;
+        }
+        if (depth == 0 && (type == TOK_CASE || type == TOK_DEFAULT)) return i;
     }
     return -1;
 }
