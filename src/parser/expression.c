@@ -10,6 +10,7 @@
 #include <string.h>
 #include <errno.h>
 #include <limits.h>
+#include <math.h>
 #include "expression.h"
 #include "core/ast.h"
 #include "lexer/lexer.h"
@@ -453,7 +454,16 @@ ASTNode *parse_primary() {
         ASTNode *n = node_create(NODE_LITERAL, t.line);
         if (strchr(t.lexeme, '.') || strchr(t.lexeme, 'e') || strchr(t.lexeme, 'E')) {
             n->data.lit.type = TOK_FLOAT;
-            n->data.lit.fval = atof(t.lexeme);
+            char *end = NULL;
+            errno = 0;
+            double fv = strtod(t.lexeme, &end);
+            if (errno == ERANGE || end == t.lexeme || *end != '\0' ||
+                !isfinite(fv)) {
+                error(t.line,
+                      "Número flotante fuera de rango o no finito: %s",
+                      t.lexeme);
+            }
+            n->data.lit.fval = fv;
         } else {
             n->data.lit.type = TOK_INT;
             n->data.lit.ival = parse_int_literal(t.lexeme, t.line, "literal entero");
