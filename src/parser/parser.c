@@ -388,9 +388,21 @@ static ASTNode *parse_switch_statement(void) {
 
             TokenType saved_type = ts.tokens[boundary].type;
             ts.tokens[boundary].type = TOK_EOF;
-            NodeList body = parse_block(NULL);
+            jmp_buf sw_saved_env;
+            memcpy(&sw_saved_env, &exception_env, sizeof(jmp_buf));
+            int sw_saved_raised = exception_raised;
+            NodeList body = {NULL, 0, 0};
+            if (setjmp(exception_env) != 0) {
+                ts.tokens[boundary].type = saved_type;
+                memcpy(&exception_env, &sw_saved_env, sizeof(jmp_buf));
+                exception_raised = sw_saved_raised;
+                longjmp(exception_env, 1);
+            }
+            body = parse_block(NULL);
             ts.tokens[boundary].type = saved_type;
             ts.pos = boundary;
+            memcpy(&exception_env, &sw_saved_env, sizeof(jmp_buf));
+            exception_raised = sw_saved_raised;
 
             int n = stmt->data.switch_stmt.case_count;
             SwitchCase *tmp = infernal_realloc(stmt->data.switch_stmt.cases, (size_t)(n + 1) * sizeof(*tmp));
@@ -414,9 +426,21 @@ static ASTNode *parse_switch_statement(void) {
 
             TokenType saved_type = ts.tokens[boundary].type;
             ts.tokens[boundary].type = TOK_EOF;
-            NodeList body = parse_block(NULL);
+            jmp_buf sw_saved_env;
+            memcpy(&sw_saved_env, &exception_env, sizeof(jmp_buf));
+            int sw_saved_raised = exception_raised;
+            NodeList body = {NULL, 0, 0};
+            if (setjmp(exception_env) != 0) {
+                ts.tokens[boundary].type = saved_type;
+                memcpy(&exception_env, &sw_saved_env, sizeof(jmp_buf));
+                exception_raised = sw_saved_raised;
+                longjmp(exception_env, 1);
+            }
+            body = parse_block(NULL);
             ts.tokens[boundary].type = saved_type;
             ts.pos = boundary;
+            memcpy(&exception_env, &sw_saved_env, sizeof(jmp_buf));
+            exception_raised = sw_saved_raised;
 
             if (!validate_switch_body(&body)) {
                 nodelist_free(&body);
