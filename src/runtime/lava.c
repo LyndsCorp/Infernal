@@ -44,6 +44,10 @@
 #include <errno.h>
 #include <fcntl.h>
 
+#if defined(__linux__)
+#  include <sys/syscall.h>
+#endif
+
 #if defined(__linux__) && defined(SYS_memfd_create)
 #  ifndef MFD_CLOEXEC
 #    define MFD_CLOEXEC 0x0001U
