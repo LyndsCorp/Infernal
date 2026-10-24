@@ -77,6 +77,7 @@ void exec_flag_spec_impl(FlagSpec *spec) {
 
     NodeList flag_body = parse_block(NULL);
     exec_block(&flag_body);
+    nodelist_free(&flag_body);
 
     /* Camino normal: recuperar la propiedad. */
     spec->body_tokens = saved_body_tokens;
