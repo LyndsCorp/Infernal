@@ -81,8 +81,27 @@ void exec_flag_spec_impl(FlagSpec *spec) {
     }
 
     NodeList flag_body = parse_block(NULL);
+
+    /* Si exec_block() lanza un error via longjmp, liberamos el cuerpo
+     * parcial antes de re-lanzar. Sin esto, cada ejecución fallida del
+     * cuerpo de un flag deja sus nodos AST huérfanos hasta el final del
+     * proceso (importante cuando el error lo captura un try/catch). */
+    jmp_buf exec_env;
+    memcpy(&exec_env, &exception_env, sizeof(jmp_buf));
+    int exec_raised = exception_raised;
+    if (setjmp(exception_env) != 0) {
+        nodelist_free(&flag_body);
+        spec->body_tokens = saved_body_tokens;
+        spec->body_count = saved_body_count;
+        ts = saved_ts;
+        memcpy(&exception_env, &exec_env, sizeof(jmp_buf));
+        exception_raised = exec_raised;
+        longjmp(exception_env, 1);
+    }
     exec_block(&flag_body);
     nodelist_free(&flag_body);
+    memcpy(&exception_env, &exec_env, sizeof(jmp_buf));
+    exception_raised = exec_raised;
 
     /* Camino normal: recuperar la propiedad. */
     spec->body_tokens = saved_body_tokens;
