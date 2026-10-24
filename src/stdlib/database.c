@@ -812,13 +812,9 @@ static char *serialize_value_binary(Value v, size_t *out_len) {
      * el compilador mantiene la variable en un registro. */
     ByteBuffer *buf = malloc(sizeof(ByteBuffer));
     if (!buf) error(current_eval_line, "Memoria insuficiente");
-    buf->cap = 1024;
-    buf->data = malloc(buf->cap);
-    if (!buf->data) {
-        free(buf);
-        error(current_eval_line, "Memoria insuficiente");
-    }
+    buf->data = NULL;
     buf->len = 0;
+    buf->cap = 0;
 
     jmp_buf saved_env;
     memcpy(&saved_env, &exception_env, sizeof(jmp_buf));
@@ -831,6 +827,7 @@ static char *serialize_value_binary(Value v, size_t *out_len) {
         longjmp(exception_env, 1);
     }
 
+    buf_init(buf);
     serialize_value_binary_rec(buf, v, 0);
     *out_len = buf->len;
     char *result = (char*)buf->data;
