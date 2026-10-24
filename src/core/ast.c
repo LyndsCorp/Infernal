@@ -259,8 +259,14 @@ static void free_flag_spec(FlagSpec *spec) {
     free(spec->var_name);
     spec->var_name = NULL;
 
-    free(spec->body_tokens);
-    spec->body_tokens = NULL;
+    if (spec->body_tokens) {
+        for (int i = 0; i < spec->body_count; i++) {
+            free(spec->body_tokens[i].lexeme);
+            spec->body_tokens[i].lexeme = NULL;
+        }
+        free(spec->body_tokens);
+        spec->body_tokens = NULL;
+    }
     spec->body_count = 0;
 }
 

@@ -113,6 +113,7 @@ void parse_flag_body_tokens(Token **body_tokens, int *body_count, int already_co
             cap = cap == 0 ? 64 : cap * 2;
             *body_tokens = infernal_realloc(*body_tokens, cap * sizeof(Token));
         }
+        t.lexeme = infernal_strdup(t.lexeme ? t.lexeme : "");
         (*body_tokens)[(*body_count)++] = t;
     }
     if (depth != 0) {
