@@ -1266,8 +1266,8 @@ NodeList parse_block(const char *terminator) {
         if (t.type == TOK_IMPORT) {
             ts_advance();
             Token nt = ts_peek();
-            char *module_name = NULL;
-            char *module_alias = NULL;
+            char * volatile module_name = NULL;
+            char * volatile module_alias = NULL;
             int use_embedded = 0;
             const unsigned char *emb_data = NULL;
             size_t emb_size = 0;
@@ -1336,8 +1336,8 @@ NodeList parse_block(const char *terminator) {
             }
 
             TokenStream old_ts = ts;
-            char **old_source_lines = source_lines;
-            int old_source_line_count = source_line_count;
+            char ** volatile old_source_lines = source_lines;
+            volatile int old_source_line_count = source_line_count;
 
             /* ============================================================
              * CASO A: ruta entre comillas → ruta directa.
