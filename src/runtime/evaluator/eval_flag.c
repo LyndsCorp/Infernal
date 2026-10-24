@@ -118,6 +118,22 @@ static void bind_flag_value(FlagSpec *spec, const char *val_str, int line) {
     }
 }
 
+/* Actualiza o crea la variable '_' en current_scope. Si ya existe, la
+ * reutiliza en vez de crear una entrada nueva; así no acumulamos entradas
+ * '_' duplicadas cuando catch_all se ejecuta varias veces (p. ej. en un
+ * bucle). */
+static void set_catch_all_var(const char *value) {
+    VarEntry *existing = scope_find_current(current_scope, "_");
+    if (existing) {
+        Value new_val = val_string(value);
+        value_free(&existing->value);
+        existing->value = new_val;
+        existing->vtype = TOK_STRING;
+    } else {
+        scope_define(current_scope, "_", 0, val_string(value));
+    }
+}
+
 /* --- Ejecutar un nodo flags completo (orquestador) ---
  *
  * Modelo unificado para todos los modos (0 y > 0):
@@ -238,7 +254,7 @@ void exec_flags(ASTNode *node) {
                     if (found) break;
                 }
                 if (!found && catch_all) {
-                    scope_define(current_scope, "_", 0, val_string(sn));
+                    set_catch_all_var(sn);
                     exec_flag_spec_impl(catch_all);
                 }
             }
@@ -273,7 +289,7 @@ void exec_flags(ASTNode *node) {
             }
 
             if (catch_all) {
-                scope_define(current_scope, "_", 0, val_string(arg));
+                set_catch_all_var(arg);
                 exec_flag_spec_impl(catch_all);
                 handled[a] = true;
                 continue;
@@ -288,7 +304,7 @@ void exec_flags(ASTNode *node) {
          * 4. Flag desconocido.
          * ────────────────────────────────────────────────────────── */
         if (catch_all) {
-            scope_define(current_scope, "_", 0, val_string(arg));
+            set_catch_all_var(arg);
             exec_flag_spec_impl(catch_all);
             handled[a] = true;
             continue;
