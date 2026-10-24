@@ -30,6 +30,8 @@ Value val_float(double x);
 Value val_bool(bool x);
 Value val_string(const char *s);
 Value val_list_empty(void);
+/* Toma posesión de `item` (no copia). El llamador NO debe liberar `item`
+ * después de esta llamada. */
 void  val_list_append(Value *list, Value item);
 Value val_list_copy(Value *src);
 int   valtype_to_tokentype(int vtype);
@@ -42,6 +44,8 @@ void  value_free(Value *value);
 /* --- Funciones para mapas ---------------------------------- */
 Value val_map_empty(void);
 Value val_map_typed(int value_type); /* compatibilidad: el argumento se ignora */
+/* Copia `value` internamente. El llamador CONSERVA la propiedad del
+ * original y debe liberarlo cuando ya no lo necesite. */
 void  val_map_set(Value *map, const char *key, Value value);
 void  val_map_set_typed(Value *map, const char *key, Value value, int value_type);
 Value val_map_get(Value map, const char *key);
