@@ -1099,22 +1099,24 @@ void exec_stmt(ASTNode *stmt) {
                 DEBUG_INFO("NODE_FOR: init_val por defecto del tipo %d", vtype);
             }
 
-            Scope * volatile for_scope;
-
-            if (is_global_for) {
-                for_scope = super_global_scope;
-                DEBUG_INFO("NODE_FOR: usando super_global_scope");
-            } else {
-                for_scope = scope_new(old_scope, NULL);
-                DEBUG_INFO("NODE_FOR: creado for_scope");
-            }
+            /* El scope del bucle se crea SIEMPRE como hijo de old_scope,
+             * para que la condición y el cuerpo puedan ver las variables
+             * locales del contexto que contiene al for. Si es 'for global',
+             * la variable del bucle se define además en super_global_scope
+             * (el incremento y el cuerpo la actualizan allí), pero el
+             * scope de evaluación sigue siendo hijo de old_scope. */
+            Scope * volatile for_scope = scope_new(old_scope, NULL);
+            Scope * volatile assign_scope = is_global_for ? super_global_scope : for_scope;
+            DEBUG_INFO("NODE_FOR: %s",
+                       is_global_for ? "variable en super_global_scope"
+                                     : "variable en for_scope");
 
             jmp_buf saved_env;
             memcpy(&saved_env, &exception_env, sizeof(jmp_buf));
             int saved_raised = exception_raised;
             if (setjmp(exception_env) != 0) {
                 current_scope = old_scope;
-                if (!is_global_for) scope_free(for_scope);
+                scope_free(for_scope);
                 memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
                 exception_raised = saved_raised;
                 longjmp(exception_env, 1);
@@ -1123,7 +1125,7 @@ void exec_stmt(ASTNode *stmt) {
             const char *var_name = stmt->data.for_stmt.var;
             int vtype = stmt->data.for_stmt.vtype;
 
-            VarEntry *existing = scope_find_current(for_scope, var_name);
+            VarEntry *existing = scope_find_current(assign_scope, var_name);
 
             if (existing) {
                 Value copied = copy_value_secure(init_val);
@@ -1137,11 +1139,10 @@ void exec_stmt(ASTNode *stmt) {
 
                 DEBUG_INFO("NODE_FOR: variable '%s' ya existía; actualizada", var_name);
             } else {
-                scope_define(for_scope, var_name, vtype, init_val);
-                DEBUG_INFO("NODE_FOR: variable '%s' definida en %s con valor %d",
+                scope_define(assign_scope, var_name, vtype, init_val);
+                DEBUG_INFO("NODE_FOR: variable '%s' definida en %s",
                            var_name,
-                           is_global_for ? "super_global_scope" : "for_scope",
-                           init_val.data.ival);
+                           is_global_for ? "super_global_scope" : "for_scope");
             }
 
             current_scope = for_scope;
@@ -1203,10 +1204,7 @@ void exec_stmt(ASTNode *stmt) {
                     control_flow == CF_RETURN) {
 
                     current_scope = old_scope;
-
-                    if (!is_global_for) {
-                        scope_free(for_scope);
-                    }
+                    scope_free(for_scope);
                     memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
                     exception_raised = saved_raised;
 
@@ -1220,10 +1218,7 @@ void exec_stmt(ASTNode *stmt) {
             }
 
             current_scope = old_scope;
-
-            if (!is_global_for) {
-                scope_free(for_scope);
-            }
+            scope_free(for_scope);
             memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
             exception_raised = saved_raised;
 
