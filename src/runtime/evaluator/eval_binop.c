@@ -343,6 +343,12 @@ Value eval_binop(ASTNode *expr) {
 
         if (idx != -1) {
             DEBUG_INFO("Índice extraído: %d", idx);
+            if (idx < 1 || idx > left.data.list.count) {
+                value_free(&left);
+                error(expr->line,
+                      "Índice fuera de rango: %d. La lista tiene %d elemento(s).",
+                      idx, left.data.list.count);
+            }
             Value new_list = val_list_empty();
             if (left.data.list.items == NULL && left.data.list.count > 0)
                 error(expr->line, "Lista corrupta al eliminar elemento");
@@ -571,6 +577,16 @@ Value eval_binop(ASTNode *expr) {
             error(expr->line,
                   "No se puede eliminar de un string con este tipo de especificación "
                   "(nodo: %d)", right_node->kind);
+        }
+
+        {
+            size_t total_sz = utf8_char_count(left.data.sval);
+            if (idx < 1 || (size_t)idx > total_sz) {
+                value_free(&left);
+                error(expr->line,
+                      "Índice fuera de rango: %d. El string tiene %zu carácter(es).",
+                      idx, total_sz);
+            }
         }
 
         char *new_str = utf8_remove_range(left.data.sval, idx, idx, expr->line);
