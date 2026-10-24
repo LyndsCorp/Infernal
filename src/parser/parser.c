@@ -133,9 +133,8 @@ static ASTNode *parse_typed_empty_collection(int vtype, int line) {
     if (ts_peek().type != TOK_LBRACKET ||
         ts.pos + 1 >= ts.count || ts.tokens[ts.pos + 1].type != TOK_RBRACKET) {
         return NULL;
-        }
-
-        if (vtype != TOK_LIST && vtype != TOK_MAP) return NULL;
+    }
+    if (vtype != TOK_LIST && vtype != TOK_MAP) return NULL;
 
         ts_advance();
     ts_advance();
