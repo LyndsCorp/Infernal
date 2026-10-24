@@ -1373,21 +1373,21 @@ static int lava_load_from_memory(const unsigned char *data, size_t len,
 
     /* Fallback portable: tempfile efímero desenlazado tras dlopen(). */
     char tmpl[] = "/tmp/infernal_lava_XXXXXX";
-    int fd = mkstemp(tmpl);
-    if (fd < 0) return 0;
+    int fallback_fd = mkstemp(tmpl);
+    if (fallback_fd < 0) return 0;
 
     size_t off = 0;
     while (off < len) {
-        ssize_t w = write(fd, data + off, len - off);
+        ssize_t w = write(fallback_fd, data + off, len - off);
         if (w < 0) {
             if (errno == EINTR) continue;
-            close(fd);
+            close(fallback_fd);
             unlink(tmpl);
             return 0;
         }
         off += (size_t)w;
     }
-    close(fd);
+    close(fallback_fd);
 
     int ok = lava_load_from_path(tmpl, prefix);
     /* El .so ya está mapeado en memoria; el archivo puede borrarse. */
