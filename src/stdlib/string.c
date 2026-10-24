@@ -37,7 +37,7 @@ static size_t utf8_decode_cp(const char *p, uint32_t *out_cp) {
 
     if ((u[0] & 0xE0) == 0xC0 && u[1] && (u[1] & 0xC0) == 0x80) {
         uint32_t cp = ((uint32_t)(u[0] & 0x1F) << 6) | (u[1] & 0x3F);
-        if (cp >= 0x80) { *out_cp = cp; return 2; }        /* overlong */
+        if (cp >= 0x80) { *out_cp = cp; return 2; }        /* válido */
     }
     else if ((u[0] & 0xF0) == 0xE0 && u[1] && u[2] &&
              (u[1] & 0xC0) == 0x80 && (u[2] & 0xC0) == 0x80) {
