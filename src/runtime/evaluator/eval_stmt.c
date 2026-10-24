@@ -920,22 +920,11 @@ void exec_stmt(ASTNode *stmt) {
             memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
             exception_raised = saved_raised;
 
-            bool truthy;
-            if (cond.type == VAL_VOID) {
-                /* Una función sin 'return' en la condición del if:
-                 * la condición se considera falsa y NO es un error. */
-                truthy = false;
-            } else if (cond.type != VAL_BOOL) {
-                const char *tname = value_type_name(cond.type);
-                value_free(&cond);
-                error(stmt->line,
-                      "La condición de un 'if' debe ser bool (true/false), "
-                      "pero se recibió un valor de tipo '%s'.\n"
-                      "   - Si quieres comparar un valor, usa una comparación explícita:  ==, !=, <, >, <=, >=.\n",
-                      tname);
-            } else {
-                truthy = cond.data.bval;
-            }
+            /* Unificamos el chequeo de condiciones con while y for:
+             * se acepta cualquier valor truthy (int != 0, string no vacío,
+             * lista/mapa no vacíos, bool). Un valor void (función sin
+             * return) se trata como falso, igual que en while/for. */
+            bool truthy = val_is_truthy(cond);
             value_free(&cond);
 
             if (truthy) {
