@@ -525,7 +525,13 @@ Value eval_binop(ASTNode *expr) {
 
         /* Rango/slice: texto -= [2:4], [*], [2*], etc. */
         if (right_node->kind == NODE_SLICE) {
-            int total = (int)utf8_char_count(left.data.sval);
+            size_t total_sz = utf8_char_count(left.data.sval);
+            if (total_sz > (size_t)INT_MAX) {
+                value_free(&left);
+                error(expr->line,
+                      "El string es demasiado largo para aplicar slices");
+            }
+            int total = (int)total_sz;
             int lo, hi;
             slice_to_remove_range(right_node, total, &lo, &hi);
             char *new_str = utf8_remove_range(left.data.sval, lo, hi, expr->line);
