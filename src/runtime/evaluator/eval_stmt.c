@@ -1362,7 +1362,7 @@ void exec_stmt(ASTNode *stmt) {
                             return;
                         }
                 }
-                value_free(&iterable);
+                value_free((Value *)&iterable);
                 break;
         }
 
