@@ -134,6 +134,19 @@ void scope_define(Scope *scope, const char *name, int vtype, Value val) {
             // Si falla la conversión, se mantiene el valor original
         }
     }
+    /* Evitar entradas duplicadas en el mismo scope: si ya existe una
+     * variable con el mismo nombre, actualizamos su valor y tipo en
+     * lugar de prepender una entrada nueva (que dejaría la anterior
+     * inalcanzable hasta scope_free). */
+    VarEntry *existing = scope_find_current(scope, name);
+    if (existing) {
+        value_free(&existing->value);
+        existing->value = val;
+        existing->vtype = vtype ? vtype : valtype_to_tokentype(val.type);
+        DEBUG_INFO("scope_define: '%s' actualizada en scope %p", name, (void*)scope);
+        return;
+    }
+
     VarEntry *e = infernal_malloc(sizeof(VarEntry));
     e->name = infernal_strdup(name);
     e->vtype = vtype ? vtype : valtype_to_tokentype(val.type);
