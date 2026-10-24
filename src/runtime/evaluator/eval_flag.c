@@ -9,6 +9,7 @@
 #include "evaluator.h"
 #include "helpers.h"
 #include "core/value.h"
+#include "core/ast.h"
 #include "runtime/scope.h"
 #include "runtime/globals.h"
 #include "runtime/error.h"
