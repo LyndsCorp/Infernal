@@ -1226,7 +1226,7 @@ void exec_stmt(ASTNode *stmt) {
         }
 
         case NODE_FOR_IN: {
-            Value iterable = eval_expr(stmt->data.for_in.list_expr);
+            Value volatile iterable = eval_expr(stmt->data.for_in.list_expr);
 
             /* Si la expresión devolvió una referencia (por ejemplo,
              * `for x in lista[1]`), la resolvemos antes de iterar. */
@@ -1236,7 +1236,7 @@ void exec_stmt(ASTNode *stmt) {
             if (iterable.type != VAL_LIST &&
                 iterable.type != VAL_STRING &&
                 iterable.type != VAL_MAP) {
-                value_free(&iterable);
+                value_free((Value *)&iterable);
             error(stmt->line, "Se esperaba una lista, string o mapa en for-in");
                 }
 
@@ -1281,7 +1281,7 @@ void exec_stmt(ASTNode *stmt) {
                     if (setjmp(exception_env) != 0) {
                         current_scope = old_scope;
                         scope_free((Scope *)iter_scope);
-                        value_free(&iterable);
+                        value_free((Value *)&iterable);
                         memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
                         exception_raised = saved_raised;
                         longjmp(exception_env, 1);
@@ -1358,7 +1358,7 @@ void exec_stmt(ASTNode *stmt) {
                         if (control_flow == CF_BREAK) { control_flow = CF_NONE; break; }
                         if (control_flow == CF_CONTINUE) { control_flow = CF_NONE; continue; }
                         if (control_flow == CF_REPEAT_LINE || control_flow == CF_RETURN) {
-                            value_free(&iterable);
+                            value_free((Value *)&iterable);
                             return;
                         }
                 }
