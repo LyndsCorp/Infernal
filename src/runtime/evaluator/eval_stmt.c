@@ -1284,7 +1284,6 @@ void exec_stmt(ASTNode *stmt) {
                     int saved_raised = exception_raised;
                     if (setjmp(exception_env) != 0) {
                         current_scope = old_scope;
-                        value_free((Value *)&item);
                         scope_free((Scope *)iter_scope);
                         value_free(&iterable);
                         memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
