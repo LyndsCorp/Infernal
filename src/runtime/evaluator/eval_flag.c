@@ -224,7 +224,7 @@ void exec_flags(ASTNode *node) {
     FlagSpec *specs = node->data.flags.specs;
     int spec_count = node->data.flags.spec_count;
 
-    bool *handled = calloc(script_argc > 0 ? (size_t)script_argc : 1, sizeof(bool));
+    bool *volatile handled = calloc(script_argc > 0 ? (size_t)script_argc : 1, sizeof(bool));
     if (!handled) error(node->line, "Memoria insuficiente al procesar flags");
 
     /* Error via longjmp dentro de un body: liberar `handled` antes de
