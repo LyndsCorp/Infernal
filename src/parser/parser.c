@@ -1494,7 +1494,11 @@ NodeList parse_block(const char *terminator) {
                     /* Error de sintaxis en el módulo: restauramos ts,
                      * source_lines y current_import_prefix antes de
                      * re-propagar, para no dejar el parser apuntando a
-                     * los tokens del módulo. */
+                     * los tokens del módulo. También liberamos los
+                     * buffers del import que aún no habían sido
+                     * transferidos al AST. */
+                    free((void *)module_name);
+                    free((void *)module_alias);
                     current_import_prefix = old_prefix;
                     if (ts.tokens) {
                         for (int i = 0; i < ts.count; i++) free(ts.tokens[i].lexeme);
