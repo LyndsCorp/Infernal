@@ -15,6 +15,7 @@
 #include <stdint.h>
 #include <unistd.h>
 #include <sys/stat.h>
+#include <fcntl.h>
 #include <errno.h>
 #include <limits.h>
 #include <math.h>
@@ -1016,6 +1017,30 @@ static void write_file_atomic(const char *path, const void *data, size_t len) {
         error(current_eval_line, "Error al renombrar archivo temporal");
     }
     free(tmp_path);
+
+    /* Garantizar que el rename quede persistido aunque el sistema sufra un
+     * crash justo después. Sin este fsync del directorio, algunos sistemas
+     * de archivos pueden no haber escrito la entrada del directorio en el
+     * momento del retorno. */
+    {
+        char *dir_path = strdup(path);
+        if (dir_path) {
+            char *slash = strrchr(dir_path, '/');
+            if (slash) {
+                if (slash == dir_path) {
+                    dir_path[1] = '\0';   /* raíz: "/" */
+                } else {
+                    *slash = '\0';
+                }
+                int dfd = open(dir_path, O_DIRECTORY | O_RDONLY);
+                if (dfd >= 0) {
+                    (void)fsync(dfd);
+                    close(dfd);
+                }
+            }
+            free(dir_path);
+        }
+    }
 }
 
 /* ============================================================
