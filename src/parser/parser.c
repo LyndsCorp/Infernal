@@ -1153,8 +1153,19 @@ NodeList parse_block(const char *terminator) {
             stmt->data.func.body = (NodeList){NULL, 0, 0};
             nodelist_add(&block, stmt);
 
-            if (func_lookup(stmt->data.func.name) != NULL)
-                error(t.line, "'%s' es una función interna y no puede ser redefinida.", stmt->data.func.name);
+            /* El nombre efectivo lleva el prefijo del módulo si estamos
+             * dentro de un import. La comprobación de redefinición debe
+             * usar exactamente el nombre con el que luego se registra. */
+            char effective_name[512];
+            if (current_import_prefix) {
+                snprintf(effective_name, sizeof(effective_name), "%s.%s",
+                         current_import_prefix, stmt->data.func.name);
+            } else {
+                snprintf(effective_name, sizeof(effective_name), "%s",
+                         stmt->data.func.name);
+            }
+            if (func_lookup(effective_name) != NULL)
+                error(t.line, "Ya existe una función '%s' y no puede ser redefinida.", effective_name);
 
             if (!ts_match(TOK_LPAREN)) {
                 error_at(ts_peek().line, ts_peek().start_col > 0 ? ts_peek().start_col : 1,
@@ -1200,16 +1211,7 @@ NodeList parse_block(const char *terminator) {
             if (!ts_match(TOK_FI)) error(t.line, "Se esperaba 'fi'");
             fi_block_nesting--;
 
-            if (current_import_prefix) {
-                /* Dentro de un import: solo nombre prefijado. */
-                char prefixed[512];
-                snprintf(prefixed, sizeof(prefixed), "%s.%s",
-                         current_import_prefix, stmt->data.func.name);
-                func_register(prefixed, stmt);
-            } else {
-                /* Script principal (o futuro 'source'): nombre desnudo. */
-                func_register(stmt->data.func.name, stmt);
-            }
+            func_register(effective_name, stmt);
 
             DEBUG_INFO("parse_block: añadido NODE_FUNC_DEF en línea %d", stmt->line);
             ts_skip_newlines();
