@@ -98,6 +98,12 @@ Value eval_index(ASTNode *expr) {
         base = resolve_reference(base, line);
 
     Value idx = eval_expr(expr->data.idx.index);
+    /* Un índice que venga de otra indexación (p. ej. a[b[c]]) llega como
+     * VAL_REFERENCE. Igual que hacemos con `base`, lo resolvemos antes de
+     * usarlo. Sin esto, a[b[c]] falla diciendo que el índice no es int
+     * aunque b[c] sí lo sea. */
+    if (idx.type == VAL_REFERENCE)
+        idx = resolve_reference(idx, line);
     Value result = val_make_null();
 
     switch (base.type) {
