@@ -490,18 +490,19 @@ void exec_stmt(ASTNode *stmt) {
                     expanded_cmd[expanded_cmd_len - 1] == '!');
 
                     char *cmd_with_redir = NULL;
+                    int asprintf_ret = 0;
                     if (is_embedded) {
                         cmd_with_redir = strdup(expanded_cmd);
                     } else {
                         if (effective_vtype == TOK_BOOL) {
-                            asprintf(&cmd_with_redir, "%s 2>/dev/null", expanded_cmd);
+                            asprintf_ret = asprintf(&cmd_with_redir, "%s 2>/dev/null", expanded_cmd);
                         } else {
-                            asprintf(&cmd_with_redir, "%s 2>&1", expanded_cmd);
+                            asprintf_ret = asprintf(&cmd_with_redir, "%s 2>&1", expanded_cmd);
                         }
                     }
                     free(expanded_cmd);
 
-                    if (!cmd_with_redir) {
+                    if (asprintf_ret < 0 || !cmd_with_redir) {
                         error(stmt->line, "Memoria insuficiente para redirigir comando");
                     }
 
