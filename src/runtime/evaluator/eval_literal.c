@@ -139,8 +139,12 @@ Value eval_map(ASTNode *expr) {
         }
 
         val_map_set_typed(map, key, val, declared_type);
-        scope_define(map_scope, key, declared_type, copy_value_secure(val));
+        /* Copiamos para el scope y liberamos el original ANTES de
+         * scope_define. Si scope_define lanza error (nombre reservado),
+         * libera su copia internamente; si no, val ya no es nuestra. */
+        Value copied = copy_value_secure(val);
         value_free(&val);
+        scope_define(map_scope, key, declared_type, copied);
     }
 
     Value result = *map;
