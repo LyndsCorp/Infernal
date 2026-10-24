@@ -157,6 +157,13 @@ ASTNode *parse_flags() {
     while (!ts_match(TOK_RPAREN)) {
         ts_skip_newlines();
 
+        /* Saltamos comas repetidas: `flags (0, , a)` o `flags (0,, a)`. */
+        while (ts_peek().type == TOK_COMMA) {
+            ts_advance();
+            ts_skip_newlines();
+        }
+        if (ts_peek().type == TOK_RPAREN) break;  /* comas colgando al final */
+
         // Saltar comentarios (tokens que empiezan con '#')
         while (ts.pos < ts.count && ts_peek().type == TOK_IDENT && ts_peek().lexeme[0] == '#') {
             ts_advance();
