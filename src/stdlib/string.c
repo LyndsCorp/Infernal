@@ -140,7 +140,7 @@ static CharSegment* utf8_to_segments(const char *s, int *count) {
         if (n >= cap) {
             /* Chequeo de overflow: nos aseguramos de que
              * cap*2*sizeof(CharSegment) no desborde size_t. */
-            if (cap > SIZE_MAX / 2 / sizeof(CharSegment)) {
+            if ((size_t)cap > SIZE_MAX / 2 / sizeof(CharSegment)) {
                 free(segs); return NULL;
             }
             cap *= 2;
