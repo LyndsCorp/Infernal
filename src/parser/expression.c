@@ -914,7 +914,10 @@ static ASTNode *parse_expr() {
                 n->data.binop.right = slice;
                 left = n;
                 DEBUG_INFO("parse_expr: creado NODE_BINOP con NODE_SLICE");
-                break;
+                /* Con 'continue' volvemos a evaluar la condición del
+                 * while, de modo que expresiones como `$lista - [2:4] + x`
+                 * encadenan correctamente. */
+                continue;
             }
             /* No es un slice: caemos al parseo normal y parse_term() se
              * encargará de construir un NODE_LIST con `[...]`. */
