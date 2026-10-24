@@ -13,6 +13,7 @@
 #include "keywords.h"
 #include "runtime/globals.h"
 #include "runtime/error.h"
+#include "core/memory.h"
 
 TokenStream ts;
 
@@ -128,10 +129,11 @@ void tokenize_file(FILE *fp) {
 
     while (getline(&line, &len, fp) != -1) {
         lineno++;
-        source_lines = realloc(source_lines, (source_line_count + 1) * sizeof(char*));
-        source_lines[source_line_count] = strdup(line);
-        if (source_lines[source_line_count][strlen(source_lines[source_line_count])-1] == '\n')
-            source_lines[source_line_count][strlen(source_lines[source_line_count])-1] = '\0';
+        source_lines = infernal_realloc(source_lines, (source_line_count + 1) * sizeof(char*));
+        source_lines[source_line_count] = infernal_strdup(line);
+        size_t line_len = strlen(source_lines[source_line_count]);
+        if (line_len > 0 && source_lines[source_line_count][line_len - 1] == '\n')
+            source_lines[source_line_count][line_len - 1] = '\0';
         source_line_count++;
 
         char *p = line;
