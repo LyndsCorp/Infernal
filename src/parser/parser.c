@@ -599,7 +599,7 @@ ASTNode *parse_assignment_expr(int line) {
     if (op == TOK_EQ) {
         Token next_token = ts_peek();
         DEBUG_INFO("parse_assignment_expr: valor siguiente '%s' (tipo %d)", next_token.lexeme, next_token.type);
-        if (next_token.type == TOK_IDENT && next_token.lexeme[0] != '$') {
+        if (next_token.type == TOK_IDENT && next_token.lexeme[0] != '$' && next_token.lexeme[0] != '?') {
             int save_pos = ts.pos;
             ts_advance();                 /* consumir el identificador */
             Token next_next = ts_peek();
@@ -1798,7 +1798,7 @@ NodeList parse_block(const char *terminator) {
                         Token next_token = ts_peek();
                         bool try_cmd = (lhs_index == NULL) &&
                         next_token.type == TOK_IDENT &&
-                        next_token.lexeme[0] != '$';
+                        next_token.lexeme[0] != '$' && next_token.lexeme[0] != '?';
                         if (try_cmd) {
                             int save_pos = ts.pos;
                             ts_advance();                 /* consumir el identificador */
@@ -1960,7 +1960,7 @@ NodeList parse_block(const char *terminator) {
                 Token next_token = ts_peek();
                 bool try_cmd = (lhs_index == NULL) &&
                 next_token.type == TOK_IDENT &&
-                next_token.lexeme[0] != '$';
+                next_token.lexeme[0] != '$' && next_token.lexeme[0] != '?';
                 if (try_cmd) {
                     int save_pos = ts.pos;
                     ts_advance();                 /* consumir el identificador */
