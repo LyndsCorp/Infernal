@@ -1521,6 +1521,7 @@ NodeList parse_block(const char *terminator) {
                 char *old_prefix = current_import_prefix;
                 current_import_prefix = module_alias ? module_alias : prefix_base;
 
+                volatile int saved_fi_nesting = fi_block_nesting;
                 jmp_buf block_saved_env;
                 memcpy(&block_saved_env, &exception_env, sizeof(jmp_buf));
                 int block_saved_raised = exception_raised;
@@ -1535,6 +1536,7 @@ NodeList parse_block(const char *terminator) {
                     free((void *)module_name);
                     free((void *)module_alias);
                     current_import_prefix = old_prefix;
+                    fi_block_nesting = saved_fi_nesting;
                     if (ts.tokens) {
                         for (int i = 0; i < ts.count; i++) free(ts.tokens[i].lexeme);
                         free(ts.tokens);
@@ -1551,6 +1553,7 @@ NodeList parse_block(const char *terminator) {
                     longjmp(exception_env, 1);
                 }
                 module_block = parse_block(NULL);
+                fi_block_nesting = saved_fi_nesting;
                 current_import_prefix = old_prefix;
                 memcpy(&exception_env, &block_saved_env, sizeof(jmp_buf));
                 exception_raised = block_saved_raised;
