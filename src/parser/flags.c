@@ -36,7 +36,10 @@ static void add_flag_name(FlagSpec *spec, const char *name, int line) {
     char **names = infernal_realloc(spec->names, (size_t)(spec->name_count + 1) * sizeof(char *));
     if (!names) error(line, "Memoria insuficiente al registrar flag");
     spec->names = names;
-    spec->names[spec->name_count++] = strdup(name);
+    /* strdup() puede devolver NULL sin abortar y dejaría un NULL en el array,
+     * que reventaría en el strcmp() del siguiente add_flag_name. infernal_strdup
+     * aborta con mensaje claro si no hay memoria. */
+    spec->names[spec->name_count++] = infernal_strdup(name);
 }
 
 static char *parse_flag_name(int line) {
