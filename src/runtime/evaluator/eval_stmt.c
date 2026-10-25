@@ -275,10 +275,11 @@ static void assign_nested_index(Value *var_value, ASTNode *lhs_index,
 
         if (container->type == VAL_MAP) {
             if (key.type != VAL_STRING) {
+                int key_type = key.type;
                 value_free(&key);
                 error(line,
-                      "La clave de %s[...] debe ser string (se recibió '%s').",
-                      name, value_type_name(key.type));
+                      "La clave de %s[...] debe ser string (se recibió \'%s\').",
+                      name, value_type_name(key_type));
             }
             if (is_last) {
                 val_map_set(container, key.data.sval, new_val);
@@ -302,11 +303,27 @@ static void assign_nested_index(Value *var_value, ASTNode *lhs_index,
             }
         } else if (container->type == VAL_LIST) {
             if (key.type != VAL_INT && key.type != VAL_FLOAT) {
+                if (key.type == VAL_STRING) {
+                    char msg_buf[1024];
+                    snprintf(msg_buf, sizeof(msg_buf),
+                        "No se puede hacer %s[%s] = ...: el índice debe ser int "
+                        "(se recibió \'string\').\n"
+                        "    Un list usa índices numéricos enteros (1, 2, 3...), "
+                        "no claves de texto.\n"
+                        "    Si querías usar claves de texto, declara la variable como \'map\' "
+                        "en lugar de \'list\':\n"
+                        "        map %s = []\n"
+                        "    Un map usa claves de texto (p. ej. %s[\"clave\"] = valor).",
+                        name, key.data.sval ? key.data.sval : "", name, name);
+                    value_free(&key);
+                    error(line, "%s", msg_buf);
+                }
+                int key_type = key.type;
                 value_free(&key);
                 error(line,
-                      "No se puede hacer %s[%s] = ...: el índice debe ser int (se recibió '%s').",
-                      name, key.type == VAL_STRING ? key.data.sval : "?",
-                      value_type_name(key.type));
+                      "No se puede hacer %s[?] = ...: el índice debe ser int "
+                      "(se recibió \'%s\').",
+                      name, value_type_name(key_type));
             }
             if (key.type == VAL_FLOAT) {
                 double f = key.data.fval;
@@ -360,17 +377,20 @@ static void assign_nested_index(Value *var_value, ASTNode *lhs_index,
                       name);
             }
             if (key.type != VAL_INT) {
+                int key_type = key.type;
                 value_free(&key);
                 error(line,
-                      "No se puede hacer %s[?] = ...: el índice del string '%s' debe ser int.",
-                      name, name);
+                      "No se puede hacer %s[?] = ...: el índice del string \'%s\' debe ser int "
+                      "(se recibió \'%s\').",
+                      name, name, value_type_name(key_type));
             }
             if (new_val.type != VAL_STRING ||
                 utf8_char_count_stmt(new_val.data.sval) != 1) {
+                int idx_val = key.data.ival;
                 value_free(&key);
-            error(line,
-                  "No se puede hacer %s[%d] = ...: solo se admite 1 carácter.",
-                  name, key.data.ival);
+                error(line,
+                      "No se puede hacer %s[%d] = ...: solo se admite 1 carácter.",
+                      name, idx_val);
                 }
                 int k = key.data.ival;
                 char *new_str = utf8_replace_char(container->data.sval, k,
