@@ -442,6 +442,14 @@ Value eval_binop(ASTNode *expr) {
         if (right.type == VAL_REFERENCE)
             right = resolve_reference(right, expr->line);
 
+        if (right.type == VAL_VOID) {
+            value_free(&right);
+            value_free(&left);
+            error(expr->line,
+                  "El operando derecho de '+' no tiene valor (void): "
+                  "una función o expresión no devolvió nada.");
+        }
+
         Value new_list = val_list_empty();
         for (int i = 0; i < left.data.list.count; i++) {
             val_list_append(&new_list, copy_value_secure(left.data.list.items[i]));
