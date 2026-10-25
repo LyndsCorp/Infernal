@@ -1339,6 +1339,8 @@ NodeList parse_block(const char *terminator) {
                 }
                 module_alias = strdup(ts_advance().lexeme);
                 if (!valid_module_alias(module_alias)) {
+                    free(module_name);
+                    free(module_alias);
                     error(t.line,
                           "Alias de módulo inválido: '%s'.\n"
                           "    Un alias debe ser un identificador simple: empieza por letra o '_'\n"
