@@ -1105,16 +1105,21 @@ static Value lava_dispatch(int slot, int argc, Value *args) {
 
     void  * volatile storage = NULL;
     void ** volatile values  = NULL;
-    LavaCtx ctx;
-    memset(&ctx, 0, sizeof(ctx));
+    /* ctx en el heap: un local en la pila modificado entre setjmp y
+     * longjmp queda con valor indeterminado al volver de setjmp. El
+     * heap no se ve afectado por longjmp, así que ahí está seguro. */
+    LavaCtx *ctx = malloc(sizeof(*ctx));
+    if (!ctx) error(0, "Lava: memoria insuficiente al preparar la llamada");
+    memset(ctx, 0, sizeof(*ctx));
     LavaCtx *saved_ctx = g_ctx;
     const char *err_msg = NULL;
     char err_buf[512];
 
     if (setjmp(exception_env) != 0) {
-        lava_ctx_free_temp_strings(&ctx);
+        lava_ctx_free_temp_strings(ctx);
         free((void *)values);
         free((void *)storage);
+        free(ctx);
         g_ctx = saved_ctx;
         memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
         exception_raised = saved_raised;
@@ -1193,24 +1198,24 @@ static Value lava_dispatch(int slot, int argc, Value *args) {
 
     Value result = val_make_null();
     if (!err_msg) {
-        ctx.argc = argc;
-        ctx.args = args;
-        g_ctx = &ctx;
+        ctx->argc = argc;
+        ctx->args = args;
+        g_ctx = ctx;
 
         ffi_call(&e->cif, (void (*)(void))e->target_fn, NULL, values);
 
         g_ctx = saved_ctx;
 
-        if (!ctx.type_set) {
+        if (!ctx->type_set) {
             snprintf(err_buf, sizeof(err_buf),
                      "Lava: '%s' no llamó a infernal_return_type(), "
                      "infernal_return_list(), infernal_return_map() "
                      "ni infernal_return_value_raw()", e->name);
             err_msg = err_buf;
-        } else if (ctx.value_set) {
-            result = ctx.value;
+        } else if (ctx->value_set) {
+            result = ctx->value;
         } else {
-            switch (ctx.type) {
+            switch (ctx->type) {
                 case TOK_INT:    result = val_int(0);         break;
                 case TOK_FLOAT:  result = val_float(0.0);     break;
                 case TOK_BOOL:   result = val_bool(false);    break;
@@ -1222,9 +1227,10 @@ static Value lava_dispatch(int slot, int argc, Value *args) {
         }
     }
 
-    lava_ctx_free_temp_strings(&ctx);
+    lava_ctx_free_temp_strings(ctx);
     free((void *)values);
     free((void *)storage);
+    free(ctx);
 
     memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
     exception_raised = saved_raised;
