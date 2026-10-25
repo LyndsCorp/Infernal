@@ -1398,6 +1398,7 @@ NodeList parse_block(const char *terminator) {
             char ** volatile old_source_lines = source_lines;
             volatile int old_source_line_count = source_line_count;
             char * volatile old_source_file = current_source_file;
+            (void)old_source_file;
 
             /* ============================================================
              * CASO A: ruta entre comillas → ruta directa.
