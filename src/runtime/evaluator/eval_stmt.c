@@ -263,6 +263,11 @@ static void assign_nested_index(Value *var_value, ASTNode *lhs_index,
     }
 
     const char *name = var_name ? var_name : "(sin nombre)";
+    if (cur && cur->kind == NODE_INDEX) {
+        error(line,
+              "La ruta de índice '%s[...]' es demasiado profunda "
+              "(máximo 64 niveles)", name);
+    }
     Value *container = var_value;
 
     for (int i = depth - 1; i >= 0; i--) {
