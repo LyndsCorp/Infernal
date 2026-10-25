@@ -26,6 +26,7 @@
 #include "runtime/scope.h"
 #include "runtime/globals.h"
 #include "runtime/error.h"
+#include "runtime/evaluator/helpers.h"
 #include "embedded/embedded.h"
 #include "developer/debug.h"
 #include "runtime/constants.h"
@@ -178,6 +179,14 @@ char *expand_command(const char *cmd) {
 
             char *val = get_var_string(name);
             if (!val) {
+                VarEntry *existing = scope_find(current_scope, name);
+                if (existing) {
+                    free(result);
+                    error(current_eval_line,
+                          "La variable '%s' es de tipo '%s' y no se puede expandir en un comando shell.\n"
+                          "    Conviértela primero a string: \"\" + $%s",
+                          name, value_type_name(existing->value.type), name);
+                }
                 free(result);
                 error(current_eval_line,
                       "Variable '%s' no definida. "
