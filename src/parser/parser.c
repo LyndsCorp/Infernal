@@ -84,10 +84,17 @@ static char *clean_var_name(const char *raw) {
     return strdup(raw);
 }
 
-static void validate_var_name(const char *name, int line) {
+/* Valida `name` y, si es inválido, lo libera antes de lanzar el error.
+ * El nombre se crea con clean_var_name()/strdup() y se cede aquí;
+ * en el camino válido el llamador sigue siendo el dueño. */
+static void validate_var_name(char *name, int line) {
     const char invalid[] = "@[](){}.?&";
     for (const char *p = name; *p; p++)
-        if (strchr(invalid, *p)) error(line, "Carácter inválido '%c' en nombre de variable", *p);
+        if (strchr(invalid, *p)) {
+            char bad = *p;
+            free(name);
+            error(line, "Carácter inválido '%c' en nombre de variable", bad);
+        }
 }
 
 static bool is_block_closer(TokenType type) {
