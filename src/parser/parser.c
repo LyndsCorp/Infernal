@@ -914,7 +914,7 @@ NodeList parse_block(const char *terminator) {
 
             TokenType tt = ts_peek().type;
             if (tt == TOK_INT || tt == TOK_FLOAT || tt == TOK_BOOL ||
-                tt == TOK_STRING || tt == TOK_LIST) {
+                tt == TOK_STRING || tt == TOK_LIST || tt == TOK_MAP) {
                 vtype = ts_advance().type;
                 }
 
