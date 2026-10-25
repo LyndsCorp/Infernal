@@ -879,6 +879,15 @@ Value eval_binop(ASTNode *expr) {
         }
 
     if (expr->data.binop.op == TOK_POW) {
+        if (!value_is_numeric(left) || !value_is_numeric(right)) {
+            const char *lt = value_type_name(left.type);
+            const char *rt = value_type_name(right.type);
+            value_free(&left);
+            value_free(&right);
+            error(expr->line,
+                  "El operador '**' requiere operandos numéricos (int, float o bool); "
+                  "se recibió %s y %s", lt, rt);
+        }
         if (left.type == VAL_INT && right.type == VAL_INT && right.data.ival >= 0) {
             int result = checked_int_pow(left.data.ival, right.data.ival, expr->line);
             value_free(&left);
