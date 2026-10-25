@@ -499,10 +499,17 @@ static Value parse_map(TextParser *p, int depth) {
         skip_ws_and_comments(p);
         Value val = parse_value(p, depth + 1);
         if (map.data.map->count >= DB_MAX_ITEMS) {
+            value_free(&val);
             free(key);
             error(current_eval_line, "Demasiados pares en el mapa");
         }
         val_map_set(&map, key, val);
+        /* val_map_set() copia el Value internamente (copy_value_secure).
+         * El original devuelto por parse_value() NO está en el mapa: si no
+         * lo liberamos aquí, cada escalar dentro de un mapa de fromfile()
+         * se filtra. Fue la fuga de 46 bytes que reportó LeakSanitizer:
+         * dos "type" y dos "text" de los dos mapas del archivo de ejemplo. */
+        value_free(&val);
         free(key);
         skip_ws_and_comments(p);
         if (p->pos < p->len && p->input[p->pos] == ',') p->pos++;
@@ -935,6 +942,11 @@ static Value deserialize_value_binary(const unsigned char *buffer, size_t *offse
 
                 Value val = deserialize_value_binary(buffer, offset, total_len, depth + 1);
                 val_map_set(&map, key, val);
+                /* val_map_set() copia; liberar el original. Misma fuga que
+                 * parse_map(), aquí en la ruta de frombinfile(). Si `val`
+                 * es una lista o submapa, la fuga es proporcional a todo
+                 * el subárbol, no solo al escalar. */
+                value_free(&val);
                 free(key);
             }
             return map;
