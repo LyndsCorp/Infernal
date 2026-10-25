@@ -375,6 +375,15 @@ Value eval_binop(ASTNode *expr) {
         Value base = eval_expr(idx_node->data.idx.list);
         Value index_val = eval_expr(idx_node->data.idx.index);
 
+        if (base.type == VAL_VOID) {
+            value_free(&base);
+            value_free(&index_val);
+            value_free(&left);
+            error(expr->line,
+                  "El valor a insertar en la lista no tiene valor (void): "
+                  "una función o expresión no devolvió nada.");
+        }
+
         int pos = -1;
 
         if (index_val.type == VAL_INT) {
