@@ -910,6 +910,17 @@ Value eval_binop(ASTNode *expr) {
     }
 
     if (left.type == VAL_STRING || right.type == VAL_STRING) {
+        if (expr->data.binop.op != TOK_PLUS) {
+            const char *lt = value_type_name(left.type);
+            const char *rt = value_type_name(right.type);
+            value_free(&left);
+            value_free(&right);
+            error(expr->line,
+                  "El operador '%s' no se puede aplicar entre %s y %s.\n"
+                  "    Solo '+' concatena cuando hay un string; para el resto, "
+                  "convierte explícitamente ambos lados a número.",
+                  op_name, lt, rt);
+        }
         char lbuf[64], rbuf[64];
         const char *ls = left.type == VAL_STRING ? left.data.sval : lbuf;
         const char *rs = right.type == VAL_STRING ? right.data.sval : rbuf;
