@@ -1266,13 +1266,13 @@ void exec_stmt(ASTNode *stmt) {
 
                 /* Si el contenedor es una variable simple, guardamos su VarEntry
                  * para poder recalcular `i` como la posición viva del elemento. */
-                VarEntry * volatile live_var = NULL;
+                const char * volatile live_var_name = NULL;
                 if (stmt->data.for_in.list_expr &&
                     stmt->data.for_in.list_expr->kind == NODE_VAR) {
                     const char *vname = stmt->data.for_in.list_expr->data.var.name;
                 if (vname && (vname[0] == '$' || vname[0] == '?')) vname++;
                 if (vname && *vname)
-                    live_var = scope_find(current_scope, vname);
+                    live_var_name = vname;
                     }
 
                     volatile int count = 0;
@@ -1351,7 +1351,8 @@ void exec_stmt(ASTNode *stmt) {
                      * secuencia. --- */
                     int live_index = iter_idx + 1;  /* fallback: número de secuencia */
 
-                    VarEntry *lv = (VarEntry *)live_var;
+                    const char *lvname = (const char *)live_var_name;
+                    VarEntry *lv = lvname ? scope_find(current_scope, lvname) : NULL;
                     if (lv && lv->value.type == VAL_LIST &&
                         iterable.type == VAL_LIST) {
                         Value *live_items = lv->value.data.list.items;
