@@ -361,6 +361,7 @@ Value eval_binop(ASTNode *expr) {
             return new_list;
         }
 
+        value_free(&left);
         error(expr->line, "No se puede eliminar de la lista con este tipo de especificación (nodo: %d)", right_node->kind);
     }
 
