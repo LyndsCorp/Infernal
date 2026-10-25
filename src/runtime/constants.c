@@ -175,6 +175,12 @@ void constants_define(const char *name, Value value, int line) {
     if (entry) {
         /* Constante interna que el usuario redefine por primera vez. */
         if (entry->internal && !entry->user_defined) {
+            if (entry->setter == NULL) {
+                value_free(&value);
+                error(line,
+                      "La constante interna \"%s\" es de solo lectura "
+                      "y no se puede redefinir", name);
+            }
             if (actual_type != entry->vtype) {
                 value_free(&value);
                 error(line,
