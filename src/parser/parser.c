@@ -2261,14 +2261,6 @@ NodeList parse_block(const char *terminator) {
 
         error_at(t.line, t.start_col > 0 ? t.start_col : 1,
                  "Sentencia no reconocida '%s'", t.lexeme);
-
-        if (stmt) {
-            nodelist_add(&block, stmt);
-            DEBUG_INFO("parse_block: añadida sentencia tipo %d en línea %d", stmt->kind, stmt->line);
-        }
-        ts_skip_newlines();
-        if (is_terminator_token(terminator, ts_peek().type)) break;
-        if (terminator && strcmp(terminator, "}") == 0 && ts_peek().type == TOK_RBRACE) break;
     }
 
     DEBUG_INFO("=== parse_block: bloque finalizado, %d sentencias ===", block.count);
