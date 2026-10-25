@@ -155,19 +155,30 @@ int main(int argc, char **argv) {
     int code_start_idx = -1;          // posición de "-c" en argv
 
     for (int i = 1; i < argc; i++) {
+        if (strncmp(argv[i], "--shell=", 8) == 0) {
+            if (infernal_shell) free(infernal_shell);
+            infernal_shell = strdup(argv[i] + 8);
+            DEBUG_INFO("Shell especificado por línea de comandos: %s", infernal_shell);
+            continue;
+        }
         if (strcmp(argv[i], "--shell") == 0) {
             if (i + 1 < argc && argv[i+1][0] != '-') {
-                // Con argumento
-                if (infernal_shell) free(infernal_shell);
-                infernal_shell = strdup(argv[i + 1]);
-                DEBUG_INFO("Shell especificado por línea de comandos: %s", infernal_shell);
-                i++; // saltar el valor
-                continue;
-            } else {
-                // Sin argumento: mostrar info y salir
-                show_shell_info();
-                return 0;
+                const char *next = argv[i+1];
+                size_t nlen = strlen(next);
+                bool looks_like_script =
+                    (nlen >= 5 && strcmp(next + nlen - 5, ".fire") == 0) ||
+                    (nlen >= 5 && strcmp(next + nlen - 5, ".lava") == 0) ||
+                    (nlen >= 4 && strcmp(next + nlen - 4, ".inf")  == 0);
+                if (!looks_like_script) {
+                    if (infernal_shell) free(infernal_shell);
+                    infernal_shell = strdup(next);
+                    DEBUG_INFO("Shell especificado por línea de comandos: %s", infernal_shell);
+                    i++;
+                    continue;
+                }
             }
+            show_shell_info();
+            return 0;
         }
 
         if (strcmp(argv[i], "-c") == 0) {
