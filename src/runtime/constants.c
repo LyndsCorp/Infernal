@@ -260,10 +260,12 @@ static Value get_max_loop_limit(void) {
 }
 
 static void set_max_loop_limit(const Value *value) {
-    if (!value || value->type != VAL_INT)
-        internal_registration_error("_MAX_LOOP_LIMIT recibió un valor con tipo inválido");
+    if (!value || value->type != VAL_INT) {
+        error(0, "_MAX_LOOP_LIMIT espera un valor de tipo int (se recibió '%s')",
+              value ? value_type_name(value->type) : "null");
+    }
     if (value->data.ival <= 0)
-        internal_registration_error("_MAX_LOOP_LIMIT debe ser mayor que 0");
+        error(0, "_MAX_LOOP_LIMIT debe ser mayor que 0");
     max_loop_iterations = value->data.ival;
 }
 
@@ -272,8 +274,10 @@ static Value get_command_fail_error(void) {
 }
 
 static void set_command_fail_error(const Value *value) {
-    if (!value || value->type != VAL_BOOL)
-        internal_registration_error("_COMMAND_FAIL_ERROR recibió un valor con tipo inválido");
+    if (!value || value->type != VAL_BOOL) {
+        error(0, "_COMMAND_FAIL_ERROR espera un valor de tipo bool (se recibió '%s')",
+              value ? value_type_name(value->type) : "null");
+    }
     command_fail_error = value->data.bval;
 }
 
@@ -306,10 +310,12 @@ static Value get_max_string_len(void) {
 }
 
 static void set_max_string_len(const Value *value) {
-    if (!value || value->type != VAL_INT)
-        internal_registration_error("_MAX_STRING_LEN recibió un valor con tipo inválido");
+    if (!value || value->type != VAL_INT) {
+        error(0, "_MAX_STRING_LEN espera un valor de tipo int (se recibió '%s')",
+              value ? value_type_name(value->type) : "null");
+    }
     if (value->data.ival < 0)
-        internal_registration_error("_MAX_STRING_LEN no puede ser negativo");
+        error(0, "_MAX_STRING_LEN no puede ser negativo");
     max_string_len = value->data.ival;
 }
 
