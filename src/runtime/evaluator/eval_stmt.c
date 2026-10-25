@@ -995,6 +995,10 @@ void exec_stmt(ASTNode *stmt) {
                         broke = true;
                         break;
                     }
+                    if (control_flow == CF_CONTINUE) {
+                        broke = true;
+                        break;
+                    }
                     if (control_flow == CF_RETURN || control_flow == CF_REPEAT_LINE) {
                         {
                             Value sw_tmp = selector;
