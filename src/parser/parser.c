@@ -280,6 +280,21 @@ static void command_append_token(char **cmd, size_t *len, size_t *cap, Token tok
             command_append(cmd, len, cap, "*");
             emitted = true;
             p++;
+        } else if (*p == '"') {
+            /* Comilla doble dentro del string: escaparla para que el
+             * shell la vea como parte literal de la palabra, no como
+             * cierre del bloque entre comillas que estamos construyendo. */
+            if (!in_quote) { command_append(cmd, len, cap, "\""); in_quote = true; }
+            command_append(cmd, len, cap, "\\\"");
+            emitted = true;
+            p++;
+        } else if (*p == '\\') {
+            /* Backslash dentro del string: escaparla para que el shell
+             * la trate como literal. */
+            if (!in_quote) { command_append(cmd, len, cap, "\""); in_quote = true; }
+            command_append(cmd, len, cap, "\\\\");
+            emitted = true;
+            p++;
         } else {
             /* Resto de caracteres: entre comillas, como siempre. */
             if (!in_quote) { command_append(cmd, len, cap, "\""); in_quote = true; }
