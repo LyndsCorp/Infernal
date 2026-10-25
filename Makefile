@@ -1,17 +1,25 @@
 # Makefile para Infernal (intérprete modular)
 # Uso:
-#   make          - compila el intérprete y sus módulos .fire / bins / lava embebidos
-#   make debug    - compila con logs de depuración (-DDEBUG)
-#   make release  - compila optimizado para distribución (-O2, sin debug)
-#   make min      - igual que 'make' pero sin las Lava embebidas
-#   make minrelease - igual que 'make release' pero sin las Lava embebidas
-#   make config   - crea/edita los metadatos (VERSION, HELP, WELCOME, EDITION)
-#   make test     - compila Infernal si es necesario y ejecuta los demos uno por uno
-#   make clean    - elimina objetos y ejecutable (NO borra nada en config/)
-#   make sanitize - compila Infernal con AddressSanitizer y UBSan
-#   make install      - instala el binario de Infernal
-#   make install-lava - instala los módulos Lava (cabecera + .so)
-#   make help     - muestra esta ayuda
+#   make              - compila el intérprete y sus módulos .fire / bins / lava embebidos
+#   make debug        - compila con logs de depuración (-DDEBUG)
+#   make release      - compila optimizado para distribución (-O2, sin debug)
+#   make min          - igual que 'make' pero sin las Lava embebidas
+#   make minrelease   - igual que 'make release' pero sin las Lava embebidas
+#   make config       - crea/edita los metadatos (VERSION, HELP, WELCOME, EDITION)
+#   make test         - compila Infernal si es necesario y ejecuta los demos uno por uno
+#   make clean        - elimina objetos y ejecutable (NO borra nada en config/)
+#   make sanitize     - compila Infernal con AddressSanitizer y UBSan
+#
+# Instalación (sin sudo → usuario; con sudo → sistema):
+#   make install         - instala SOLO el binario
+#   make install-lava    - instala SOLO los módulos Lava (cabecera + .so)
+#   make install-all     - instala binario + módulos Lava
+#   make install-release - compila en release y luego instala SOLO el binario
+#   make uninstall       - desinstala SOLO el binario
+#   make uninstall-lava  - desinstala SOLO los módulos Lava
+#   make uninstall-all   - desinstala binario + módulos Lava
+#
+#   make help         - muestra esta ayuda
 # --------------------------------------------------------------------
 # Configuración
 # --------------------------------------------------------------------
@@ -42,6 +50,9 @@ TARGET       := infernal
 PREFIX ?= /
 BINDIR ?= $(PREFIX)usr/bin
 LAVA_SYSDIR ?= $(PREFIX)usr/share/infernal/lava
+
+# Rutas de usuario (se expanden en el shell como $HOME/...)
+USER_BIN_DIR := $$HOME/.local/bin
 LAVA_USERDIR := $$HOME/.infernal/lava
 
 # MIN=1 desactiva la inclusión de Lava embebidas
@@ -169,7 +180,9 @@ DEPS := $(ALL_OBJS:.o=.d)
 # --------------------------------------------------------------------
 # Reglas principales
 # --------------------------------------------------------------------
-.PHONY: all check-tools check-ffi clean help test regression sanitize debug release config install re lava min minrelease install-lava
+.PHONY: all check-tools check-ffi clean clean-lava help test sanitize \
+        debug release config install install-all install-lava install-release \
+        uninstall uninstall-all uninstall-lava re rerelease lava min minrelease
 
 all: check-tools check-ffi $(TARGET)
 
@@ -487,31 +500,41 @@ clean-lava:
 help:
 	@printf "$(BOLD)Infernal Makefile$(RESET)\n"
 	@printf "$(BOLD)-----------------$(RESET)\n"
-	@printf "$(BOLD)Objetivos:$(RESET)\n"
+	@printf "$(BOLD)Objetivos de compilación:$(RESET)\n"
 	@printf "             : (vacío; solo ejecuta 'make') hace lo mismo que 'make all'\n"
 	@printf "  $(GREEN)all$(RESET)        : compila el intérprete (por defecto)\n"
 	@printf "  $(GREEN)min$(RESET)        : igual que 'all' pero sin las Lava embebidas\n"
-	@printf "  $(GREEN)clean$(RESET)      : elimina objetos (build/) y el ejecutable (infernal) (no toca config/)\n"
 	@printf "  $(GREEN)debug$(RESET)      : compila con soporte de depuración (-DDEBUG)\n"
 	@printf "  $(GREEN)release$(RESET)    : compila optimizado para distribución (-O2, sin debug)\n"
 	@printf "  $(GREEN)minrelease$(RESET) : igual que 'release' pero sin las Lava embebidas\n"
+	@printf "  $(GREEN)clean$(RESET)      : elimina objetos (build/) y el ejecutable (infernal) (no toca config/)\n"
+	@printf "  $(GREEN)clean-lava$(RESET) : elimina solo los módulos Lava dev (build/lava/)\n"
 	@printf "  $(GREEN)config$(RESET)     : crea o edita los metadatos (VERSION, HELP, WELCOME, EDITION)\n"
 	@printf "  $(GREEN)test$(RESET)       : compila Infernal si es necesario y ejecuta los demos uno por uno\n"
 	@printf "  $(GREEN)sanitize$(RESET)   : compila Infernal con AddressSanitizer y UBSan\n"
 	@printf "  $(GREEN)lava$(RESET)       : compila solo las librerías Lava de desarrollo (lava/*.c -> build/lava/*.lava)\n"
+	@printf "  $(GREEN)re$(RESET)         : 'clean' + 'all'\n"
+	@printf "  $(GREEN)rerelease$(RESET)  : 'clean' + 'release'\n"
 	@printf "  $(GREEN)help$(RESET)       : muestra esta ayuda\n"
 	@echo
 	@echo
-	@printf "$(BOLD)Instalación:$(RESET)\n"
-	@printf "  $(GREEN)make install$(RESET)                       : instala el binario de Infernal para el usuario\n"
-	@printf "  $(GREEN)sudo make install$(RESET)                  : instala el binario de Infernal para el sistema\n"
-	@printf "  $(GREEN)make install-lava$(RESET)                  : instala los módulos Lava (cabecera + .so) para el usuario\n"
-	@printf "  $(GREEN)sudo make install-lava$(RESET)             : instala los módulos Lava (cabecera + .so) para el sistema\n"
-	@printf "  $(GREEN)sudo make install PREFIX=/mnt/ROOT/$(RESET): instala Infernal en un sitio personalizado\n"
+	@printf "$(BOLD)Instalación (sin sudo → usuario; con sudo → sistema):$(RESET)\n"
+	@printf "  $(GREEN)make install$(RESET)            : instala $(BOLD)SOLO$(RESET) el binario (no instala Lava)\n"
+	@printf "  $(GREEN)make install-lava$(RESET)       : instala $(BOLD)SOLO$(RESET) los módulos Lava (cabecera + .so)\n"
+	@printf "  $(GREEN)make install-all$(RESET)        : instala binario $(BOLD)+$(RESET) módulos Lava\n"
+	@printf "  $(GREEN)make install-release$(RESET)    : compila en release y luego instala $(BOLD)SOLO$(RESET) el binario\n"
+	@printf "  $(GREEN)make uninstall$(RESET)          : desinstala $(BOLD)SOLO$(RESET) el binario\n"
+	@printf "  $(GREEN)make uninstall-lava$(RESET)     : desinstala $(BOLD)SOLO$(RESET) los módulos Lava\n"
+	@printf "  $(GREEN)make uninstall-all$(RESET)      : desinstala binario $(BOLD)+$(RESET) módulos Lava\n"
+	@printf "  $(GREEN)sudo make install$(RESET)       : instala el binario para el sistema\n"
+	@printf "  $(GREEN)sudo make install-all$(RESET)   : instala binario + Lava para el sistema\n"
+	@printf "  $(GREEN)sudo make install PREFIX=/mnt/ROOT/$(RESET): instala en un PREFIX personalizado\n"
 	@echo
-	@printf "· Sin sudo, se instala para el usuario.\n"
-	@printf "· Con sudo, se instala para el sistema o el PREFIX indicado.\n"
+	@printf "· Sin sudo → $(BOLD)$$HOME/.local/bin$(RESET) y $(BOLD)$$HOME/.infernal/lava$(RESET)\n"
+	@printf "· Con sudo → $(BOLD)$(BINDIR)$(RESET) y $(BOLD)$(LAVA_SYSDIR)$(RESET)\n"
 	@printf "· Recuerda poner la / final en PREFIX.\n"
+	@printf "· 'make install' no recompila si $(TARGET) ya está construido.\n"
+	@printf "· Para forzar release: 'make install-release' o 'make release && make install'.\n"
 	@echo
 	@echo
 	@printf "$(BOLD)Estadísticas:$(RESET)\n"
@@ -539,68 +562,117 @@ sanitize:
 lava: $(LAVA_SOS)
 
 # --------------------------------------------------------------------
-# Instalación del binario de Infernal (sin Lava)
+# Instalación y desinstalación
+#
+# Convención:
+#   install           → SOLO binario
+#   install-lava      → SOLO módulos Lava (cabecera + .so)
+#   install-all       → binario + módulos Lava
+#   install-release   → release build + SOLO binario
+#
+#   uninstall         → SOLO binario
+#   uninstall-lava    → SOLO módulos Lava
+#   uninstall-all     → binario + módulos Lava
+#
+# Sin sudo → usuario ($$HOME/.local/bin, $$HOME/.infernal/lava)
+# Con sudo → sistema ($(PREFIX)usr/bin, $(PREFIX)usr/share/infernal/lava)
+#
+# 'install' NO recompila si $(TARGET) ya está construido. Si quieres
+# forzar un binario release antes de instalar, usa 'install-release'.
 # --------------------------------------------------------------------
-install:
-	$(MAKE) release
+
+# --- install: SOLO binario ---
+install: $(TARGET)
 	@if [ "$$(id -u)" -eq 0 ]; then \
 		printf "$(YELLOW)[INSTALL ROOT]$(RESET) $(BINDIR)/$(TARGET)\n"; \
 		install -Dm755 $(TARGET) $(BINDIR)/$(TARGET); \
-		printf "$(GREEN)✓ Infernal instalado para el sistema.$(RESET)\n"; \
+		printf "$(GREEN)✓ Binario instalado (sistema).$(RESET)\n"; \
 	else \
-		printf "$(GREEN)[INSTALL USER]$(RESET) $$HOME/.local/bin/$(TARGET)\n"; \
-		mkdir -p "$$HOME/.local/bin"; \
-		install -Dm755 $(TARGET) "$$HOME/.local/bin/$(TARGET)"; \
-		printf "$(GREEN)✓ Infernal instalado para el usuario.$(RESET)\n"; \
-		printf "$(YELLOW)Asegúrate de que $$HOME/.local/bin está en tu PATH.$(RESET)\n"; \
+		printf "$(GREEN)[INSTALL USER]$(RESET) $(USER_BIN_DIR)/$(TARGET)\n"; \
+		mkdir -p "$(USER_BIN_DIR)"; \
+		install -Dm755 $(TARGET) "$(USER_BIN_DIR)/$(TARGET)"; \
+		printf "$(GREEN)✓ Binario instalado (usuario).$(RESET)\n"; \
+		printf "$(YELLOW)Asegúrate de que $(USER_BIN_DIR) está en tu PATH.$(RESET)\n"; \
 	fi
 
-# --------------------------------------------------------------------
-# Instalación de los módulos Lava (cabecera + .so)
-#
-# Antes de tocar nada, verificamos que TODOS los $(LAVA_SOS) existan.
-# Si falta alguno, mostramos un error rojo llamativo y abortamos sin
-# instalar nada. Así evitamos el feo 'install: cannot stat' a mitad.
-# --------------------------------------------------------------------
-install-lava:
-	@missing=""; \
-	for so in $(LAVA_SOS); do \
-		if [ ! -f "$$so" ]; then \
-			missing="$$missing $$so"; \
-		fi; \
-	done; \
-	if [ -n "$$missing" ]; then \
-		printf "\n$(RED)════════════════════════════════════════════════════════════════$(RESET)\n"; \
-		printf "$(RED)  ✗  ERROR: faltan módulos Lava para instalar$(RESET)\n"; \
-		printf "$(RED)════════════════════════════════════════════════════════════════$(RESET)\n\n"; \
-		printf "Los siguientes archivos no existen:\n\n"; \
-		for f in $$missing; do \
-			printf "    $(RED)✗$(RESET)  %s\n" "$$f"; \
-		done; \
-		printf "\nCompila Infernal primero para generarlos:\n\n"; \
-		printf "    $(YELLOW)make lava$(RESET)                  # compila el binario y los módulos\n"; \
-		printf "    sudo $(YELLOW)make install-lava$(RESET)     # luego instálalos\n\n"; \
-		exit 1; \
-	fi; \
-	if [ "$$(id -u)" -eq 0 ]; then \
-		printf "$(YELLOW)[INSTALL ROOT]$(RESET) $(LAVA_SYSDIR)/\n"; \
-		mkdir -p $(LAVA_SYSDIR); \
-		install -Dm644 $(LAVA_DIR)/lava.h $(LAVA_SYSDIR)/lava.h; \
-		for so in $(LAVA_SOS); do \
-			printf "$(YELLOW)[INSTALL ROOT]$(RESET) $(LAVA_SYSDIR)/$$(basename $$so)\n"; \
-			install -Dm644 $$so $(LAVA_SYSDIR)/$$(basename $$so); \
-		done; \
-		printf "$(GREEN)✓ Módulos Lava instalados para el sistema.$(RESET)\n"; \
+# --- install-release: compila en release y luego instala SOLO binario ---
+install-release:
+	@$(MAKE) release
+	@$(MAKE) install
+
+# --- install-lava: SOLO módulos Lava (construye si faltan) ---
+install-lava: $(LAVA_SOS)
+	@if [ -z "$(strip $(LAVA_SOS))" ]; then \
+		printf "$(YELLOW)[SKIP]$(RESET) No hay módulos Lava en $(LAVA_DIR)/\n"; \
 	else \
-		printf "$(GREEN)[INSTALL USER]$(RESET) $$HOME/.infernal/lava/\n"; \
-		mkdir -p "$$HOME/.infernal/lava"; \
-		install -Dm644 $(LAVA_DIR)/lava.h "$$HOME/.infernal/lava/lava.h"; \
-		for so in $(LAVA_SOS); do \
-			printf "$(GREEN)[INSTALL USER]$(RESET) $$HOME/.infernal/lava/$$(basename $$so)\n"; \
-			install -Dm644 $$so "$$HOME/.infernal/lava/$$(basename $$so)"; \
-		done; \
-		printf "$(GREEN)✓ Módulos Lava instalados para el usuario.$(RESET)\n"; \
+		if [ "$$(id -u)" -eq 0 ]; then \
+			printf "$(YELLOW)[INSTALL ROOT]$(RESET) $(LAVA_SYSDIR)/\n"; \
+			mkdir -p $(LAVA_SYSDIR); \
+			if [ -f "$(LAVA_DIR)/lava.h" ]; then \
+				install -Dm644 $(LAVA_DIR)/lava.h $(LAVA_SYSDIR)/lava.h; \
+			else \
+				printf "$(YELLOW)[WARN]$(RESET) $(LAVA_DIR)/lava.h no existe, no se instala\n"; \
+			fi; \
+			for so in $(LAVA_SOS); do \
+				printf "$(YELLOW)[INSTALL ROOT]$(RESET) $(LAVA_SYSDIR)/$$(basename $$so)\n"; \
+				install -Dm644 $$so $(LAVA_SYSDIR)/$$(basename $$so); \
+			done; \
+			printf "$(GREEN)✓ Módulos Lava instalados (sistema).$(RESET)\n"; \
+		else \
+			printf "$(GREEN)[INSTALL USER]$(RESET) $(LAVA_USERDIR)/\n"; \
+			mkdir -p "$(LAVA_USERDIR)"; \
+			if [ -f "$(LAVA_DIR)/lava.h" ]; then \
+				install -Dm644 $(LAVA_DIR)/lava.h "$(LAVA_USERDIR)/lava.h"; \
+			else \
+				printf "$(YELLOW)[WARN]$(RESET) $(LAVA_DIR)/lava.h no existe, no se instala\n"; \
+			fi; \
+			for so in $(LAVA_SOS); do \
+				printf "$(GREEN)[INSTALL USER]$(RESET) $(LAVA_USERDIR)/$$(basename $$so)\n"; \
+				install -Dm644 $$so "$(LAVA_USERDIR)/$$(basename $$so)"; \
+			done; \
+			printf "$(GREEN)✓ Módulos Lava instalados (usuario).$(RESET)\n"; \
+		fi; \
 	fi
+
+# --- install-all: binario + Lava ---
+install-all: install install-lava
+	@printf "$(GREEN)✓ Instalación completa (binario + Lava).$(RESET)\n"
+
+# --- uninstall: SOLO binario ---
+uninstall:
+	@if [ "$$(id -u)" -eq 0 ]; then \
+		printf "$(YELLOW)[UNINSTALL ROOT]$(RESET) $(BINDIR)/$(TARGET)\n"; \
+		rm -f $(BINDIR)/$(TARGET); \
+		printf "$(GREEN)✓ Binario desinstalado (sistema).$(RESET)\n"; \
+	else \
+		printf "$(GREEN)[UNINSTALL USER]$(RESET) $(USER_BIN_DIR)/$(TARGET)\n"; \
+		rm -f "$(USER_BIN_DIR)/$(TARGET)"; \
+		printf "$(GREEN)✓ Binario desinstalado (usuario).$(RESET)\n"; \
+	fi
+
+# --- uninstall-lava: SOLO módulos Lava ---
+uninstall-lava:
+	@if [ "$$(id -u)" -eq 0 ]; then \
+		printf "$(YELLOW)[UNINSTALL ROOT]$(RESET) $(LAVA_SYSDIR)/\n"; \
+		rm -f $(LAVA_SYSDIR)/lava.h; \
+		for so in $(LAVA_SOS); do \
+			rm -f $(LAVA_SYSDIR)/$$(basename $$so); \
+		done; \
+		rmdir $(LAVA_SYSDIR) 2>/dev/null || true; \
+		printf "$(GREEN)✓ Módulos Lava desinstalados (sistema).$(RESET)\n"; \
+	else \
+		printf "$(GREEN)[UNINSTALL USER]$(RESET) $(LAVA_USERDIR)/\n"; \
+		rm -f "$(LAVA_USERDIR)/lava.h"; \
+		for so in $(LAVA_SOS); do \
+			rm -f "$(LAVA_USERDIR)/$$(basename $$so)"; \
+		done; \
+		rmdir "$(LAVA_USERDIR)" 2>/dev/null || true; \
+		printf "$(GREEN)✓ Módulos Lava desinstalados (usuario).$(RESET)\n"; \
+	fi
+
+# --- uninstall-all: binario + Lava ---
+uninstall-all: uninstall uninstall-lava
+	@printf "$(GREEN)✓ Desinstalación completa (binario + Lava).$(RESET)\n"
 
 re:
 	$(MAKE) clean
