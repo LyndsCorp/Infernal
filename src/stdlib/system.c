@@ -28,6 +28,9 @@ static Value builtin_exit(int argc, Value *args) {
         code = (v.type == VAL_INT) ? v.data.ival : 0;
     }
     exit(code);
+    /* Inalcanzable: exit() no retorna. Pero el compilador exige un
+     * return para no advertir de UB en una función que devuelve Value. */
+    return val_make_null();
 }
 
 /* --- here() --- */
