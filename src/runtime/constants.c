@@ -276,10 +276,12 @@ static Value get_infernal_shell(void) {
 }
 
 static void set_infernal_shell(const Value *value) {
-    if (!value || value->type != VAL_STRING)
-        internal_registration_error("_INFERNAL_SHELL recibió un valor con tipo inválido");
+    if (!value || value->type != VAL_STRING) {
+        error(0, "_INFERNAL_SHELL espera un valor de tipo string (se recibió '%s')",
+              value ? value_type_name(value->type) : "null");
+    }
     if (!value->data.sval || !value->data.sval[0])
-        internal_registration_error("_INFERNAL_SHELL no puede estar vacío");
+        error(0, "_INFERNAL_SHELL no puede estar vacío");
 
     char *new_shell = infernal_strdup(value->data.sval);
     free(infernal_shell);
