@@ -73,9 +73,28 @@ Value eval_call(ASTNode *expr) {
         error(expr->line, "Función no definida: %s", name);
     }
 
+    /* `size($lista)` solo necesita el contador. Evaluar el argumento por la
+     * ruta genérica copiaba recursivamente toda la lista antes de devolverlo.
+     * Para una variable directa sin referencia, leemos el tamaño prestado. */
+    if (fobj->kind == FUNC_BUILTIN &&
+        strcmp(expr->data.call.name, "size") == 0 &&
+        expr->data.call.argc == 1 &&
+        expr->data.call.args[0] &&
+        expr->data.call.args[0]->kind == NODE_VAR) {
+        const char *name = expr->data.call.args[0]->data.var.name;
+        if (name && name[0] == '$') name++;
+        if (name && name[0] != '?') {
+            VarEntry *entry = scope_find(current_scope, name);
+            if (entry && entry->value.type == VAL_LIST)
+                return val_int(entry->value.data.list.count);
+            if (entry && entry->value.type == VAL_MAP && entry->value.data.map)
+                return val_int(entry->value.data.map->count);
+        }
+    }
+
     if (fobj->kind == FUNC_BUILTIN) {
-        int argc = expr->data.call.argc;
-        int saved_line = current_eval_line;
+        volatile int argc = expr->data.call.argc;
+        volatile int saved_line = current_eval_line;
         Value * volatile args = argc > 0 ? malloc(sizeof(Value) * (size_t)argc) : NULL;
         if (argc > 0 && !args) error(expr->line, "Memoria insuficiente para argumentos");
         for (int i = 0; i < argc; i++) args[i] = val_make_null();

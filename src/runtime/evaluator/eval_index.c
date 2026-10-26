@@ -20,13 +20,30 @@
 #include "runtime/error.h"
 #include "runtime/globals.h"
 
-static void eval_index_error(Value *base, Value *idx, int line, const char *fmt, ...) {
+static bool expr_has_no_side_effects(ASTNode *expr) {
+    if (!expr) return false;
+    switch (expr->kind) {
+        case NODE_LITERAL:
+        case NODE_VAR:
+            return true;
+        case NODE_UNARY:
+            return expr_has_no_side_effects(expr->data.unary.operand);
+        case NODE_BINOP:
+            return expr_has_no_side_effects(expr->data.binop.left) &&
+                   expr_has_no_side_effects(expr->data.binop.right);
+        default:
+            return false;
+    }
+}
+
+static void eval_index_error(Value *base, Value *idx, bool base_borrowed,
+                             int line, const char *fmt, ...) {
     char message[1024];
     va_list ap;
     va_start(ap, fmt);
     vsnprintf(message, sizeof(message), fmt, ap);
     va_end(ap);
-    value_free(base);
+    if (!base_borrowed) value_free(base);
     value_free(idx);
     error(line, "%s", message);
 }
@@ -83,7 +100,25 @@ Value eval_index(ASTNode *expr) {
     if (line == 0) line = get_node_line(expr->data.idx.index);
     if (line == 0) line = get_node_line(expr->data.idx.list);
 
-    Value base = eval_expr(expr->data.idx.list);
+    ASTNode *base_expr = expr->data.idx.list;
+    bool base_borrowed = false;
+    Value base = val_make_null();
+    if (base_expr && base_expr->kind == NODE_VAR &&
+        expr_has_no_side_effects(expr->data.idx.index)) {
+        const char *name = base_expr->data.var.name;
+        if (name && name[0] == '$') name++;
+        if (name && name[0] != '?') {
+            VarEntry *entry = scope_find(current_scope, name);
+            if (entry && entry->value.type == VAL_LIST) {
+                /* La expresión del índice no puede modificar el contenedor,
+                 * así que basta con tomar prestada la lista hasta terminar la
+                 * lectura. Evitamos copiarla entera en cada acceso. */
+                base = entry->value;
+                base_borrowed = true;
+            }
+        }
+    }
+    if (!base_borrowed) base = eval_expr(base_expr);
 
     /* Si el contenedor viene de una indexación previa, lo que obtenemos
      * es una REFERENCIA (por ejemplo, `pages[web]` devuelve una referencia
@@ -94,7 +129,7 @@ Value eval_index(ASTNode *expr) {
      * Sin esto, cadenas del tipo `pages[web][pagina]["clave"]` fallan
      * con "No se puede indexar este tipo de valor" porque `base` llega
      * con type == VAL_REFERENCE. */
-    if (base.type == VAL_REFERENCE)
+    if (!base_borrowed && base.type == VAL_REFERENCE)
         base = resolve_reference(base, line);
 
     Value idx = eval_expr(expr->data.idx.index);
@@ -117,7 +152,7 @@ Value eval_index(ASTNode *expr) {
 
             /* Fase 1: tipo del índice. Solo int y float son válidos. */
             if (idx.type != VAL_INT && idx.type != VAL_FLOAT) {
-                eval_index_error(&base, &idx, line,
+                eval_index_error(&base, &idx, base_borrowed, line,
                                  "El índice de una lista debe ser un número entero (int), "
                                  "pero se recibió un valor de tipo '%s'.\n"
                                  "    Para acceder a un elemento por su posición usa un entero:\n"
@@ -131,13 +166,13 @@ Value eval_index(ASTNode *expr) {
             if (idx.type == VAL_FLOAT) {
                 double f = idx.data.fval;
                 if (!isfinite(f)) {
-                    eval_index_error(&base, &idx, line,
+                    eval_index_error(&base, &idx, base_borrowed, line,
                                      "El índice de una lista debe ser un número entero (int), "
                                      "pero se recibió un valor no finito (%g).",
                                      f);
                 }
                 if (trunc(f) != f) {
-                    eval_index_error(&base, &idx, line,
+                    eval_index_error(&base, &idx, base_borrowed, line,
                                      "El índice de una lista debe ser un número entero (int), "
                                      "pero se recibió el decimal %g.\n"
                                      "    Los índices de list no admiten parte decimal.",
@@ -152,12 +187,12 @@ Value eval_index(ASTNode *expr) {
             /* Fase 3: rango. Los índices de list van de 1 a count. */
             if (idx.data.ival < 1 || idx.data.ival > base.data.list.count) {
                 if (idx.data.ival < 1) {
-                    eval_index_error(&base, &idx, line,
+                    eval_index_error(&base, &idx, base_borrowed, line,
                                      "Índice fuera de rango: %d. Los índices de una lista "
                                      "empiezan en 1, así que no puede ser 0 ni negativo.",
                                      idx.data.ival);
                 } else {
-                    eval_index_error(&base, &idx, line,
+                    eval_index_error(&base, &idx, base_borrowed, line,
                                      "Índice fuera de rango: %d. La lista tiene %d elemento(s) "
                                      "(los índices válidos van de 1 a %d).",
                                      idx.data.ival, base.data.list.count, base.data.list.count);
@@ -170,13 +205,13 @@ Value eval_index(ASTNode *expr) {
                 !expr->data.idx.list->data.var.clone) {
                 const char *name = expr->data.idx.list->data.var.name;
             result = val_reference(name, idx.data.ival);
-            value_free(&base);
+            if (!base_borrowed) value_free(&base);
             value_free(&idx);
             return result;
                 }
 
                 if (base.data.list.items == NULL)
-                    eval_index_error(&base, &idx, line, "Lista corrupta: items es NULL");
+                    eval_index_error(&base, &idx, base_borrowed, line, "Lista corrupta: items es NULL");
             result = copy_value_secure(base.data.list.items[idx.data.ival - 1]);
             break;
         }
@@ -187,29 +222,29 @@ Value eval_index(ASTNode *expr) {
             } else if (idx.type == VAL_FLOAT) {
                 double f = idx.data.fval;
                 if (!isfinite(f) || f < (double)INT_MIN || f > (double)INT_MAX)
-                    eval_index_error(&base, &idx, line, "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
+                    eval_index_error(&base, &idx, base_borrowed, line, "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
                 position = (int)f;
                 if ((double)position != f)
-                    eval_index_error(&base, &idx, line, "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
+                    eval_index_error(&base, &idx, base_borrowed, line, "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
             } else {
-                eval_index_error(&base, &idx, line, "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
+                eval_index_error(&base, &idx, base_borrowed, line, "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
                 return val_make_null();
             }
 
             if (position < 1)
-                eval_index_error(&base, &idx, line, "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
+                eval_index_error(&base, &idx, base_borrowed, line, "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
 
             size_t count = 0;
             char *character = utf8_char_at(base.data.sval, (size_t)position, &count);
             if (!character)
-                eval_index_error(&base, &idx, line, "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
+                eval_index_error(&base, &idx, base_borrowed, line, "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
             result = val_string(character);
             free(character);
             break;
         }
         case VAL_MAP: {
             if (idx.type != VAL_STRING) {
-                eval_index_error(&base, &idx, line,
+                eval_index_error(&base, &idx, base_borrowed, line,
                                  "La clave de un mapa debe ser un texto (string), pero usaste un valor de tipo '%s'.\n"
                                  "    Un mapa guarda valores asociados a claves de texto, así que se accede con corchetes\n"
                                  "    y una cadena entre comillas, por ejemplo: mi_mapa[\"clave\"].",
@@ -223,7 +258,7 @@ Value eval_index(ASTNode *expr) {
                     if (name[0] == '$' || name[0] == '?') name++;
                     snprintf(map_name, sizeof(map_name), " '%s'", name);
                 }
-                eval_index_error(&base, &idx, line, "Clave '%s' no encontrada en el mapa%s", idx.data.sval, map_name);
+                eval_index_error(&base, &idx, base_borrowed, line, "Clave '%s' no encontrada en el mapa%s", idx.data.sval, map_name);
             }
             if (expr->data.idx.list && expr->data.idx.list->kind == NODE_VAR &&
                 !expr->data.idx.list->data.var.clone) {
@@ -251,10 +286,10 @@ Value eval_index(ASTNode *expr) {
                      "    o el resultado de una operación que no devolvió ni lista, ni mapa, ni texto.",
                      value_type_name(base.type),
                      value_type_name(base.type));
-            eval_index_error(&base, &idx, line, "%s", msg);
+            eval_index_error(&base, &idx, base_borrowed, line, "%s", msg);
         }
     }
-    value_free(&base);
+    if (!base_borrowed) value_free(&base);
     value_free(&idx);
     return result;
 }
