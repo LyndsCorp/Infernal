@@ -462,7 +462,6 @@ ASTNode *deep_copy_ast(ASTNode *node) {
             copy->data.lit.uval = node->data.lit.uval;
             copy->data.lit.fval = node->data.lit.fval;
             copy->data.lit.bval = node->data.lit.bval;
-            copy->data.lit.integer = node->data.lit.integer;
             copy->data.lit.integer_wide = node->data.lit.integer_wide;
             copy->data.lit.sval = node->data.lit.sval
                 ? infernal_strdup(node->data.lit.sval) : NULL;

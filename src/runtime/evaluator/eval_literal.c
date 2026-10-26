@@ -19,8 +19,18 @@
 #include <setjmp.h>
 
 Value eval_literal(ASTNode *expr) {
-    if (expr->data.lit.type == TOK_INT)    return expr->data.lit.integer_wide ? val_bigint(expr->data.lit.integer, false) : val_int(expr->data.lit.ival);
-    if (expr->data.lit.type == TOK_UINT)   return expr->data.lit.integer_wide ? val_bigint(expr->data.lit.integer, true) : val_uint(expr->data.lit.uval);
+    if (expr->data.lit.type == TOK_INT) {
+        if (!expr->data.lit.integer_wide) return val_int(expr->data.lit.ival);
+        InfernalBigInt integer;
+        if (!bigint_parse(expr->data.lit.sval, &integer)) error(expr->line, "Literal int interno no válido");
+        return val_bigint(integer, false);
+    }
+    if (expr->data.lit.type == TOK_UINT) {
+        if (!expr->data.lit.integer_wide) return val_uint(expr->data.lit.uval);
+        InfernalBigInt integer;
+        if (!bigint_parse(expr->data.lit.sval, &integer)) error(expr->line, "Literal uint interno no válido");
+        return val_bigint(integer, true);
+    }
     if (expr->data.lit.type == TOK_FLOAT)  return val_float(expr->data.lit.fval);
     if (expr->data.lit.type == TOK_BOOL)   return val_bool(expr->data.lit.bval);
     if (expr->data.lit.type == TOK_STRING) return val_string(expr->data.lit.sval);

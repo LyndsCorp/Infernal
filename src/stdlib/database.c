@@ -760,25 +760,29 @@ static void serialize_value_binary_rec(ByteBuffer *buf, Value v, int depth) {
 
     switch (v.type) {
         case VAL_INT: {
-            if (!v.integer_wide) {
+            if (!VALUE_HAS_WIDE_INTEGER(v)) {
                 buf_append_byte(buf, 'I');
                 buf_append_u32_le(buf, (uint32_t)(int32_t)v.data.ival);
             } else {
+                InfernalBigInt integer = value_as_bigint(v);
+                size_t width = bigint_min_width(integer, true);
                 buf_append_byte(buf, 'J');
-                buf_append_byte(buf, v.integer_width);
-                buf_append_byte(buf, v.integer.negative ? 1 : 0);
-                for (size_t i = 0; i < v.integer_width; ++i) buf_append_byte(buf, v.integer.bytes[i]);
+                buf_append_byte(buf, (unsigned char)width);
+                buf_append_byte(buf, integer.negative ? 1 : 0);
+                for (size_t i = 0; i < width; ++i) buf_append_byte(buf, integer.bytes[i]);
             }
             break;
         }
         case VAL_UINT: {
-            if (!v.integer_wide) {
+            if (!VALUE_HAS_WIDE_INTEGER(v)) {
                 buf_append_byte(buf, 'U');
                 buf_append_u32_le(buf, v.data.uval);
             } else {
+                InfernalBigInt integer = value_as_bigint(v);
+                size_t width = bigint_min_width(integer, false);
                 buf_append_byte(buf, 'K');
-                buf_append_byte(buf, v.integer_width);
-                for (size_t i = 0; i < v.integer_width; ++i) buf_append_byte(buf, v.integer.bytes[i]);
+                buf_append_byte(buf, (unsigned char)width);
+                for (size_t i = 0; i < width; ++i) buf_append_byte(buf, integer.bytes[i]);
             }
             break;
         }

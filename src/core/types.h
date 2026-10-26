@@ -103,17 +103,20 @@ typedef struct {
 #define VAL_MAP       8
 #define VAL_VOID      9     /* función sin return: 'nada' */
 #define VAL_UINT      10
+#define VALUE_FLAG_WIDE_INTEGER 0x01u
+#define VALUE_HAS_WIDE_INTEGER(v) (((v).flags & VALUE_FLAG_WIDE_INTEGER) != 0)
 
 typedef struct MapData MapData;
 typedef struct Value Value;
 
 struct Value {
     int type;
+    uint8_t flags;
     union {
         int ival;
         uint32_t uval;
         double fval;
-        bool bval;
+        bool bval : 1;
         char *sval;
         struct {
             Value *items;
@@ -127,11 +130,8 @@ struct Value {
         } ref;
         void *ptr;
         MapData *map;
+        struct { InfernalBigInt *number; } wide_integer;
     } data;
-    /* Solo se consulta para enteros que no caben en el payload de 32 bits. */
-    InfernalBigInt integer;
-    uint8_t integer_width;
-    bool integer_wide;
 };
 
 typedef Value (*BuiltinFunc)(int argc, Value *args);
@@ -203,7 +203,7 @@ struct ASTNode {
                 uint64_t cached_scope_id;
                 uint64_t cached_var_version;
             } var;
-            struct { int type; int ival; uint32_t uval; double fval; int bval; char *sval; InfernalBigInt integer; bool integer_wide; } lit;
+            struct { int type; int ival; uint32_t uval; double fval; int bval; char *sval; bool integer_wide; } lit;
             struct { int op; ASTNode *left, *right; } binop;
             struct { char *name; ASTNode **args; int argc; FuncObject *resolved; } call;
             struct { ASTNode *list, *index; } idx;

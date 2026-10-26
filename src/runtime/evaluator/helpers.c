@@ -231,7 +231,8 @@ int extract_integer_index(ASTNode *node, int line) {
     if (node->kind == NODE_LITERAL && node->data.lit.type == TOK_INT) {
         if (!node->data.lit.integer_wide) return node->data.lit.ival;
         int64_t wide;
-        if (!bigint_to_i64(node->data.lit.integer, &wide) || wide < INT_MIN || wide > INT_MAX)
+        InfernalBigInt integer;
+        if (!bigint_parse(node->data.lit.sval, &integer) || !bigint_to_i64(integer, &wide) || wide < INT_MIN || wide > INT_MAX)
             error(line, "El índice int excede el tamaño máximo de una lista");
         return (int)wide;
     }
@@ -252,7 +253,7 @@ int extract_integer_index(ASTNode *node, int line) {
             value_free(&idx_val);
             error(line, "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
         }
-        if (idx_val.integer_wide) {
+        if (VALUE_HAS_WIDE_INTEGER(idx_val)) {
             value_free(&idx_val);
             error(line, "El índice int excede el tamaño máximo de una lista");
         }

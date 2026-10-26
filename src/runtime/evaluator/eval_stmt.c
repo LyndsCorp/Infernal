@@ -394,7 +394,7 @@ static void assign_nested_index(Value *var_value, ASTNode *lhs_index,
                       "(se recibió \'%s\').",
                       name, value_type_name(key_type));
             }
-            if (key.type == VAL_UINT || (key.type == VAL_INT && key.integer_wide)) {
+            if (key.type == VAL_UINT || (key.type == VAL_INT && VALUE_HAS_WIDE_INTEGER(key))) {
                 int64_t index_value;
                 if (!value_integer_to_i64(key, &index_value) || index_value < INT_MIN || index_value > INT_MAX) {
                     value_free(&key);
@@ -453,7 +453,7 @@ static void assign_nested_index(Value *var_value, ASTNode *lhs_index,
                       "No se puede indexar un carácter del string '%s' como contenedor.",
                       name);
             }
-            if (key.type == VAL_UINT || (key.type == VAL_INT && key.integer_wide)) {
+            if (key.type == VAL_UINT || (key.type == VAL_INT && VALUE_HAS_WIDE_INTEGER(key))) {
                 int64_t index_value;
                 if (!value_integer_to_i64(key, &index_value) || index_value < INT_MIN || index_value > INT_MAX) {
                     value_free(&key);
@@ -1540,7 +1540,7 @@ void exec_stmt(ASTNode *stmt) {
                 repeat_line_target = p->line;
             } else {
                 Value line_val = eval_expr(stmt->data.repeat.line_expr);
-                if (line_val.type == VAL_UINT || (line_val.type == VAL_INT && line_val.integer_wide)) {
+                if (line_val.type == VAL_UINT || (line_val.type == VAL_INT && VALUE_HAS_WIDE_INTEGER(line_val))) {
                     int64_t number;
                     if (!value_integer_to_i64(line_val, &number) || number < INT_MIN || number > INT_MAX) {
                         value_free(&line_val);

@@ -15,23 +15,23 @@
 #include "runtime/evaluator/helpers.h"
 
 Value val_make_null(void) {
-    Value v; v.type = VAL_NULL; return v;
+    Value v = {0}; v.type = VAL_NULL; return v;
 }
 
 Value val_void(void) {
-    Value v; v.type = VAL_VOID; return v;
+    Value v = {0}; v.type = VAL_VOID; return v;
 }
 
 Value val_int(int x) {
-    Value v; v.type = VAL_INT; v.data.ival = x; v.integer_wide = false; v.integer_width = 4; return v;
+    Value v = {0}; v.type = VAL_INT; v.data.ival = x; return v;
 }
 
 Value val_uint(uint32_t x) {
-    Value v; v.type = VAL_UINT; v.data.uval = x; v.integer_wide = false; v.integer_width = 4; return v;
+    Value v = {0}; v.type = VAL_UINT; v.data.uval = x; return v;
 }
 
 InfernalBigInt value_as_bigint(Value value) {
-    if (value.integer_wide) return value.integer;
+    if (VALUE_HAS_WIDE_INTEGER(value)) return *value.data.wide_integer.number;
     return value.type == VAL_UINT ? bigint_from_u64(value.data.uval)
                                   : bigint_from_i64(value.data.ival);
 }
@@ -48,7 +48,7 @@ bool value_integer_to_i64(Value value, int64_t *out) {
 Value val_bigint(InfernalBigInt x, bool is_unsigned) {
     size_t width = bigint_min_width(x, !is_unsigned);
     if (!width) error(0, "Entero fuera del rango máximo de 64 bytes");
-    Value v;
+    Value v = {0};
     if (width == 4) {
         uint64_t magnitude = 0;
         (void)bigint_to_u64(x, &magnitude);
@@ -58,29 +58,29 @@ Value val_bigint(InfernalBigInt x, bool is_unsigned) {
         return val_int((int)signed_value);
     }
     v.type = is_unsigned ? VAL_UINT : VAL_INT;
-    v.integer = x;
-    v.integer_width = (uint8_t)width;
-    v.integer_wide = true;
+    v.data.wide_integer.number = infernal_malloc(sizeof(*v.data.wide_integer.number));
+    *v.data.wide_integer.number = x;
+    v.flags |= VALUE_FLAG_WIDE_INTEGER;
     return v;
 }
 
 Value val_float(double x) {
-    Value v; v.type = VAL_FLOAT; v.data.fval = x; return v;
+    Value v = {0}; v.type = VAL_FLOAT; v.data.fval = x; return v;
 }
 
 Value val_bool(bool x) {
-    Value v; v.type = VAL_BOOL; v.data.bval = x; return v;
+    Value v = {0}; v.type = VAL_BOOL; v.data.bval = x; return v;
 }
 
 Value val_string(const char *s) {
-    Value v;
+    Value v = {0};
     v.type = VAL_STRING;
     v.data.sval = infernal_strdup(s ? s : "");
     return v;
 }
 
 Value val_list_empty(void) {
-    Value v; v.type = VAL_LIST;
+    Value v = {0}; v.type = VAL_LIST;
     v.data.list.items = NULL;
     v.data.list.count = v.data.list.cap = 0;
     return v;
@@ -106,6 +106,12 @@ void val_list_append(Value *list, Value item) {
 }
 
 Value copy_value_secure(Value src) {
+    if ((src.type == VAL_INT || src.type == VAL_UINT) && VALUE_HAS_WIDE_INTEGER(src)) {
+        Value copy = src;
+        copy.data.wide_integer.number = infernal_malloc(sizeof(*copy.data.wide_integer.number));
+        *copy.data.wide_integer.number = *src.data.wide_integer.number;
+        return copy;
+    }
     if (src.type == VAL_STRING) {
         return val_string(src.data.sval);
     } else if (src.type == VAL_LIST) {
@@ -117,7 +123,7 @@ Value copy_value_secure(Value src) {
     } else if (src.type == VAL_MAP) {
         return val_map_copy(&src);
     } else if (src.type == VAL_REFERENCE) {
-        Value v;
+        Value v = {0};
         v.type = VAL_REFERENCE;
         v.data.ref.container_name = infernal_strdup(src.data.ref.container_name);
         v.data.ref.map_key = src.data.ref.map_key ? infernal_strdup(src.data.ref.map_key) : NULL;
@@ -148,7 +154,7 @@ int valtype_to_tokentype(int vtype) {
 }
 
 Value val_reference(const char *list_name, int index) {
-    Value v;
+    Value v = {0};
     v.type = VAL_REFERENCE;
     v.data.ref.container_name = infernal_strdup(list_name);
     v.data.ref.map_key = NULL;
@@ -158,7 +164,7 @@ Value val_reference(const char *list_name, int index) {
 }
 
 Value val_map_reference(const char *map_name, const char *key) {
-    Value v;
+    Value v = {0};
     v.type = VAL_REFERENCE;
     v.data.ref.container_name = infernal_strdup(map_name);
     v.data.ref.map_key = infernal_strdup(key);
@@ -168,7 +174,7 @@ Value val_map_reference(const char *map_name, const char *key) {
 }
 
 Value val_ptr(void *ptr) {
-    Value v;
+    Value v = {0};
     v.type = VAL_PTR;
     v.data.ptr = ptr;
     return v;
@@ -191,7 +197,7 @@ static const char *map_type_name(int tok_type) {
 
 Value val_map_typed(int value_type) {
     (void)value_type;
-    Value v;
+    Value v = {0};
     v.type = VAL_MAP;
     MapData *md = infernal_malloc(sizeof(MapData));
     md->pairs = NULL;
@@ -336,6 +342,9 @@ Value val_map_copy(Value *src) {
 void value_free(Value *value) {
     if (!value) return;
     switch (value->type) {
+        case VAL_INT: case VAL_UINT:
+            if (VALUE_HAS_WIDE_INTEGER(*value)) free(value->data.wide_integer.number);
+            break;
         case VAL_STRING:
             free(value->data.sval);
             break;

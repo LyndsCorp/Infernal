@@ -474,12 +474,11 @@ ASTNode *parse_primary() {
                 n->data.lit.ival = (int)small;
             } else if (bigint_min_width(integer, false)) {
                 n->data.lit.type = TOK_UINT;
-                n->data.lit.integer = integer;
                 n->data.lit.integer_wide = bigint_min_width(integer, false) > 4;
                 if (!n->data.lit.integer_wide) {
                     uint64_t small = 0; (void)bigint_to_u64(integer, &small);
                     n->data.lit.uval = (uint32_t)small;
-                }
+                } else n->data.lit.sval = strdup(t.lexeme);
             } else error(t.line, "Número entero fuera del rango máximo de 64 bytes");
         }
         /* Permitir indexación/slice sobre un literal numérico:
@@ -848,9 +847,15 @@ static ASTNode *parse_unary() {
                 ts_advance();
                 ASTNode *node = node_create(NODE_LITERAL, next.line);
                 node->data.lit.type = TOK_INT;
-                node->data.lit.integer = integer;
                 node->data.lit.integer_wide = bigint_min_width(integer, true) > 4;
                 if (!node->data.lit.integer_wide) node->data.lit.ival = (int)small;
+                else {
+                    size_t n = strlen(next.lexeme);
+                    node->data.lit.sval = malloc(n + 2);
+                    if (!node->data.lit.sval) error(next.line, "Memoria insuficiente al leer el entero");
+                    node->data.lit.sval[0] = '-';
+                    memcpy(node->data.lit.sval + 1, next.lexeme, n + 1);
+                }
                 return node;
             }
         }
