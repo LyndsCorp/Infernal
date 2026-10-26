@@ -1356,6 +1356,9 @@ void exec_stmt(ASTNode *stmt) {
                     }
                 }
 
+                const unsigned char * volatile string_iter =
+                    iterable.type == VAL_STRING
+                        ? (const unsigned char *)iterable.data.sval : NULL;
                 for (volatile int iter_idx = 0; iter_idx < count; iter_idx++) {
                     Scope *old_scope = current_scope;
                     volatile Scope *iter_scope = scope_new(old_scope, NULL);
@@ -1381,27 +1384,17 @@ void exec_stmt(ASTNode *stmt) {
                     } else if (iterable.type == VAL_MAP) {
                         item = val_string(iterable.data.map->pairs[iter_idx].key);
                     } else {
-                        const unsigned char *p = (const unsigned char *)iterable.data.sval;
-                        for (int n = 0; n < iter_idx; n++) {
-                            unsigned char c = *p;
-                            if (c < 0x80) p += 1;
-                            else if ((c & 0xE0) == 0xC0 && p[1]) p += 2;
-                            else if ((c & 0xF0) == 0xE0 && p[1] && p[2]) p += 3;
-                            else if ((c & 0xF8) == 0xF0 && p[1] && p[2] && p[3]) p += 4;
-                            else p += 1;
-                        }
+                        const unsigned char *p = string_iter;
                         size_t width = 1;
                         unsigned char c = *p;
                         if (c >= 0xC0 && (c & 0xE0) == 0xC0 && p[1]) width = 2;
                         else if (c >= 0xE0 && (c & 0xF0) == 0xE0 && p[1] && p[2]) width = 3;
                         else if (c >= 0xF0 && (c & 0xF8) == 0xF0 && p[1] && p[2] && p[3]) width = 4;
-                        char *ch = malloc(width + 1);
-                        if (!ch)
-                            error(stmt->line, "Memoria insuficiente en for-in");
+                        string_iter = p + width;
+                        char ch[5];
                         memcpy(ch, p, width);
                         ch[width] = '\0';
                         item = val_string(ch);
-                        free(ch);
                     }
 
                     /* --- Calcular `i` como la posición viva del elemento.
@@ -1414,7 +1407,8 @@ void exec_stmt(ASTNode *stmt) {
                     int live_index = iter_idx + 1;  /* fallback: número de secuencia */
 
                     const char *lvname = (const char *)live_var_name;
-                    VarEntry *lv = lvname ? scope_find(current_scope, lvname) : NULL;
+                    VarEntry *lv = iterable.type == VAL_LIST && lvname
+                                 ? scope_find(current_scope, lvname) : NULL;
                     if (lv && lv->value.type == VAL_LIST &&
                         iterable.type == VAL_LIST) {
                         Value *live_items = lv->value.data.list.items;
