@@ -284,7 +284,7 @@ static ASTNode *parse_map_literal(int line) {
         }
 
         int value_type = 0;
-        if (key.type == TOK_INT || key.type == TOK_FLOAT || key.type == TOK_BOOL ||
+        if (key.type == TOK_INT || key.type == TOK_UINT || key.type == TOK_FLOAT || key.type == TOK_BOOL ||
             key.type == TOK_STRING || key.type == TOK_LIST || key.type == TOK_MAP) {
             value_type = ts_advance().type;
         key = ts_peek();
@@ -640,7 +640,7 @@ ASTNode *parse_primary() {
             if (ts_peek().type == TOK_EQ) {
                 is_map = 1;
             }
-        } else if (first.type == TOK_INT || first.type == TOK_FLOAT || first.type == TOK_BOOL ||
+        } else if (first.type == TOK_INT || first.type == TOK_UINT || first.type == TOK_FLOAT || first.type == TOK_BOOL ||
             first.type == TOK_STRING || first.type == TOK_LIST || first.type == TOK_MAP) {
             /* Una entrada con tipo explícito empieza por el token de tipo:
              * [int numero = 7]. */

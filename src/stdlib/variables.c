@@ -12,6 +12,8 @@
 #include <string.h>
 #include <strings.h>
 #include <ctype.h>
+#include <errno.h>
+#include <limits.h>
 #include <stdbool.h>
 #include "variables.h"
 #include "core/value.h"
@@ -41,6 +43,7 @@ static bool is_valid_var_name(const char *name) {
 static int parse_type_name(const char *s) {
     if (!s || !*s) return -1;
     if (strcasecmp(s, "int")    == 0) return TOK_INT;
+    if (strcasecmp(s, "uint")   == 0) return TOK_UINT;
     if (strcasecmp(s, "float")  == 0) return TOK_FLOAT;
     if (strcasecmp(s, "bool")   == 0) return TOK_BOOL;
     if (strcasecmp(s, "string") == 0) return TOK_STRING;
@@ -92,6 +95,16 @@ static Value convert_string_to_type(const char *s, int tok_type) {
                       "mkvar(): \"%s\" no es un int válido", s);
             }
             return val_int((int)n);
+        }
+        case TOK_UINT: {
+            char *end = NULL;
+            errno = 0;
+            long n = strtol(s, &end, 10);
+            if (errno || end == s || *end || n < INT_MIN || n > INT_MAX)
+                error(current_eval_line, "mkvar(): \"%s\" no es un uint válido", s);
+            Value result = val_int((int)n);
+            (void)try_convert_value(&result, TOK_UINT);
+            return result;
         }
         case TOK_FLOAT: {
             char *normalized = strdup(s);

@@ -11,6 +11,7 @@
 #include "runtime/scope.h"
 #include "runtime/globals.h"
 #include "runtime/error.h"
+#include "runtime/constants.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -36,6 +37,7 @@ bool val_is_truthy(Value v) {
 const char *type_name(int tok_type) {
     switch (tok_type) {
         case TOK_INT:    return "int";
+        case TOK_UINT:   return "uint";
         case TOK_FLOAT:  return "float";
         case TOK_BOOL:   return "bool";
         case TOK_STRING: return "string";
@@ -262,6 +264,36 @@ int extract_integer_index(ASTNode *node, int line) {
 }
 
 bool try_convert_value(Value *val, int target_tok_type) {
+    if (target_tok_type == TOK_UINT) {
+        if (val->type == VAL_STRING) {
+            char *end = NULL;
+            errno = 0;
+            long n = strtol(val->data.sval, &end, 10);
+            if (errno || end == val->data.sval || *end || n < INT_MIN || n > INT_MAX)
+                return false;
+            free(val->data.sval);
+            val->type = VAL_INT;
+            val->data.ival = (int)n;
+        } else if (val->type == VAL_FLOAT) {
+            double f = val->data.fval;
+            if (!isfinite(f) || f < (double)INT_MIN || f > (double)INT_MAX)
+                return false;
+            val->type = VAL_INT;
+            val->data.ival = (int)f;
+        }
+        if (val->type != VAL_INT) return false;
+        if (val->data.ival < 0) {
+            Value policy = val_make_null();
+            if (!constants_lookup("_UINT_NEGATIVE_ERROR", &policy) ||
+                policy.type != VAL_BOOL || policy.data.bval) {
+                value_free(&policy);
+                error(current_eval_line, "Un valor uint no puede ser negativo");
+            }
+            value_free(&policy);
+            val->data.ival = 0;
+        }
+        return true;
+    }
     if (val->type == VAL_STRING) {
         const char *s = val->data.sval;
         if (target_tok_type == TOK_INT) {

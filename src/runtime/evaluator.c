@@ -24,11 +24,16 @@
 #include "runtime/constants.h"
 #include "runtime/command.h"
 #include <stdlib.h>
+#include <limits.h>
 
 /* --- Helper: aplica +/- 1 sobre un Value numérico --- */
 static Value compute_incdec(Value base, int delta, int line) {
-    if (base.type == VAL_INT)
+    if (base.type == VAL_INT) {
+        if ((delta > 0 && base.data.ival == INT_MAX) ||
+            (delta < 0 && base.data.ival == INT_MIN))
+            error(line, "Desbordamiento de entero en incremento/decremento");
         return val_int(base.data.ival + delta);
+    }
     if (base.type == VAL_FLOAT)
         return val_float(base.data.fval + (double)delta);
     error(line, delta > 0
@@ -89,6 +94,11 @@ Value eval_expr(ASTNode *expr) {
                 Value base = copy_value_secure(e->value);
                 Value new_val = compute_incdec(base, delta, expr->line);
                 value_free(&base);
+
+                if (e->vtype == TOK_UINT && !try_convert_value(&new_val, TOK_UINT)) {
+                    value_free(&new_val);
+                    error(expr->line, "La variable uint '%s' requiere un entero válido", name);
+                }
 
                 if (target->data.var.clone) {
                     return new_val;

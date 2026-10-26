@@ -207,7 +207,7 @@ ASTNode *parse_flags() {
 
                 /* --- Tipo opcional. Si se omite, la variable es string --- */
                 TokenType t = ts_peek().type;
-            if (t == TOK_INT || t == TOK_FLOAT || t == TOK_BOOL ||
+            if (t == TOK_INT || t == TOK_UINT || t == TOK_FLOAT || t == TOK_BOOL ||
                 t == TOK_STRING || t == TOK_LIST || t == TOK_MAP) {
                 spec.vtype = ts_advance().type;
                 } else if (t == TOK_IDENT) {
@@ -266,7 +266,7 @@ ASTNode *parse_flags() {
                     ts_advance();
                 }
                 TokenType ttype = ts_peek().type;
-                if (ttype == TOK_INT || ttype == TOK_FLOAT || ttype == TOK_BOOL ||
+                if (ttype == TOK_INT || ttype == TOK_UINT || ttype == TOK_FLOAT || ttype == TOK_BOOL ||
                     ttype == TOK_STRING || ttype == TOK_LIST) {
                     spec.vtype = ts_advance().type;
                 if (ts_peek().type != TOK_IDENT || !is_valid_flag_name(ts_peek().lexeme)) {

@@ -126,6 +126,20 @@ static void bind_flag_value(FlagSpec *spec, const char *val_str, int line) {
     }
     Value v;
     switch (spec->vtype) {
+        case TOK_UINT: {
+            char *end = NULL;
+            errno = 0;
+            long n = strtol(cleaned, &end, 10);
+            if (errno || end == cleaned || *end || n < INT_MIN || n > INT_MAX) {
+                char bad[256];
+                snprintf(bad, sizeof(bad), "%.200s", cleaned);
+                free(cleaned);
+                error(line, "El flag '%s' espera un uint, se recibió \"%s\"", spec->var_name, bad);
+            }
+            v = val_int((int)n);
+            (void)try_convert_value(&v, TOK_UINT);
+            break;
+        }
         case TOK_INT: {
             char *end = NULL;
             errno = 0;

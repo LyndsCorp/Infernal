@@ -120,7 +120,7 @@ static int lava_module_loaded(const char *path, const char *prefix) {
 /* Contexto activo durante la llamada a una función Lava. */
 typedef struct {
     bool    type_set;
-    int     type;      /* TOK_INT, TOK_FLOAT, TOK_STRING, TOK_BOOL, TOK_LIST, TOK_MAP */
+    int     type;      /* TOK_INT, TOK_UINT, TOK_FLOAT, TOK_STRING, TOK_BOOL, TOK_LIST, TOK_MAP */
     bool    value_set;
     Value   value;
     int     argc;
@@ -316,6 +316,7 @@ void infernal_return_type(const char *type) {
     }
     int t = 0;
     if      (strcmp(type, "int")    == 0) t = TOK_INT;
+    else if (strcmp(type, "uint")   == 0) t = TOK_UINT;
     else if (strcmp(type, "float")  == 0) t = TOK_FLOAT;
     else if (strcmp(type, "string") == 0) t = TOK_STRING;
     else if (strcmp(type, "bool")   == 0) t = TOK_BOOL;
@@ -353,6 +354,15 @@ void infernal_return_value(const char *fmt, ...) {
     va_start(ap, fmt);
     switch (g_ctx->type) {
         case TOK_INT:    g_ctx->value = val_int(va_arg(ap, int));            break;
+        case TOK_UINT: {
+            unsigned int n = va_arg(ap, unsigned int);
+            if (n > INT_MAX) {
+                va_end(ap);
+                error(0, "Lava: uint excede el máximo admitido por Infernal");
+            }
+            g_ctx->value = val_int((int)n);
+            break;
+        }
         case TOK_FLOAT:  g_ctx->value = val_float(va_arg(ap, double));       break;
         case TOK_BOOL:   g_ctx->value = val_bool(va_arg(ap, int) != 0);      break;
         case TOK_STRING: {
@@ -1241,6 +1251,7 @@ static Value lava_dispatch(int slot, int argc, Value *args) {
         } else {
             switch (ctx->type) {
                 case TOK_INT:    result = val_int(0);         break;
+                case TOK_UINT:   result = val_int(0);         break;
                 case TOK_FLOAT:  result = val_float(0.0);     break;
                 case TOK_BOOL:   result = val_bool(false);    break;
                 case TOK_STRING: result = val_string("");     break;

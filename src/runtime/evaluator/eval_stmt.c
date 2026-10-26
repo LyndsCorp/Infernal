@@ -804,7 +804,7 @@ void exec_stmt(ASTNode *stmt) {
                         /* Declaración con índice sin valor: usamos el
                          * valor por defecto del tipo declarado. */
                         int vtype = stmt->data.assign.vtype;
-                        if (vtype == TOK_INT)         new_val = val_int(0);
+                        if (vtype == TOK_INT || vtype == TOK_UINT) new_val = val_int(0);
                         else if (vtype == TOK_FLOAT)  new_val = val_float(0.0);
                         else if (vtype == TOK_BOOL)   new_val = val_bool(false);
                         else if (vtype == TOK_STRING) new_val = val_string("");
@@ -885,7 +885,7 @@ void exec_stmt(ASTNode *stmt) {
                         val = eval_expr(stmt->data.assign.value);
                     }
                 }
-                else if (stmt->data.assign.vtype == TOK_INT)
+                else if (stmt->data.assign.vtype == TOK_INT || stmt->data.assign.vtype == TOK_UINT)
                     val = val_int(0);
                 else if (stmt->data.assign.vtype == TOK_FLOAT)
                     val = val_float(0.0);
@@ -1174,6 +1174,7 @@ void exec_stmt(ASTNode *stmt) {
                 int vtype = stmt->data.for_stmt.vtype;
                 switch (vtype) {
                     case TOK_INT:    init_val = val_int(0);       break;
+                    case TOK_UINT:   init_val = val_int(0);       break;
                     case TOK_FLOAT:  init_val = val_float(0.0);   break;
                     case TOK_BOOL:   init_val = val_bool(false);  break;
                     case TOK_STRING: init_val = val_string("");   break;
@@ -1467,8 +1468,13 @@ void exec_stmt(ASTNode *stmt) {
                     }
                 }
 
+                if (expected == TOK_UINT && !try_convert_value(&result, TOK_UINT)) {
+                    value_free(&result);
+                    error(stmt->line, "El retorno uint requiere un entero válido");
+                }
+
                 int actual = valtype_to_tokentype(result.type);
-                if (actual != expected) {
+                if (actual != expected && !(expected == TOK_UINT && actual == TOK_INT)) {
                     bool was_void = (result.type == VAL_VOID);
                     value_free(&result);
                     if (was_void) {

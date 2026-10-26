@@ -33,6 +33,7 @@ typedef struct ConstantEntry {
 static ConstantEntry *constant_table = NULL;
 static ConstantEntry *constant_buckets[CONSTANT_BUCKET_COUNT];
 static bool definition_allowed = true;
+static bool uint_negative_error = true;
 
 static unsigned long constant_name_hash(const char *name) {
     unsigned long hash = 1469598103934665603UL;
@@ -296,6 +297,16 @@ static Value get_command_fail_error(void) {
     return val_bool(command_fail_error);
 }
 
+static Value get_uint_negative_error(void) {
+    return val_bool(uint_negative_error);
+}
+
+static void set_uint_negative_error(const Value *value) {
+    if (!value || value->type != VAL_BOOL)
+        error(0, "_UINT_NEGATIVE_ERROR espera un valor de tipo bool");
+    uint_negative_error = value->data.bval;
+}
+
 static void set_command_fail_error(const Value *value) {
     if (!value || value->type != VAL_BOOL) {
         error(0, "_COMMAND_FAIL_ERROR espera un valor de tipo bool (se recibió '%s')",
@@ -347,6 +358,11 @@ static Value get_pid(void) {
 }
 
 void register_all_constants(void) {
+    register_internal_constant("_UINT_NEGATIVE_ERROR",
+                               TOK_BOOL,
+                               val_bool(uint_negative_error),
+                               get_uint_negative_error,
+                               set_uint_negative_error);
     register_internal_constant("_COMMAND_FAIL_ERROR",
                                TOK_BOOL,
                                val_bool(command_fail_error),
@@ -389,6 +405,7 @@ void constants_cleanup(void) {
     }
     memset(constant_buckets, 0, sizeof(constant_buckets));
     definition_allowed = true;
+    uint_negative_error = true;
 }
 
 void constants_foreach(ConstantVisitor visitor, void *user_data) {

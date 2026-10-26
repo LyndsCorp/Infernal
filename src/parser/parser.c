@@ -960,7 +960,7 @@ NodeList parse_block(const char *terminator) {
             else if (ts_peek().type == TOK_GLOBAL) { is_global = true; ts_advance(); }
 
             TokenType tt = ts_peek().type;
-            if (tt == TOK_INT || tt == TOK_FLOAT || tt == TOK_BOOL ||
+            if (tt == TOK_INT || tt == TOK_UINT || tt == TOK_FLOAT || tt == TOK_BOOL ||
                 tt == TOK_STRING || tt == TOK_LIST || tt == TOK_MAP) {
                 vtype = ts_advance().type;
                 }
@@ -1223,7 +1223,7 @@ NodeList parse_block(const char *terminator) {
                 do {
                     int ptype = 0;
                     TokenType tt = ts_peek().type;
-                    if (tt == TOK_INT || tt == TOK_FLOAT || tt == TOK_BOOL || tt == TOK_STRING || tt == TOK_LIST || tt == TOK_MAP)
+                    if (tt == TOK_INT || tt == TOK_UINT || tt == TOK_FLOAT || tt == TOK_BOOL || tt == TOK_STRING || tt == TOK_LIST || tt == TOK_MAP)
                         ptype = ts_advance().type;
                     if (ts_peek().type != TOK_IDENT) error(t.line, "Se esperaba nombre de parámetro");
                     char *pname = clean_var_name(ts_advance().lexeme);
@@ -1273,7 +1273,7 @@ NodeList parse_block(const char *terminator) {
             int rtype = 0;
 
             TokenType tt = ts_peek().type;
-            if (tt == TOK_INT || tt == TOK_FLOAT || tt == TOK_BOOL ||
+            if (tt == TOK_INT || tt == TOK_UINT || tt == TOK_FLOAT || tt == TOK_BOOL ||
                 tt == TOK_STRING || tt == TOK_LIST || tt == TOK_MAP) {
                 rtype = ts_advance().type;
             if (ts_peek().type == TOK_NEWLINE || ts_peek().type == TOK_FI || ts_peek().type == TOK_EOF)
@@ -1785,7 +1785,7 @@ NodeList parse_block(const char *terminator) {
                 do {
                     int ptype = 0;
                     TokenType tt = ts_peek().type;
-                    if (tt == TOK_INT || tt == TOK_FLOAT || tt == TOK_BOOL ||
+                    if (tt == TOK_INT || tt == TOK_UINT || tt == TOK_FLOAT || tt == TOK_BOOL ||
                         tt == TOK_STRING || tt == TOK_LIST || tt == TOK_MAP)
                         ptype = ts_advance().type;
                     if (ts_peek().type != TOK_IDENT)
@@ -1840,7 +1840,7 @@ NodeList parse_block(const char *terminator) {
             DEBUG_INFO("parse_block: declaración %s en línea %d", is_local ? "local" : "global", t.line);
 
             int vtype = 0;
-            if (ts_peek().type == TOK_INT || ts_peek().type == TOK_FLOAT ||
+            if (ts_peek().type == TOK_INT || ts_peek().type == TOK_UINT || ts_peek().type == TOK_FLOAT ||
                 ts_peek().type == TOK_BOOL || ts_peek().type == TOK_STRING ||
                 ts_peek().type == TOK_LIST || ts_peek().type == TOK_MAP) {
                 vtype = ts_advance().type;
@@ -1876,6 +1876,7 @@ NodeList parse_block(const char *terminator) {
                         if (vtype != TOK_MAP && vtype != TOK_LIST) {
                             const char *tipo_str = "ese tipo";
                             if (vtype == TOK_INT)         tipo_str = "int";
+                            else if (vtype == TOK_UINT)   tipo_str = "uint";
                             else if (vtype == TOK_FLOAT)  tipo_str = "float";
                             else if (vtype == TOK_BOOL)   tipo_str = "bool";
                             else if (vtype == TOK_STRING) tipo_str = "string";
@@ -2013,7 +2014,7 @@ NodeList parse_block(const char *terminator) {
         }
 
         /* --- TIPO + IDENT (int x = 5, int a, b, c) --- */
-        if (t.type == TOK_INT || t.type == TOK_FLOAT || t.type == TOK_BOOL ||
+        if (t.type == TOK_INT || t.type == TOK_UINT || t.type == TOK_FLOAT || t.type == TOK_BOOL ||
             t.type == TOK_STRING || t.type == TOK_LIST || t.type == TOK_MAP) {
             int vtype = ts_advance().type;
 
@@ -2039,6 +2040,7 @@ NodeList parse_block(const char *terminator) {
                 if (vtype != TOK_MAP && vtype != TOK_LIST) {
                     const char *tipo_str = "ese tipo";
                     if (vtype == TOK_INT)         tipo_str = "int";
+                    else if (vtype == TOK_UINT)   tipo_str = "uint";
                     else if (vtype == TOK_FLOAT)  tipo_str = "float";
                     else if (vtype == TOK_BOOL)   tipo_str = "bool";
                     else if (vtype == TOK_STRING) tipo_str = "string";

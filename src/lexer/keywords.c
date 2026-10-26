@@ -32,7 +32,7 @@ Keyword keywords[] = {
     KEYWORD("repeat", TOK_REPEAT, 0xd99ba82au), KEYWORD("portal", TOK_PORTAL, 0x150c5d8bu),
     KEYWORD("continue", TOK_CONTINUE, 0xb1727e44u), KEYWORD("import", TOK_IMPORT, 0x112a90d4u),
     KEYWORD("try", TOK_TRY, 0xac1db00eu), KEYWORD("catch", TOK_CATCH, 0x4288e94cu),
-    KEYWORD("int", TOK_INT, 0x95e97e5eu), KEYWORD("float", TOK_FLOAT, 0xa6c45d85u), KEYWORD("bool", TOK_BOOL, 0xc894953du),
+    KEYWORD("int", TOK_INT, 0x95e97e5eu), KEYWORD("uint", TOK_UINT, 0xcb9836a1u), KEYWORD("float", TOK_FLOAT, 0xa6c45d85u), KEYWORD("bool", TOK_BOOL, 0xc894953du),
     KEYWORD("string", TOK_STRING, 0x17c16538u), KEYWORD("list", TOK_LIST, 0x0cfb5881u), KEYWORD("map", TOK_MAP, 0xdfa2efb1u),
     KEYWORD("define", TOK_DEFINE, 0x6a9f8552u), KEYWORD("local", TOK_LOCAL, 0x9c436708u), KEYWORD("global", TOK_GLOBAL, 0x1dff06aeu),
     KEYWORD("and", TOK_AND, 0x0f29c2a6u), KEYWORD("or", TOK_OR, 0x5d342984u), KEYWORD("in", TOK_IN, 0x41387a9eu),
@@ -70,6 +70,7 @@ TokenType lookup_keyword(const char *lexeme) {
         case 0xac1db00eu: return strcmp(lexeme, "try") == 0 ? TOK_TRY : TOK_IDENT;
         case 0x4288e94cu: return strcmp(lexeme, "catch") == 0 ? TOK_CATCH : TOK_IDENT;
         case 0x95e97e5eu: return strcmp(lexeme, "int") == 0 ? TOK_INT : TOK_IDENT;
+        case 0xcb9836a1u: return strcmp(lexeme, "uint") == 0 ? TOK_UINT : TOK_IDENT;
         case 0xa6c45d85u: return strcmp(lexeme, "float") == 0 ? TOK_FLOAT : TOK_IDENT;
         case 0xc894953du: return strcmp(lexeme, "bool") == 0 ? TOK_BOOL : TOK_IDENT;
         case 0x17c16538u: return strcmp(lexeme, "string") == 0 ? TOK_STRING : TOK_IDENT;

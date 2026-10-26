@@ -139,6 +139,7 @@ Value val_ptr(void *ptr) {
 static const char *map_type_name(int tok_type) {
     switch (tok_type) {
         case TOK_INT: return "int";
+        case TOK_UINT: return "uint";
         case TOK_FLOAT: return "float";
         case TOK_BOOL: return "bool";
         case TOK_STRING: return "string";

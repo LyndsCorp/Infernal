@@ -78,6 +78,19 @@ fi
 | Librería estándar amplia             | ⚠️ Builtins + herramientas externas  | ✅                                      | ⚠️ Minimalista               | ✅                            | ✅                            | ✅ Amplia (string, cut, map, list, io, db, system)                            |
 | Gestor de paquetes oficial/integrado | ❌                                    | ⚠️ `pip`                               | ⚠️ LuaRocks                  | ✅ Cargo                      | ✅ Go Modules                 | ❌                                                                             |
 | Tiempo de ejecución                  | Interpretado                         | Interpretado / bytecode                 | Interpretado / bytecode      | Compilado a nativo            | Compilado a nativo            | Interpretado (tree-walking)                                                   |
+
+### Tipo `uint`
+
+`uint` declara un entero que no admite valores negativos:
+
+```infernal
+uint contador = 3
+contador--
+```
+
+Por defecto, asignar o producir un valor negativo da error. Si se define
+`_UINT_NEGATIVE_ERROR false`, esos valores se saturan a `0`. El rango numérico
+sigue siendo el de `int` en esta versión del intérprete.
 | Compilación a código nativo          | ❌                                    | ❌                                      | ❌                           | ✅                            | ✅                            | ❌                                                                             |
 | Rendimiento                          | Bajo–medio                           | Medio                                   | Medio–alto                   | **Muy alto**                  | **Muy alto**                  | **Bajo–medio**                                                                |
 | Curva de aprendizaje                 | Media                                | Baja                                    | Baja–media                   | Alta                          | Media–baja                    | **Media**                                                                     |
