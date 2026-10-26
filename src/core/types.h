@@ -10,6 +10,7 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 #include <setjmp.h>
 
 typedef enum {
@@ -56,6 +57,8 @@ typedef struct {
 } Token;
 
 typedef struct ASTNode ASTNode;
+struct Scope;
+struct VarEntry;
 typedef struct RepeatLineIndex {
     size_t capacity;
     int *lines;
@@ -185,7 +188,14 @@ struct ASTNode {
             struct { ASTNode *expr; int rtype; } ret;
             struct { char *path; char *alias; NodeList module_block; ImportModule *cache; } import;
             struct { NodeList try_block, catch_block; } try_stmt;
-            struct { char *name; bool clone; } var;
+            struct {
+                char *name;
+                bool clone;
+                struct Scope *cached_scope;
+                struct VarEntry *cached_entry;
+                uint64_t cached_scope_id;
+                uint64_t cached_var_version;
+            } var;
             struct { int type; int ival; double fval; int bval; char *sval; } lit;
             struct { int op; ASTNode *left, *right; } binop;
             struct { char *name; ASTNode **args; int argc; FuncObject *resolved; } call;

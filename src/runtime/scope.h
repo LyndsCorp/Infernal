@@ -30,6 +30,8 @@ typedef struct Scope {
     VarEntry **var_buckets;
     size_t var_bucket_count;
     size_t var_count;
+    uint64_t identity;
+    uint64_t variable_version;
     PortalEntry *portals;
     struct Scope *parent;
     char *function_name;  // nombre de la función si es un ámbito de función, o NULL

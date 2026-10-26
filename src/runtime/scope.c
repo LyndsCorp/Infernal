@@ -29,6 +29,7 @@ typedef struct ScopeRegistryEntry {
 } ScopeRegistryEntry;
 
 static ScopeRegistryEntry *scope_registry = NULL;
+static uint64_t next_scope_identity = 1;
 
 static unsigned long scope_name_hash(const char *name) {
     unsigned long hash = 1469598103934665603UL;
@@ -64,6 +65,7 @@ static void scope_index_insert(Scope *scope, VarEntry *entry) {
     entry->hash_next = scope->var_buckets[bucket];
     scope->var_buckets[bucket] = entry;
     scope->var_count++;
+    scope->variable_version++;
 }
 
 static void scope_registry_add(Scope *scope) {
@@ -93,6 +95,9 @@ Scope *scope_new(Scope *parent, const char *function_name) {
     s->var_buckets = NULL;
     s->var_bucket_count = 0;
     s->var_count = 0;
+    s->identity = next_scope_identity++;
+    if (next_scope_identity == 0) next_scope_identity = 1;
+    s->variable_version = 1;
     s->portals = NULL;
     s->parent = parent;
     s->function_name = function_name ? infernal_strdup(function_name) : NULL;
@@ -198,6 +203,7 @@ void scope_remove_var_entry(Scope *scope, VarEntry *entry) {
     if (*hash_link) {
         *hash_link = entry->hash_next;
         scope->var_count--;
+        scope->variable_version++;
     }
 }
 
