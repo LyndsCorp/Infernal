@@ -917,34 +917,25 @@ void exec_stmt(ASTNode *stmt) {
 
         case NODE_IF: {
             Value cond = val_make_null();
-            bool cond_is_var = (stmt->data.if_stmt.cond->kind == NODE_VAR);
+            ASTNode *cond_node = stmt->data.if_stmt.cond;
 
-            jmp_buf saved_env;
-            memcpy(&saved_env, &exception_env, sizeof(jmp_buf));
-            int saved_raised = exception_raised;
-
-            if (setjmp(exception_env) != 0) {
-                memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
-                exception_raised = saved_raised;
-
-                if (cond_is_var) {
+            /* Antes se interceptaba cualquier error con setjmp para adornar
+             * el caso de una variable directa inexistente. Ese caso se puede
+             * identificar sin cambiar el entorno de excepciones; los errores
+             * de expresiones anidadas siguen propagándose normalmente. */
+            if (cond_node->kind == NODE_VAR) {
+                const char *name = cond_node->data.var.name;
+                if (*name == '$') name++;
+                if (!scope_find(current_scope, name) && !constants_is_reserved(name)) {
                     error(stmt->line,
                           "La condición del 'if' usa la variable '%s', pero no existe.\n"
                           "    - Si querías preguntar si existe, usa:  varexists(\"%s\")\n"
                           "    - Si querías comparar su valor, primero defínela y luego usa una comparación explícita:  ==, !=, <, >, <=, >=.\n",
-                          stmt->data.if_stmt.cond->data.var.name,
-                          stmt->data.if_stmt.cond->data.var.name);
-                } else {
-                    /* Otro error dentro de la condición (variable anidada, función, etc.).
-                     * Lo dejamos propagar tal cual. */
-                    longjmp(exception_env, 1);
+                          cond_node->data.var.name, cond_node->data.var.name);
                 }
             }
 
-            cond = eval_expr(stmt->data.if_stmt.cond);
-
-            memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
-            exception_raised = saved_raised;
+            cond = eval_expr(cond_node);
 
             /* Unificamos el chequeo de condiciones con while y for:
              * se acepta cualquier valor truthy (int != 0, string no vacío,
