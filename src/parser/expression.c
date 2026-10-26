@@ -513,6 +513,7 @@ ASTNode *parse_primary() {
             n->data.call.name = func_name;
             n->data.call.argc = 0;
             n->data.call.args = NULL;
+            n->data.call.resolved = NULL;
             ts_advance(); // consume '('
 
             // Si no hay paréntesis de cierre inmediato, parseamos argumentos

@@ -188,7 +188,7 @@ struct ASTNode {
             struct { char *name; bool clone; } var;
             struct { int type; int ival; double fval; int bval; char *sval; } lit;
             struct { int op; ASTNode *left, *right; } binop;
-            struct { char *name; ASTNode **args; int argc; } call;
+            struct { char *name; ASTNode **args; int argc; FuncObject *resolved; } call;
             struct { ASTNode *list, *index; } idx;
             struct { int mode; FlagSpec *specs; int spec_count; } flags;
             struct { ASTNode **items; int count; } list_lit;

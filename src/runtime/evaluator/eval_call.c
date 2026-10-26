@@ -17,7 +17,11 @@
 #include <setjmp.h>
 
 Value eval_call(ASTNode *expr) {
-    FuncObject *fobj = func_lookup(expr->data.call.name);
+    FuncObject * volatile fobj = expr->data.call.resolved;
+    if (!fobj) {
+        fobj = func_lookup(expr->data.call.name);
+        if (fobj) expr->data.call.resolved = fobj;
+    }
     if (!fobj) {
         const char *name = expr->data.call.name;
         const char *dot  = strrchr(name, '.');
