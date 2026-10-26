@@ -26,13 +26,33 @@ typedef struct ConstantEntry {
     ConstantGetter getter;
     ConstantSetter setter;
     struct ConstantEntry *next;
+    struct ConstantEntry *hash_next;
 } ConstantEntry;
 
+#define CONSTANT_BUCKET_COUNT 128u
 static ConstantEntry *constant_table = NULL;
+static ConstantEntry *constant_buckets[CONSTANT_BUCKET_COUNT];
 static bool definition_allowed = true;
 
+static unsigned long constant_name_hash(const char *name) {
+    unsigned long hash = 1469598103934665603UL;
+    while (*name) {
+        hash ^= (unsigned char)*name++;
+        hash *= 1099511628211UL;
+    }
+    return hash;
+}
+
+static void constant_index_insert(ConstantEntry *entry) {
+    size_t bucket = constant_name_hash(entry->name) % CONSTANT_BUCKET_COUNT;
+    entry->hash_next = constant_buckets[bucket];
+    constant_buckets[bucket] = entry;
+}
+
 static ConstantEntry *find_constant(const char *name) {
-    for (ConstantEntry *entry = constant_table; entry; entry = entry->next) {
+    if (!name) return NULL;
+    size_t bucket = constant_name_hash(name) % CONSTANT_BUCKET_COUNT;
+    for (ConstantEntry *entry = constant_buckets[bucket]; entry; entry = entry->hash_next) {
         if (strcmp(entry->name, name) == 0)
             return entry;
     }
@@ -67,6 +87,7 @@ static void register_internal_constant(const char *name,
     entry->setter = setter;
     entry->next = constant_table;
     constant_table = entry;
+    constant_index_insert(entry);
 }
 
 bool constants_lookup(const char *name, Value *out) {
@@ -132,6 +153,7 @@ Value *constants_make_mutable(const char *name) {
     entry->setter = NULL;
     entry->next = constant_table;
     constant_table = entry;
+    constant_index_insert(entry);
 
     return &entry->value;
 }
@@ -241,6 +263,7 @@ void constants_define(const char *name, Value value, int line) {
     entry->setter = NULL;
     entry->next = constant_table;
     constant_table = entry;
+    constant_index_insert(entry);
 }
 
 void constants_set_definition_allowed(bool allowed) {
@@ -364,6 +387,7 @@ void constants_cleanup(void) {
         value_free(&entry->value);
         free(entry);
     }
+    memset(constant_buckets, 0, sizeof(constant_buckets));
     definition_allowed = true;
 }
 
