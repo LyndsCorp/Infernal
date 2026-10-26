@@ -40,6 +40,7 @@ typedef struct Scope {
 Scope *scope_new(Scope *parent, const char *function_name);
 VarEntry *scope_find(Scope *scope, const char *name);
 VarEntry *scope_find_current(Scope *scope, const char *name); // solo en el ámbito actual
+uint64_t scope_cache_generation(void);
 void scope_remove_var_entry(Scope *scope, VarEntry *entry);
 VarEntry *scope_find_script(Scope *scope, const char *name);
 void scope_define(Scope *scope, const char *name, int vtype, Value val);

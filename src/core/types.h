@@ -106,6 +106,8 @@ typedef struct {
 #define VALUE_FLAG_WIDE_INTEGER 0x01u
 #define VALUE_HAS_WIDE_INTEGER(v) (((v).flags & VALUE_FLAG_WIDE_INTEGER) != 0)
 
+struct WideInteger;
+
 typedef struct MapData MapData;
 typedef struct Value Value;
 
@@ -116,7 +118,7 @@ struct Value {
         int ival;
         uint32_t uval;
         double fval;
-        bool bval : 1;
+        bool bval;
         char *sval;
         struct {
             Value *items;
@@ -130,7 +132,7 @@ struct Value {
         } ref;
         void *ptr;
         MapData *map;
-        struct { InfernalBigInt *number; } wide_integer;
+        struct { struct WideInteger *box; } wide_integer;
     } data;
 };
 
@@ -203,8 +205,13 @@ struct ASTNode {
                 uint64_t cached_scope_id;
                 uint64_t cached_var_version;
             } var;
-            struct { int type; int ival; uint32_t uval; double fval; int bval; char *sval; bool integer_wide; } lit;
+            struct {
+                int type; int ival; uint32_t uval; double fval; int bval;
+                union { char *sval; InfernalBigInt *integer_cache; } payload;
+                bool integer_wide;
+            } lit;
             struct { int op; ASTNode *left, *right; } binop;
+            /* Las funciones registradas no se eliminan; resolved permanece estable. */
             struct { char *name; ASTNode **args; int argc; FuncObject *resolved; } call;
             struct { ASTNode *list, *index; } idx;
             struct { int mode; FlagSpec *specs; int spec_count; } flags;

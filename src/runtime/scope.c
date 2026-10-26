@@ -30,6 +30,15 @@ typedef struct ScopeRegistryEntry {
 
 static ScopeRegistryEntry *scope_registry = NULL;
 static uint64_t next_scope_identity = 1;
+static uint64_t global_variable_generation = 1;
+
+static void bump_global_variable_generation(void) {
+    if (++global_variable_generation == 0) global_variable_generation = 1;
+}
+
+uint64_t scope_cache_generation(void) {
+    return global_variable_generation;
+}
 
 static unsigned long scope_name_hash(const char *name) {
     unsigned long hash = 1469598103934665603UL;
@@ -66,6 +75,7 @@ static void scope_index_insert(Scope *scope, VarEntry *entry) {
     scope->var_buckets[bucket] = entry;
     scope->var_count++;
     scope->variable_version++;
+    bump_global_variable_generation();
 }
 
 static void scope_registry_add(Scope *scope) {
@@ -208,6 +218,7 @@ void scope_remove_var_entry(Scope *scope, VarEntry *entry) {
         *hash_link = entry->hash_next;
         scope->var_count--;
         scope->variable_version++;
+        bump_global_variable_generation();
     }
 }
 
@@ -296,6 +307,7 @@ void portal_define(Scope *scope, const char *name, int line) {
 /* --- Liberar un ámbito (se desactiva la liberación de variables para evitar double-free) --- */
 void scope_free(Scope *s) {
     if (!s) return;
+    if (s->var_count) bump_global_variable_generation();
     scope_registry_remove(s);
     VarEntry *e = s->vars;
     while (e) {

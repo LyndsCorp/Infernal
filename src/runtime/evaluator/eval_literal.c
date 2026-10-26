@@ -21,36 +21,33 @@
 Value eval_literal(ASTNode *expr) {
     if (expr->data.lit.type == TOK_INT) {
         if (!expr->data.lit.integer_wide) return val_int(expr->data.lit.ival);
-        InfernalBigInt integer;
-        if (!bigint_parse(expr->data.lit.sval, &integer)) error(expr->line, "Literal int interno no válido");
-        return val_bigint(integer, false);
+        return val_bigint(*expr->data.lit.payload.integer_cache, false);
     }
     if (expr->data.lit.type == TOK_UINT) {
         if (!expr->data.lit.integer_wide) return val_uint(expr->data.lit.uval);
-        InfernalBigInt integer;
-        if (!bigint_parse(expr->data.lit.sval, &integer)) error(expr->line, "Literal uint interno no válido");
-        return val_bigint(integer, true);
+        return val_bigint(*expr->data.lit.payload.integer_cache, true);
     }
     if (expr->data.lit.type == TOK_FLOAT)  return val_float(expr->data.lit.fval);
     if (expr->data.lit.type == TOK_BOOL)   return val_bool(expr->data.lit.bval);
-    if (expr->data.lit.type == TOK_STRING) return val_string(expr->data.lit.sval);
+    if (expr->data.lit.type == TOK_STRING) return val_string(expr->data.lit.payload.sval);
     return val_make_null();
 }
 
 VarEntry *eval_var_find_entry(ASTNode *expr, const char *name) {
     Scope *scope = current_scope;
+    uint64_t generation = scope_cache_generation();
     if (scope && expr->data.var.cached_scope == scope &&
         expr->data.var.cached_scope_id == scope->identity &&
-        expr->data.var.cached_var_version == scope->variable_version) {
+        expr->data.var.cached_var_version == generation) {
         return expr->data.var.cached_entry;
     }
 
     VarEntry *entry = scope_find(scope, name);
-    if (entry && scope && scope_find_current(scope, name) == entry) {
+    if (entry && scope) {
         expr->data.var.cached_scope = scope;
         expr->data.var.cached_entry = entry;
         expr->data.var.cached_scope_id = scope->identity;
-        expr->data.var.cached_var_version = scope->variable_version;
+        expr->data.var.cached_var_version = generation;
     }
     return entry;
 }

@@ -44,7 +44,7 @@ static Value builtin_has(int argc, Value *args) {
                 switch (item.type) {
                     case VAL_INT: case VAL_UINT:
                         if ((element.type == VAL_INT || element.type == VAL_UINT) &&
-                            bigint_compare(value_as_bigint(item), value_as_bigint(element)) == 0)
+                            value_integer_compare(item, element) == 0)
                             return val_bool(true);
                         break;
                     case VAL_FLOAT:  if (item.data.fval == element.data.fval) return val_bool(true); break;

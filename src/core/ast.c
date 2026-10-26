@@ -386,7 +386,13 @@ static void ast_free_internal(ASTNode *node) {
             break;
         case NODE_TRY: nodelist_free_internal(&node->data.try_stmt.try_block); nodelist_free_internal(&node->data.try_stmt.catch_block); break;
         case NODE_VAR: free(node->data.var.name); break;
-        case NODE_LITERAL: free(node->data.lit.sval); break;
+        case NODE_LITERAL:
+            if (node->data.lit.integer_wide &&
+                (node->data.lit.type == TOK_INT || node->data.lit.type == TOK_UINT))
+                free(node->data.lit.payload.integer_cache);
+            else
+                free(node->data.lit.payload.sval);
+            break;
         case NODE_BINOP: ast_free_internal(node->data.binop.left); ast_free_internal(node->data.binop.right); break;
         case NODE_CALL:
             free(node->data.call.name);
@@ -463,8 +469,14 @@ ASTNode *deep_copy_ast(ASTNode *node) {
             copy->data.lit.fval = node->data.lit.fval;
             copy->data.lit.bval = node->data.lit.bval;
             copy->data.lit.integer_wide = node->data.lit.integer_wide;
-            copy->data.lit.sval = node->data.lit.sval
-                ? infernal_strdup(node->data.lit.sval) : NULL;
+            if (node->data.lit.integer_wide &&
+                (node->data.lit.type == TOK_INT || node->data.lit.type == TOK_UINT)) {
+                copy->data.lit.payload.integer_cache = infernal_malloc(sizeof(InfernalBigInt));
+                *copy->data.lit.payload.integer_cache = *node->data.lit.payload.integer_cache;
+            } else {
+                copy->data.lit.payload.sval = node->data.lit.payload.sval
+                    ? infernal_strdup(node->data.lit.payload.sval) : NULL;
+            }
             break;
         case NODE_INDEX:
             copy->data.idx.list = deep_copy_ast(node->data.idx.list);

@@ -24,7 +24,7 @@
 bool val_is_truthy(Value v) {
     switch (v.type) {
         case VAL_BOOL:   return v.data.bval;
-        case VAL_INT: case VAL_UINT: return !bigint_is_zero(value_as_bigint(v));
+        case VAL_INT: case VAL_UINT: return !value_integer_is_zero(v);
         case VAL_FLOAT:  return v.data.fval != 0.0;
         case VAL_STRING: return v.data.sval && strlen(v.data.sval) > 0;
         case VAL_LIST:   return v.data.list.count > 0;
@@ -231,8 +231,7 @@ int extract_integer_index(ASTNode *node, int line) {
     if (node->kind == NODE_LITERAL && node->data.lit.type == TOK_INT) {
         if (!node->data.lit.integer_wide) return node->data.lit.ival;
         int64_t wide;
-        InfernalBigInt integer;
-        if (!bigint_parse(node->data.lit.sval, &integer) || !bigint_to_i64(integer, &wide) || wide < INT_MIN || wide > INT_MAX)
+        if (!bigint_to_i64(*node->data.lit.payload.integer_cache, &wide) || wide < INT_MIN || wide > INT_MAX)
             error(line, "El índice int excede el tamaño máximo de una lista");
         return (int)wide;
     }
@@ -536,13 +535,13 @@ bool try_convert_value(Value *val, int target_tok_type) {
         return true;
     }
     if (val->type == VAL_INT && target_tok_type == TOK_FLOAT) {
-        double number = bigint_to_double(value_as_bigint(*val));
+        double number = value_integer_to_double(*val);
         val->type = VAL_FLOAT;
         val->data.fval = number;
         return true;
     }
     if (val->type == VAL_UINT && target_tok_type == TOK_FLOAT) {
-        double number = bigint_to_double(value_as_bigint(*val));
+        double number = value_integer_to_double(*val);
         val->type = VAL_FLOAT;
         val->data.fval = number;
         return true;

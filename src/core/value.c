@@ -14,6 +14,11 @@
 #include "runtime/error.h"
 #include "runtime/evaluator/helpers.h"
 
+typedef struct WideInteger {
+    uint32_t references;
+    InfernalBigInt number;
+} WideInteger;
+
 Value val_make_null(void) {
     Value v = {0}; v.type = VAL_NULL; return v;
 }
@@ -31,9 +36,45 @@ Value val_uint(uint32_t x) {
 }
 
 InfernalBigInt value_as_bigint(Value value) {
-    if (VALUE_HAS_WIDE_INTEGER(value)) return *value.data.wide_integer.number;
+    if (VALUE_HAS_WIDE_INTEGER(value)) return value.data.wide_integer.box->number;
     return value.type == VAL_UINT ? bigint_from_u64(value.data.uval)
                                   : bigint_from_i64(value.data.ival);
+}
+
+static int64_t small_integer(Value value) {
+    return value.type == VAL_UINT ? (int64_t)value.data.uval : (int64_t)value.data.ival;
+}
+
+bool value_integer_is_zero(Value value) {
+    if (VALUE_HAS_WIDE_INTEGER(value))
+        return bigint_is_zero_ref(&value.data.wide_integer.box->number);
+    return value.type == VAL_UINT ? value.data.uval == 0 : value.data.ival == 0;
+}
+
+int value_integer_compare(Value left, Value right) {
+    bool left_wide = VALUE_HAS_WIDE_INTEGER(left);
+    bool right_wide = VALUE_HAS_WIDE_INTEGER(right);
+    if (!left_wide && !right_wide) {
+        int64_t a = small_integer(left), b = small_integer(right);
+        return (a > b) - (a < b);
+    }
+    if (left_wide && right_wide)
+        return bigint_compare_ref(&left.data.wide_integer.box->number,
+                                  &right.data.wide_integer.box->number);
+    if (left_wide) {
+        InfernalBigInt small = right.type == VAL_UINT
+            ? bigint_from_u64(right.data.uval) : bigint_from_i64(right.data.ival);
+        return bigint_compare_ref(&left.data.wide_integer.box->number, &small);
+    }
+    InfernalBigInt small = left.type == VAL_UINT
+        ? bigint_from_u64(left.data.uval) : bigint_from_i64(left.data.ival);
+    return -bigint_compare_ref(&right.data.wide_integer.box->number, &small);
+}
+
+double value_integer_to_double(Value value) {
+    if (VALUE_HAS_WIDE_INTEGER(value))
+        return bigint_to_double_ref(&value.data.wide_integer.box->number);
+    return value.type == VAL_UINT ? (double)value.data.uval : (double)value.data.ival;
 }
 
 bool value_integer_fits(Value value, size_t width, bool is_signed) {
@@ -58,8 +99,9 @@ Value val_bigint(InfernalBigInt x, bool is_unsigned) {
         return val_int((int)signed_value);
     }
     v.type = is_unsigned ? VAL_UINT : VAL_INT;
-    v.data.wide_integer.number = infernal_malloc(sizeof(*v.data.wide_integer.number));
-    *v.data.wide_integer.number = x;
+    v.data.wide_integer.box = infernal_malloc(sizeof(*v.data.wide_integer.box));
+    v.data.wide_integer.box->references = 1;
+    v.data.wide_integer.box->number = x;
     v.flags |= VALUE_FLAG_WIDE_INTEGER;
     return v;
 }
@@ -108,8 +150,7 @@ void val_list_append(Value *list, Value item) {
 Value copy_value_secure(Value src) {
     if ((src.type == VAL_INT || src.type == VAL_UINT) && VALUE_HAS_WIDE_INTEGER(src)) {
         Value copy = src;
-        copy.data.wide_integer.number = infernal_malloc(sizeof(*copy.data.wide_integer.number));
-        *copy.data.wide_integer.number = *src.data.wide_integer.number;
+        copy.data.wide_integer.box->references++;
         return copy;
     }
     if (src.type == VAL_STRING) {
@@ -343,7 +384,9 @@ void value_free(Value *value) {
     if (!value) return;
     switch (value->type) {
         case VAL_INT: case VAL_UINT:
-            if (VALUE_HAS_WIDE_INTEGER(*value)) free(value->data.wide_integer.number);
+            if (VALUE_HAS_WIDE_INTEGER(*value) &&
+                --value->data.wide_integer.box->references == 0)
+                free(value->data.wide_integer.box);
             break;
         case VAL_STRING:
             free(value->data.sval);

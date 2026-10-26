@@ -197,7 +197,7 @@ static int value_to_c_int(Value v) {
  */
 static double value_to_c_double(Value v) {
     switch (v.type) {
-        case VAL_INT: case VAL_UINT: return bigint_to_double(value_as_bigint(v));
+        case VAL_INT: case VAL_UINT: return value_integer_to_double(v);
         case VAL_FLOAT:  return v.data.fval;
         case VAL_BOOL:   return v.data.bval ? 1.0 : 0.0;
         case VAL_STRING: {
@@ -234,7 +234,7 @@ static double value_to_c_double(Value v) {
 static int value_to_c_bool(Value v) {
     switch (v.type) {
         case VAL_BOOL:   return v.data.bval ? 1 : 0;
-        case VAL_INT: case VAL_UINT: return !bigint_is_zero(value_as_bigint(v));
+        case VAL_INT: case VAL_UINT: return !value_integer_is_zero(v);
         case VAL_FLOAT:  return v.data.fval != 0.0;
         case VAL_STRING: return v.data.sval && v.data.sval[0];
         default:         return 0;
@@ -477,7 +477,7 @@ double lava_list_float(lava_list *l, int index) {
     if (index < 1 || index > v->data.list.count) return 0.0;
     Value item = v->data.list.items[index - 1];
     switch (item.type) {
-        case VAL_INT: case VAL_UINT: return bigint_to_double(value_as_bigint(item));
+        case VAL_INT: case VAL_UINT: return value_integer_to_double(item);
         case VAL_FLOAT:  return item.data.fval;
         case VAL_BOOL:   return item.data.bval ? 1.0 : 0.0;
         case VAL_STRING: return item.data.sval ? atof(item.data.sval) : 0.0;
@@ -501,7 +501,7 @@ int lava_list_bool(lava_list *l, int index) {
     Value item = v->data.list.items[index - 1];
     switch (item.type) {
         case VAL_BOOL:   return item.data.bval ? 1 : 0;
-        case VAL_INT: case VAL_UINT: return !bigint_is_zero(value_as_bigint(item));
+        case VAL_INT: case VAL_UINT: return !value_integer_is_zero(item);
         case VAL_FLOAT:  return item.data.fval != 0.0;
         case VAL_STRING: return item.data.sval && item.data.sval[0];
         default:         return 0;
@@ -680,7 +680,7 @@ double lava_map_get_float(lava_map *m, const char *key) {
     MapPair *p = lava_map_lookup(m, key);
     if (!p) return 0.0;
     switch (p->value.type) {
-        case VAL_INT: case VAL_UINT: return bigint_to_double(value_as_bigint(p->value));
+        case VAL_INT: case VAL_UINT: return value_integer_to_double(p->value);
         case VAL_FLOAT:  return p->value.data.fval;
         case VAL_BOOL:   return p->value.data.bval ? 1.0 : 0.0;
         case VAL_STRING: return p->value.data.sval
@@ -700,7 +700,7 @@ int lava_map_get_bool(lava_map *m, const char *key) {
     if (!p) return 0;
     switch (p->value.type) {
         case VAL_BOOL:   return p->value.data.bval ? 1 : 0;
-        case VAL_INT: case VAL_UINT: return !bigint_is_zero(value_as_bigint(p->value));
+        case VAL_INT: case VAL_UINT: return !value_integer_is_zero(p->value);
         case VAL_FLOAT:  return p->value.data.fval != 0.0;
         case VAL_STRING: return p->value.data.sval && p->value.data.sval[0];
         default:         return 0;

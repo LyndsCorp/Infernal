@@ -9,6 +9,7 @@
 
 #include "eval_stmt.h"
 #include "eval_flag.h"
+#include "eval_literal.h"
 #include "helpers.h"
 #include "evaluator.h"
 #include "core/value.h"
@@ -208,13 +209,13 @@ void exec_block_from_impl(NodeList *block, int start_index) {
 static bool switch_values_equal(Value left, Value right) {
     if ((left.type == VAL_UINT || left.type == VAL_INT) &&
         (right.type == VAL_UINT || right.type == VAL_INT))
-        return bigint_compare(value_as_bigint(left), value_as_bigint(right)) == 0;
+        return value_integer_compare(left, right) == 0;
     if (left.type != right.type) return false;
     switch (left.type) {
         case VAL_NULL: return true;
         case VAL_BOOL: return left.data.bval == right.data.bval;
         case VAL_INT: case VAL_UINT:
-            return bigint_compare(value_as_bigint(left), value_as_bigint(right)) == 0;
+            return value_integer_compare(left, right) == 0;
         case VAL_FLOAT: return left.data.fval == right.data.fval;
         case VAL_STRING:
             return left.data.sval && right.data.sval && strcmp(left.data.sval, right.data.sval) == 0;
@@ -232,7 +233,7 @@ static bool forin_values_equal(Value a, Value b) {
     switch (a.type) {
         case VAL_NULL:   return true;
         case VAL_INT: case VAL_UINT:
-            return bigint_compare(value_as_bigint(a), value_as_bigint(b)) == 0;
+            return value_integer_compare(a, b) == 0;
         case VAL_FLOAT:  return a.data.fval == b.data.fval;
         case VAL_BOOL:   return a.data.bval == b.data.bval;
         case VAL_STRING:
@@ -1134,11 +1135,15 @@ void exec_stmt(ASTNode *stmt) {
             volatile bool constant_true = condition && condition->kind == NODE_LITERAL &&
                                           condition->data.lit.type == TOK_BOOL &&
                                           condition->data.lit.bval;
-            volatile int iter_count = 0;
+            volatile uint64_t iter_count = 0;
             while (1) {
-                if (!constant_true && iter_count >= max_loop_iterations)
+                if (constant_true && iter_count >= UINT64_C(1000000000))
+                    error(stmt->line,
+                          "Techo de seguridad para while true alcanzado (1.000.000.000 iteraciones). "
+                          "Añade una condición o sal del bucle con break.");
+                if (!constant_true && iter_count >= (uint64_t)max_loop_iterations)
                     error(stmt->line, "Límite de iteraciones (%d) alcanzado en bucle while.\n    Si necesitas ampliar el límite de iteraciones, haz:\n\tdefine _MAX_LOOP_LIMIT x\n    Pero reemplazando ese x por el número que quieres que sea el límite de iteraciones.", max_loop_iterations);
-                if (!constant_true) iter_count++;
+                iter_count++;
 
                 if (!constant_true) {
                     Value cond = eval_expr(condition);
@@ -1336,7 +1341,26 @@ void exec_stmt(ASTNode *stmt) {
         }
 
         case NODE_FOR_IN: {
-            Value volatile iterable = eval_expr(stmt->data.for_in.list_expr);
+            Value volatile iterable = val_make_null();
+            bool borrowed_list = false;
+            const char * volatile live_var_name = NULL;
+            ASTNode *list_expr = stmt->data.for_in.list_expr;
+            if (list_expr && list_expr->kind == NODE_VAR) {
+                const char *vname = list_expr->data.var.name;
+                bool shell_expansion = vname && vname[0] == '?';
+                if (vname && (vname[0] == '$' || shell_expansion)) ++vname;
+                if (vname && *vname) live_var_name = vname;
+                if (vname && *vname && !shell_expansion && !list_expr->data.var.clone) {
+                    VarEntry *source = eval_var_find_entry(list_expr, vname);
+                    if (source && source->value.type == VAL_LIST) {
+                        /* Conservamos solo el tipo y count. Los elementos se
+                         * leen de la variable viva en cada iteración. */
+                        iterable = val_list_empty();
+                        borrowed_list = true;
+                    }
+                }
+            }
+            if (!borrowed_list) iterable = eval_expr(list_expr);
 
             /* Si la expresión devolvió una referencia (por ejemplo,
              * `for x in lista[1]`), la resolvemos antes de iterar. */
@@ -1350,20 +1374,13 @@ void exec_stmt(ASTNode *stmt) {
             error(stmt->line, "Se esperaba una lista, string o mapa en for-in");
                 }
 
-                /* Si el contenedor es una variable simple, guardamos su VarEntry
-                 * para poder recalcular `i` como la posición viva del elemento. */
-                const char * volatile live_var_name = NULL;
-                if (stmt->data.for_in.list_expr &&
-                    stmt->data.for_in.list_expr->kind == NODE_VAR) {
-                    const char *vname = stmt->data.for_in.list_expr->data.var.name;
-                if (vname && (vname[0] == '$' || vname[0] == '?')) vname++;
-                if (vname && *vname)
-                    live_var_name = vname;
-                    }
-
-                    volatile int count = 0;
+                volatile int count = 0;
                 if (iterable.type == VAL_LIST) {
-                    count = iterable.data.list.count;
+                    if (borrowed_list) {
+                        VarEntry *source = scope_find(current_scope, (const char *)live_var_name);
+                        count = source && source->value.type == VAL_LIST
+                            ? source->value.data.list.count : 0;
+                    } else count = iterable.data.list.count;
                 } else if (iterable.type == VAL_MAP) {
                     count = iterable.data.map ? iterable.data.map->count : 0;
                 } else {
@@ -1404,7 +1421,21 @@ void exec_stmt(ASTNode *stmt) {
 
                     /* --- Obtener el elemento a visitar desde el snapshot --- */
                     if (iterable.type == VAL_LIST) {
-                        item = copy_value_secure(iterable.data.list.items[iter_idx]);
+                        if (borrowed_list) {
+                            VarEntry *source = scope_find(current_scope,
+                                                          (const char *)live_var_name);
+                            if (!source || source->value.type != VAL_LIST ||
+                                iter_idx >= source->value.data.list.count) {
+                                current_scope = old_scope;
+                                scope_free((Scope *)iter_scope);
+                                memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
+                                exception_raised = saved_raised;
+                                break;
+                            }
+                            item = copy_value_secure(source->value.data.list.items[iter_idx]);
+                        } else {
+                            item = copy_value_secure(iterable.data.list.items[iter_idx]);
+                        }
                     } else if (iterable.type == VAL_MAP) {
                         item = val_string(iterable.data.map->pairs[iter_idx].key);
                     } else {

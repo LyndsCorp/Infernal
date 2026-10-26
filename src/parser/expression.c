@@ -478,7 +478,12 @@ ASTNode *parse_primary() {
                 if (!n->data.lit.integer_wide) {
                     uint64_t small = 0; (void)bigint_to_u64(integer, &small);
                     n->data.lit.uval = (uint32_t)small;
-                } else n->data.lit.sval = strdup(t.lexeme);
+                } else {
+                    n->data.lit.payload.integer_cache = malloc(sizeof(integer));
+                    if (!n->data.lit.payload.integer_cache)
+                        error(t.line, "Memoria insuficiente al guardar el literal entero");
+                    *n->data.lit.payload.integer_cache = integer;
+                }
             } else error(t.line, "Número entero fuera del rango máximo de 64 bytes");
         }
         /* Permitir indexación/slice sobre un literal numérico:
@@ -502,7 +507,7 @@ ASTNode *parse_primary() {
         ts_advance();
         ASTNode *n = node_create(NODE_LITERAL, t.line);
         n->data.lit.type = TOK_STRING;
-        n->data.lit.sval = strdup(t.lexeme);
+        n->data.lit.payload.sval = strdup(t.lexeme);
         while (ts_peek().type == TOK_LBRACKET) {
             Token lb = ts_advance();
             n = parse_bracket_on(n, lb.line);
@@ -850,11 +855,10 @@ static ASTNode *parse_unary() {
                 node->data.lit.integer_wide = bigint_min_width(integer, true) > 4;
                 if (!node->data.lit.integer_wide) node->data.lit.ival = (int)small;
                 else {
-                    size_t n = strlen(next.lexeme);
-                    node->data.lit.sval = malloc(n + 2);
-                    if (!node->data.lit.sval) error(next.line, "Memoria insuficiente al leer el entero");
-                    node->data.lit.sval[0] = '-';
-                    memcpy(node->data.lit.sval + 1, next.lexeme, n + 1);
+                    node->data.lit.payload.integer_cache = malloc(sizeof(integer));
+                    if (!node->data.lit.payload.integer_cache)
+                        error(next.line, "Memoria insuficiente al guardar el literal entero");
+                    *node->data.lit.payload.integer_cache = integer;
                 }
                 return node;
             }

@@ -71,7 +71,8 @@ static char *resolve_script_relative_path(const char *path) {
  *  Cabecera mágica y versionado para formato binario
  * ============================================================ */
 static const unsigned char DB_BINARY_MAGIC[4] = { 'I', 'N', 'D', 'B' };
-#define DB_BINARY_VERSION 1
+#define DB_BINARY_VERSION 2
+#define DB_BINARY_MIN_READ_VERSION 1
 #define DB_BINARY_HEADER_SIZE (sizeof(DB_BINARY_MAGIC) + 1)
 
 /* ============================================================
@@ -1039,7 +1040,8 @@ static Value deserialize_binary_owned(unsigned char *data, size_t data_len) {
         error(current_eval_line, "Archivo binario demasiado corto (falta cabecera)");
     if (memcmp(data, DB_BINARY_MAGIC, sizeof(DB_BINARY_MAGIC)) != 0)
         error(current_eval_line, "Archivo binario no reconocido (magic incorrecto)");
-    if (data[sizeof(DB_BINARY_MAGIC)] != DB_BINARY_VERSION)
+    if (data[sizeof(DB_BINARY_MAGIC)] < DB_BINARY_MIN_READ_VERSION ||
+        data[sizeof(DB_BINARY_MAGIC)] > DB_BINARY_VERSION)
         error(current_eval_line, "Versión de formato binario no soportada: %u",
               (unsigned)data[sizeof(DB_BINARY_MAGIC)]);
 

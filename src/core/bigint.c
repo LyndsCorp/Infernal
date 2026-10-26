@@ -13,6 +13,10 @@ bool bigint_is_zero(InfernalBigInt value) {
     return value.used == 0;
 }
 
+bool bigint_is_zero_ref(const InfernalBigInt *value) {
+    return !value || value->used == 0;
+}
+
 static void normalize(InfernalBigInt *value) {
     if (!value->used) value->negative = false;
 }
@@ -81,6 +85,20 @@ int bigint_compare(InfernalBigInt a, InfernalBigInt b) {
     if (a.negative != b.negative) return a.negative ? -1 : 1;
     int magnitude = bigint_compare_magnitude(a, b);
     return a.negative ? -magnitude : magnitude;
+}
+
+int bigint_compare_ref(const InfernalBigInt *a, const InfernalBigInt *b) {
+    if (a->negative != b->negative) return a->negative ? -1 : 1;
+    int magnitude = a->used < b->used ? -1 : a->used > b->used ? 1 : 0;
+    if (!magnitude) {
+        size_t i = a->used;
+        while (i) {
+            --i;
+            if (a->bytes[i] < b->bytes[i]) { magnitude = -1; break; }
+            if (a->bytes[i] > b->bytes[i]) { magnitude = 1; break; }
+        }
+    }
+    return a->negative ? -magnitude : magnitude;
 }
 
 bool bigint_add(InfernalBigInt a, InfernalBigInt b, InfernalBigInt *out) {
@@ -287,6 +305,13 @@ double bigint_to_double(InfernalBigInt value) {
     for (size_t i = value.used; i-- > 0;)
         result = result * 256.0 + value.bytes[i];
     return value.negative ? -result : result;
+}
+
+double bigint_to_double_ref(const InfernalBigInt *value) {
+    double result = 0.0;
+    for (size_t i = value->used; i-- > 0;)
+        result = result * 256.0 + value->bytes[i];
+    return value->negative ? -result : result;
 }
 
 static uint8_t div_small(InfernalBigInt *value, uint8_t divisor) {
