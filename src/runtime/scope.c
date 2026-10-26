@@ -30,6 +30,42 @@ typedef struct ScopeRegistryEntry {
 
 static ScopeRegistryEntry *scope_registry = NULL;
 
+static unsigned long scope_name_hash(const char *name) {
+    unsigned long hash = 1469598103934665603UL;
+    while (*name) {
+        hash ^= (unsigned char)*name++;
+        hash *= 1099511628211UL;
+    }
+    return hash;
+}
+
+static void scope_index_insert(Scope *scope, VarEntry *entry) {
+    if (scope->var_bucket_count == 0) {
+        scope->var_bucket_count = 16;
+        scope->var_buckets = infernal_calloc(scope->var_bucket_count, sizeof(*scope->var_buckets));
+    } else if ((scope->var_count + 1) * 4 >= scope->var_bucket_count * 3) {
+        size_t old_count = scope->var_bucket_count;
+        VarEntry **old_buckets = scope->var_buckets;
+        scope->var_bucket_count *= 2;
+        scope->var_buckets = infernal_calloc(scope->var_bucket_count, sizeof(*scope->var_buckets));
+        for (size_t i = 0; i < old_count; i++) {
+            VarEntry *item = old_buckets[i];
+            while (item) {
+                VarEntry *next = item->hash_next;
+                size_t bucket = scope_name_hash(item->name) % scope->var_bucket_count;
+                item->hash_next = scope->var_buckets[bucket];
+                scope->var_buckets[bucket] = item;
+                item = next;
+            }
+        }
+        free(old_buckets);
+    }
+    size_t bucket = scope_name_hash(entry->name) % scope->var_bucket_count;
+    entry->hash_next = scope->var_buckets[bucket];
+    scope->var_buckets[bucket] = entry;
+    scope->var_count++;
+}
+
 static void scope_registry_add(Scope *scope) {
     ScopeRegistryEntry *entry = infernal_malloc(sizeof(*entry));
     entry->scope = scope;
@@ -54,6 +90,9 @@ static void scope_registry_remove(Scope *scope) {
 Scope *scope_new(Scope *parent, const char *function_name) {
     Scope *s = infernal_malloc(sizeof(Scope));
     s->vars = NULL;
+    s->var_buckets = NULL;
+    s->var_bucket_count = 0;
+    s->var_count = 0;
     s->portals = NULL;
     s->parent = parent;
     s->function_name = function_name ? infernal_strdup(function_name) : NULL;
@@ -76,33 +115,28 @@ VarEntry *scope_find(Scope *scope, const char *name) {
      * variable homónima del ámbito padre.
      */
     for (Scope *s = scope; s; s = s->parent) {
-        for (VarEntry *e = s->vars; e; e = e->next) {
-            if (strcmp(e->name, name) == 0)
-                return e;
-        }
+        VarEntry *e = scope_find_current(s, name);
+        if (e) return e;
     }
 
     /* Compatibilidad con los ámbitos globales que pueden no formar parte
      * de la cadena de padres durante la inicialización/importación. */
     if (global_scope && global_scope != super_global_scope) {
-        for (VarEntry *e = global_scope->vars; e; e = e->next) {
-            if (strcmp(e->name, name) == 0)
-                return e;
-        }
+        VarEntry *e = scope_find_current(global_scope, name);
+        if (e) return e;
     }
     if (super_global_scope) {
-        for (VarEntry *e = super_global_scope->vars; e; e = e->next) {
-            if (strcmp(e->name, name) == 0)
-                return e;
-        }
+        VarEntry *e = scope_find_current(super_global_scope, name);
+        if (e) return e;
     }
     return NULL;
 }
 
 /* --- Búsqueda solo en el ámbito actual (no sube por la cadena) --- */
 VarEntry *scope_find_current(Scope *scope, const char *name) {
-    if (!scope) return NULL;
-    for (VarEntry *e = scope->vars; e; e = e->next) {
+    if (!scope || !scope->var_bucket_count) return NULL;
+    size_t bucket = scope_name_hash(name) % scope->var_bucket_count;
+    for (VarEntry *e = scope->var_buckets[bucket]; e; e = e->hash_next) {
         if (strcmp(e->name, name) == 0) return e;
     }
     return NULL;
@@ -111,9 +145,8 @@ VarEntry *scope_find_current(Scope *scope, const char *name) {
 /* --- Búsqueda en la cadena de ámbitos excluyendo super_global_scope --- */
 VarEntry *scope_find_script(Scope *scope, const char *name) {
     while (scope && scope != super_global_scope) {
-        for (VarEntry *e = scope->vars; e; e = e->next) {
-            if (strcmp(e->name, name) == 0) return e;
-        }
+        VarEntry *e = scope_find_current(scope, name);
+        if (e) return e;
         scope = scope->parent;
     }
     return NULL;
@@ -153,7 +186,19 @@ void scope_define(Scope *scope, const char *name, int vtype, Value val) {
     e->value = val;
     e->next = scope->vars;
     scope->vars = e;
+    scope_index_insert(scope, e);
     DEBUG_INFO("scope_define: '%s' definida en scope %p", name, (void*)scope);
+}
+
+void scope_remove_var_entry(Scope *scope, VarEntry *entry) {
+    if (!scope || !entry || !scope->var_bucket_count) return;
+    size_t bucket = scope_name_hash(entry->name) % scope->var_bucket_count;
+    VarEntry **hash_link = &scope->var_buckets[bucket];
+    while (*hash_link && *hash_link != entry) hash_link = &(*hash_link)->hash_next;
+    if (*hash_link) {
+        *hash_link = entry->hash_next;
+        scope->var_count--;
+    }
 }
 
 /* --- Asignar un valor a una variable existente en el ámbito (o crear si no existe) --- */
@@ -243,6 +288,7 @@ void scope_free(Scope *s) {
         free(e);
         e = next;
     }
+    free(s->var_buckets);
     PortalEntry *p = s->portals;
     while (p) {
         PortalEntry *next = p->next;

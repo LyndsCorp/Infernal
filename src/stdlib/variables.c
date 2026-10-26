@@ -175,6 +175,7 @@ static void scope_remove_entry(Scope *scope, VarEntry *target) {
         if (*link == target) {
             VarEntry *victim = *link;
             *link = victim->next;
+            scope_remove_var_entry(scope, victim);
             free(victim->name);
             value_free(&victim->value);
             free(victim);

@@ -8,6 +8,7 @@
 #ifndef RUNTIME_SCOPE_H
 #define RUNTIME_SCOPE_H
 
+#include <stddef.h>
 #include "core/types.h"
 
 typedef struct VarEntry {
@@ -15,6 +16,7 @@ typedef struct VarEntry {
     int vtype;
     Value value;
     struct VarEntry *next;
+    struct VarEntry *hash_next;
 } VarEntry;
 
 typedef struct PortalEntry {
@@ -25,6 +27,9 @@ typedef struct PortalEntry {
 
 typedef struct Scope {
     VarEntry *vars;
+    VarEntry **var_buckets;
+    size_t var_bucket_count;
+    size_t var_count;
     PortalEntry *portals;
     struct Scope *parent;
     char *function_name;  // nombre de la función si es un ámbito de función, o NULL
@@ -33,6 +38,7 @@ typedef struct Scope {
 Scope *scope_new(Scope *parent, const char *function_name);
 VarEntry *scope_find(Scope *scope, const char *name);
 VarEntry *scope_find_current(Scope *scope, const char *name); // solo en el ámbito actual
+void scope_remove_var_entry(Scope *scope, VarEntry *entry);
 VarEntry *scope_find_script(Scope *scope, const char *name);
 void scope_define(Scope *scope, const char *name, int vtype, Value val);
 void scope_assign(Scope *scope, const char *name, Value val, int line);
