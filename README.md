@@ -95,6 +95,11 @@ contador--
 
 Por defecto, asignar o producir un valor negativo a `uint` da error. Si se
 define `_UINT_NEGATIVE_ERROR false`, esos valores se saturan a `0`.
+
+`sizeof(valor)` devuelve un `uint` con el tamaño del contenido en bytes:
+usa el ancho actual de `int`/`uint`, cuenta `bool` como 1 byte y `float` como
+8. En strings cuenta los bytes UTF-8 sin el terminador; en listas y mapas suma
+el tamaño de sus valores y, para los mapas, también el de sus claves.
 | Compilación a código nativo          | ❌                                    | ❌                                      | ❌                           | ✅                            | ✅                            | ❌                                                                             |
 | Rendimiento                          | Bajo–medio                           | Medio                                   | Medio–alto                   | **Muy alto**                  | **Muy alto**                  | **Bajo–medio**                                                                |
 | Curva de aprendizaje                 | Media                                | Baja                                    | Baja–media                   | Alta                          | Media–baja                    | **Media**                                                                     |

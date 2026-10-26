@@ -518,6 +518,64 @@ static Value builtin_vartype(int argc, Value *args) {
     return val_string(t);
 }
 
+static uint64_t value_payload_size(Value value, unsigned depth) {
+    if (depth > 256)
+        error(current_eval_line, "sizeof(): la estructura supera la profundidad máxima");
+
+    switch (value.type) {
+        case VAL_INT:
+            return bigint_min_width(value_as_bigint(value), true);
+        case VAL_UINT:
+            return bigint_min_width(value_as_bigint(value), false);
+        case VAL_BOOL:
+            return 1; /* un bit se representa como un byte al medir tamaños */
+        case VAL_FLOAT:
+            return sizeof(double);
+        case VAL_STRING:
+            return value.data.sval ? (uint64_t)strlen(value.data.sval) : 0;
+        case VAL_LIST: {
+            uint64_t total = 0;
+            for (int i = 0; i < value.data.list.count; ++i) {
+                uint64_t item_size = value_payload_size(value.data.list.items[i], depth + 1);
+                if (UINT64_MAX - total < item_size)
+                    error(current_eval_line, "sizeof(): el tamaño de la lista excede el máximo admitido");
+                total += item_size;
+            }
+            return total;
+        }
+        case VAL_MAP: {
+            uint64_t total = 0;
+            MapData *map = value.data.map;
+            if (!map) return 0;
+            for (int i = 0; i < map->count; ++i) {
+                uint64_t key_size = map->pairs[i].key
+                    ? (uint64_t)strlen(map->pairs[i].key) : 0;
+                uint64_t item_size = value_payload_size(map->pairs[i].value, depth + 1);
+                if (UINT64_MAX - total < key_size ||
+                    UINT64_MAX - total - key_size < item_size)
+                    error(current_eval_line, "sizeof(): el tamaño del mapa excede el máximo admitido");
+                total += key_size + item_size;
+            }
+            return total;
+        }
+        case VAL_PTR:
+            return sizeof(void *);
+        case VAL_REFERENCE:
+            return sizeof(void *) + (value.data.ref.map_key
+                ? (uint64_t)strlen(value.data.ref.map_key) : 0);
+        case VAL_NULL:
+        case VAL_VOID:
+        default:
+            return 0;
+    }
+}
+
+static Value builtin_sizeof(int argc, Value *args) {
+    if (argc != 1)
+        error(current_eval_line, "sizeof() espera exactamente 1 argumento: sizeof(variable)");
+    return val_bigint(bigint_from_u64(value_payload_size(args[0], 0)), true);
+}
+
 /* ============================================================
  *  Registro
  * ============================================================ */
@@ -527,4 +585,5 @@ void register_variables_builtins(void) {
     func_register_builtin("mkvar",  builtin_mkvar);
     func_register_builtin("varexists", builtin_varexists);
     func_register_builtin("vartype",   builtin_vartype);
+    func_register_builtin("sizeof",    builtin_sizeof);
 }
