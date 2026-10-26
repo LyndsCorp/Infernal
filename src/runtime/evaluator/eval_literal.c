@@ -26,7 +26,7 @@ Value eval_literal(ASTNode *expr) {
     return val_make_null();
 }
 
-static VarEntry *eval_var_lookup(ASTNode *expr, const char *name) {
+VarEntry *eval_var_find_entry(ASTNode *expr, const char *name) {
     Scope *scope = current_scope;
     if (scope && expr->data.var.cached_scope == scope &&
         expr->data.var.cached_scope_id == scope->identity &&
@@ -62,7 +62,7 @@ Value eval_var(ASTNode *expr) {
     DEBUG_INFO("eval_var: buscando variable '%s' en current_scope=%p", name, (void*)current_scope);
 
     if (strchr(name, '/') != NULL) {
-        VarEntry *e = eval_var_lookup(expr, name);
+        VarEntry *e = eval_var_find_entry(expr, name);
         if (!e) {
             error(expr->line,
                   "La variable '%s' no existe. Si intentabas concatenar una variable con una cadena, "
@@ -73,7 +73,7 @@ Value eval_var(ASTNode *expr) {
         return copy_value_secure(e->value);
     }
 
-    VarEntry *e = eval_var_lookup(expr, name);
+    VarEntry *e = eval_var_find_entry(expr, name);
     if (!e) {
         Value constant_value;
         if (constants_lookup(name, &constant_value)) {

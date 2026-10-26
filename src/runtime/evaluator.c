@@ -68,7 +68,7 @@ Value eval_expr(ASTNode *expr) {
                 if (constants_is_reserved(name))
                     error(expr->line, "La constante '%s' no se puede modificar", name);
 
-                VarEntry *e = scope_find(current_scope, name);
+                VarEntry *e = eval_var_find_entry(target, name);
                 if (!e) {
                     if (target->data.var.clone || !expr->data.post_op.statement_context) {
                         error(expr->line, "Variable '%s' no definida", name);

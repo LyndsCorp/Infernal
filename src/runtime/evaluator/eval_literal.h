@@ -12,6 +12,7 @@
 
 Value eval_literal(ASTNode *expr);
 Value eval_var(ASTNode *expr);
+struct VarEntry *eval_var_find_entry(ASTNode *expr, const char *name);
 Value eval_list(ASTNode *expr);
 Value eval_map(ASTNode *expr);
 
