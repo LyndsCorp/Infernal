@@ -206,16 +206,15 @@ void exec_block_from_impl(NodeList *block, int start_index) {
 }
 
 static bool switch_values_equal(Value left, Value right) {
-    if (left.type == VAL_UINT && right.type == VAL_INT)
-        return right.data.ival >= 0 && left.data.uval == (uint32_t)right.data.ival;
-    if (left.type == VAL_INT && right.type == VAL_UINT)
-        return left.data.ival >= 0 && (uint32_t)left.data.ival == right.data.uval;
+    if ((left.type == VAL_UINT || left.type == VAL_INT) &&
+        (right.type == VAL_UINT || right.type == VAL_INT))
+        return bigint_compare(value_as_bigint(left), value_as_bigint(right)) == 0;
     if (left.type != right.type) return false;
     switch (left.type) {
         case VAL_NULL: return true;
         case VAL_BOOL: return left.data.bval == right.data.bval;
-        case VAL_INT: return left.data.ival == right.data.ival;
-        case VAL_UINT: return left.data.uval == right.data.uval;
+        case VAL_INT: case VAL_UINT:
+            return bigint_compare(value_as_bigint(left), value_as_bigint(right)) == 0;
         case VAL_FLOAT: return left.data.fval == right.data.fval;
         case VAL_STRING:
             return left.data.sval && right.data.sval && strcmp(left.data.sval, right.data.sval) == 0;
@@ -232,8 +231,8 @@ static bool forin_values_equal(Value a, Value b) {
     if (a.type != b.type) return false;
     switch (a.type) {
         case VAL_NULL:   return true;
-        case VAL_INT:    return a.data.ival == b.data.ival;
-        case VAL_UINT:   return a.data.uval == b.data.uval;
+        case VAL_INT: case VAL_UINT:
+            return bigint_compare(value_as_bigint(a), value_as_bigint(b)) == 0;
         case VAL_FLOAT:  return a.data.fval == b.data.fval;
         case VAL_BOOL:   return a.data.bval == b.data.bval;
         case VAL_STRING:
@@ -395,13 +394,13 @@ static void assign_nested_index(Value *var_value, ASTNode *lhs_index,
                       "(se recibió \'%s\').",
                       name, value_type_name(key_type));
             }
-            if (key.type == VAL_UINT) {
-                if (key.data.uval > INT_MAX) {
+            if (key.type == VAL_UINT || (key.type == VAL_INT && key.integer_wide)) {
+                int64_t index_value;
+                if (!value_integer_to_i64(key, &index_value) || index_value < INT_MIN || index_value > INT_MAX) {
                     value_free(&key);
-                    error(line, "El índice uint excede el tamaño máximo de una lista");
+                    error(line, "El índice entero excede el tamaño máximo de una lista");
                 }
-                key.type = VAL_INT;
-                key.data.ival = (int)key.data.uval;
+                key = val_int((int)index_value);
             }
             if (key.type == VAL_FLOAT) {
                 double f = key.data.fval;
@@ -454,9 +453,13 @@ static void assign_nested_index(Value *var_value, ASTNode *lhs_index,
                       "No se puede indexar un carácter del string '%s' como contenedor.",
                       name);
             }
-            if (key.type == VAL_UINT && key.data.uval <= INT_MAX) {
-                key.type = VAL_INT;
-                key.data.ival = (int)key.data.uval;
+            if (key.type == VAL_UINT || (key.type == VAL_INT && key.integer_wide)) {
+                int64_t index_value;
+                if (!value_integer_to_i64(key, &index_value) || index_value < INT_MIN || index_value > INT_MAX) {
+                    value_free(&key);
+                    error(line, "El índice entero excede el tamaño máximo de un string");
+                }
+                key = val_int((int)index_value);
             }
             if (key.type != VAL_INT) {
                 int key_type = key.type;
@@ -1537,8 +1540,14 @@ void exec_stmt(ASTNode *stmt) {
                 repeat_line_target = p->line;
             } else {
                 Value line_val = eval_expr(stmt->data.repeat.line_expr);
-                if (line_val.type == VAL_UINT && line_val.data.uval <= INT_MAX)
-                    line_val = val_int((int)line_val.data.uval);
+                if (line_val.type == VAL_UINT || (line_val.type == VAL_INT && line_val.integer_wide)) {
+                    int64_t number;
+                    if (!value_integer_to_i64(line_val, &number) || number < INT_MIN || number > INT_MAX) {
+                        value_free(&line_val);
+                        error(stmt->line, "repeat line excede el rango de líneas");
+                    }
+                    line_val = val_int((int)number);
+                }
                 if (line_val.type != VAL_INT)
                     error(stmt->line, "repeat line requiere un número entero");
                 repeat_line_target = line_val.data.ival;
