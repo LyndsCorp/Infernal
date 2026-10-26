@@ -45,10 +45,46 @@ TokenType lookup_keyword(const char *lexeme) {
     if (strcasecmp(lexeme, "true") == 0) return TOK_TRUE;
     if (strcasecmp(lexeme, "false") == 0) return TOK_FALSE;
 
-    unsigned int hash = keyword_hash(lexeme);
-    for (size_t i = 0; i < sizeof(keywords) / sizeof(keywords[0]); i++) {
-        if (keywords[i].hash == hash && strcmp(lexeme, keywords[i].word) == 0)
-            return keywords[i].tok;
+    switch (keyword_hash(lexeme)) {
+        case 0x39386e06u: return strcmp(lexeme, "if") == 0 ? TOK_IF : TOK_IDENT;
+        case 0xe522e976u: return strcmp(lexeme, "then") == 0 ? TOK_THEN : TOK_IDENT;
+        case 0x5c22ded0u: return strcmp(lexeme, "fi") == 0 ? TOK_FI : TOK_IDENT;
+        case 0xbdbf5bf0u: return strcmp(lexeme, "else") == 0 ? TOK_ELSE : TOK_IDENT;
+        case 0x54554c87u: return strcmp(lexeme, "elseif") == 0 ? TOK_ELSEIF : TOK_IDENT;
+        case 0xc0a5c8c3u: return strcmp(lexeme, "elif") == 0 ? TOK_ELSEIF : TOK_IDENT;
+        case 0x0dc628ceu: return strcmp(lexeme, "while") == 0 ? TOK_WHILE : TOK_IDENT;
+        case 0xacf38390u: return strcmp(lexeme, "for") == 0 ? TOK_FOR : TOK_IDENT;
+        case 0x93e05f71u: return strcmp(lexeme, "switch") == 0 ? TOK_SWITCH : TOK_IDENT;
+        case 0x9b2538b1u: return strcmp(lexeme, "case") == 0 ? TOK_CASE : TOK_IDENT;
+        case 0x933b5bdeu: return strcmp(lexeme, "default") == 0 ? TOK_DEFAULT : TOK_IDENT;
+        case 0x9ed64249u: return strcmp(lexeme, "function") == 0 ? TOK_FUNCTION : TOK_IDENT;
+        case 0x0e7e4807u: return strcmp(lexeme, "func") == 0 ? TOK_FUNCTION : TOK_IDENT;
+        case 0x6322e9d5u: return strcmp(lexeme, "fn") == 0 ? TOK_FUNCTION : TOK_IDENT;
+        case 0xc5597e8cu: return strcmp(lexeme, "def") == 0 ? TOK_FUNCTION : TOK_IDENT;
+        case 0x85ee37bfu: return strcmp(lexeme, "return") == 0 ? TOK_RETURN : TOK_IDENT;
+        case 0xc9648178u: return strcmp(lexeme, "break") == 0 ? TOK_BREAK : TOK_IDENT;
+        case 0xd99ba82au: return strcmp(lexeme, "repeat") == 0 ? TOK_REPEAT : TOK_IDENT;
+        case 0x150c5d8bu: return strcmp(lexeme, "portal") == 0 ? TOK_PORTAL : TOK_IDENT;
+        case 0xb1727e44u: return strcmp(lexeme, "continue") == 0 ? TOK_CONTINUE : TOK_IDENT;
+        case 0x112a90d4u: return strcmp(lexeme, "import") == 0 ? TOK_IMPORT : TOK_IDENT;
+        case 0xac1db00eu: return strcmp(lexeme, "try") == 0 ? TOK_TRY : TOK_IDENT;
+        case 0x4288e94cu: return strcmp(lexeme, "catch") == 0 ? TOK_CATCH : TOK_IDENT;
+        case 0x95e97e5eu: return strcmp(lexeme, "int") == 0 ? TOK_INT : TOK_IDENT;
+        case 0xa6c45d85u: return strcmp(lexeme, "float") == 0 ? TOK_FLOAT : TOK_IDENT;
+        case 0xc894953du: return strcmp(lexeme, "bool") == 0 ? TOK_BOOL : TOK_IDENT;
+        case 0x17c16538u: return strcmp(lexeme, "string") == 0 ? TOK_STRING : TOK_IDENT;
+        case 0x0cfb5881u: return strcmp(lexeme, "list") == 0 ? TOK_LIST : TOK_IDENT;
+        case 0xdfa2efb1u: return strcmp(lexeme, "map") == 0 ? TOK_MAP : TOK_IDENT;
+        case 0x6a9f8552u: return strcmp(lexeme, "define") == 0 ? TOK_DEFINE : TOK_IDENT;
+        case 0x9c436708u: return strcmp(lexeme, "local") == 0 ? TOK_LOCAL : TOK_IDENT;
+        case 0x1dff06aeu: return strcmp(lexeme, "global") == 0 ? TOK_GLOBAL : TOK_IDENT;
+        case 0x0f29c2a6u: return strcmp(lexeme, "and") == 0 ? TOK_AND : TOK_IDENT;
+        case 0x5d342984u: return strcmp(lexeme, "or") == 0 ? TOK_OR : TOK_IDENT;
+        case 0x41387a9eu: return strcmp(lexeme, "in") == 0 ? TOK_IN : TOK_IDENT;
+        case 0x29b19c8au: return strcmp(lexeme, "not") == 0 ? TOK_NOT : TOK_IDENT;
+        case 0x9c677a2cu: return strcmp(lexeme, "flags") == 0 ? TOK_FLAG : TOK_IDENT;
+        case 0x17db1627u: return strcmp(lexeme, "line") == 0 ? TOK_LINE : TOK_IDENT;
+        case 0xa01e3d98u: return strcmp(lexeme, "execute") == 0 ? TOK_EXECUTE : TOK_IDENT;
+        default: return TOK_IDENT;
     }
-    return TOK_IDENT;
 }
