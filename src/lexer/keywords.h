@@ -13,6 +13,7 @@
 typedef struct {
     const char *word;
     TokenType tok;
+    unsigned int hash;
 } Keyword;
 
 extern Keyword keywords[];
