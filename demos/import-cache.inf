@@ -1,0 +1,13 @@
+# El mismo módulo Fire debe parsearse y ejecutarse una sola vez por ruta y alias.
+import "demos/import-cache.fire" as fire_cache
+import "./demos/import-cache.fire" as fire_cache
+print("Fire:", fire_cache.value())
+
+# Una carga Lava repetida no debe consumir slots ni registrar funciones dos veces.
+import math
+import math
+print("Lava:", math.sqrt(9.0))
+
+# La clave incluye el alias: un segundo prefijo expone una API independiente.
+import math as other_math
+print("Alias:", other_math.sqrt(16.0))

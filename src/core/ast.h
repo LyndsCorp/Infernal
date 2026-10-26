@@ -20,4 +20,9 @@ void     ast_free_all(void);
  * LHS de una asignación compuesta con índice (x[k] += v). */
 ASTNode *deep_copy_ast(ASTNode *node);
 
+ImportModule *import_module_find(const char *path, const char *alias);
+ImportModule *import_module_create(const char *path, const char *alias, NodeList block);
+ImportModule *import_module_ref(ImportModule *module);
+void import_module_release(ImportModule *module);
+
 #endif

@@ -83,7 +83,9 @@ static int        g_slot_count = 0;
 
 typedef struct LavaHandle {
     char *path;
+    char *prefix;
     void *handle;
+    bool loaded;
     struct LavaHandle *next;
 } LavaHandle;
 
@@ -92,6 +94,28 @@ static LavaHandle *g_handles = NULL;
 /* Estado durante la carga de un módulo (para lava_register_fn). */
 static const char *g_loading_module_path = NULL;
 static const char *g_loading_prefix      = NULL;
+
+static char *lava_canonical_path(const char *path) {
+    char *canonical = realpath(path, NULL);
+    return canonical ? canonical : strdup(path ? path : "");
+}
+
+static int lava_module_loaded(const char *path, const char *prefix) {
+    char *canonical = lava_canonical_path(path);
+    if (!canonical) return 0;
+    const char *effective_prefix = prefix ? prefix : "";
+    int found = 0;
+    for (LavaHandle *entry = g_handles; entry; entry = entry->next) {
+        if (strcmp(entry->path, canonical) == 0 &&
+            strcmp(entry->prefix ? entry->prefix : "", effective_prefix) == 0 &&
+            entry->loaded) {
+            found = 1;
+            break;
+        }
+    }
+    free(canonical);
+    return found;
+}
 
 /* Contexto activo durante la llamada a una función Lava. */
 typedef struct {
@@ -1256,6 +1280,11 @@ static Value lava_dispatch(int slot, int argc, Value *args) {
  * via longjmp, se restaura el estado de carga y se re-propaga.
  */
 static int lava_init_handle(void *h, const char *display_path, const char *prefix) {
+    if (lava_module_loaded(display_path, prefix)) {
+        dlclose(h);
+        return 1;
+    }
+
     void (*reg)(void) = (void (*)(void))dlsym(h, "infernal_lava_register");
     if (!reg) {
         fprintf(stderr,
@@ -1270,8 +1299,11 @@ static int lava_init_handle(void *h, const char *display_path, const char *prefi
         dlclose(h);
         error(0, "Lava: memoria insuficiente al registrar el módulo '%s'", display_path);
     }
-    entry->path = strdup(display_path);
-    if (!entry->path) {
+    entry->path = lava_canonical_path(display_path);
+    entry->prefix = strdup(prefix ? prefix : "");
+    if (!entry->path || !entry->prefix) {
+        free(entry->path);
+        free(entry->prefix);
         free(entry);
         dlclose(h);
         error(0, "Lava: memoria insuficiente al registrar el módulo '%s'", display_path);
@@ -1308,11 +1340,13 @@ static int lava_init_handle(void *h, const char *display_path, const char *prefi
 
     memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
     exception_raised = saved_raised;
+    entry->loaded = true;
     return 1;
 }
 
 /* Carga un módulo Lava desde una ruta en disco. */
 static int lava_load_from_path(const char *path, const char *prefix) {
+    if (lava_module_loaded(path, prefix)) return 1;
     void *h = dlopen(path, RTLD_NOW | RTLD_LOCAL);
     if (!h) {
         fprintf(stderr, "Lava: dlopen('%s') falló: %s\n", path, dlerror());
@@ -1336,7 +1370,9 @@ static int lava_load_from_path(const char *path, const char *prefix) {
  */
 static int lava_load_from_memory(const unsigned char *data, size_t len,
                                  const char *name, const char *prefix) {
-    (void)name;
+    char display[160];
+    snprintf(display, sizeof(display), "<embedded:%s>", name ? name : "?");
+    if (lava_module_loaded(display, prefix)) return 1;
 #if defined(__linux__) && defined(SYS_memfd_create)
     int fd = (int)syscall(SYS_memfd_create, "infernal_lava", MFD_CLOEXEC);
     if (fd >= 0) {
@@ -1361,8 +1397,6 @@ static int lava_load_from_memory(const unsigned char *data, size_t len,
             close(fd);
 
             if (h) {
-                char display[160];
-                snprintf(display, sizeof(display), "<embedded:%s>", name);
                 return lava_init_handle(h, display, prefix);
             }
 
@@ -1395,7 +1429,10 @@ static int lava_load_from_memory(const unsigned char *data, size_t len,
     }
     close(fallback_fd);
 
-    int ok = lava_load_from_path(tmpl, prefix);
+    void *h = dlopen(tmpl, RTLD_NOW | RTLD_LOCAL);
+    int ok = h ? lava_init_handle(h, display, prefix) : 0;
+    if (!h)
+        fprintf(stderr, "Lava: dlopen('%s') desde memoria falló: %s\n", display, dlerror());
     /* El .so ya está mapeado en memoria; el archivo puede borrarse. */
     unlink(tmpl);
     return ok;
@@ -1413,6 +1450,8 @@ static void append_tried(char *tried, size_t tried_size, size_t *used,
 static int try_load_at(const char *path, const char *prefix,
                        char *tried, size_t tried_size, size_t *used) {
     append_tried(tried, tried_size, used, path);
+
+    if (lava_module_loaded(path, prefix)) return 1;
 
     if (access(path, R_OK) != 0) return 0;
 
@@ -1523,6 +1562,7 @@ void lava_cleanup(void) {
         g_handles = h->next;
         if (h->handle) dlclose(h->handle);
         free(h->path);
+        free(h->prefix);
         free(h);
     }
     for (int i = 0; i < g_slot_count; i++) {

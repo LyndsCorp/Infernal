@@ -1,0 +1,4 @@
+print("Módulo Fire inicializado")
+function value()
+    return 42
+fi

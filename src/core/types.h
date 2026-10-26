@@ -60,6 +60,15 @@ typedef struct {
     int count, cap;
 } NodeList;
 
+typedef struct ImportModule {
+    char *path;
+    char *alias;
+    NodeList block;
+    unsigned int references;
+    bool loaded;
+    struct ImportModule *next;
+} ImportModule;
+
 typedef struct {
     char **names;
     int name_count;
@@ -167,7 +176,7 @@ struct ASTNode {
             } for_stmt;
             struct { char *name; char **params; int *ptypes; int param_count; NodeList body; bool is_global; } func;
             struct { ASTNode *expr; int rtype; } ret;
-            struct { char *path; char *alias; NodeList module_block; } import;
+            struct { char *path; char *alias; NodeList module_block; ImportModule *cache; } import;
             struct { NodeList try_block, catch_block; } try_stmt;
             struct { char *name; bool clone; } var;
             struct { int type; int ival; double fval; int bval; char *sval; } lit;

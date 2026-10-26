@@ -7,6 +7,7 @@
 
 #include <stdlib.h>
 #include <stdint.h>
+#include <string.h>
 #include "ast.h"
 #include "memory.h"
 #include "runtime/error.h"
@@ -17,6 +18,43 @@ typedef struct ASTRegistryEntry {
 } ASTRegistryEntry;
 
 static ASTRegistryEntry *ast_registry = NULL;
+static ImportModule *import_modules = NULL;
+static void nodelist_free_internal(NodeList *list);
+
+ImportModule *import_module_find(const char *path, const char *alias) {
+    if (!path || !alias) return NULL;
+    for (ImportModule *module = import_modules; module; module = module->next) {
+        if (strcmp(module->path, path) == 0 && strcmp(module->alias, alias) == 0)
+            return module;
+    }
+    return NULL;
+}
+
+ImportModule *import_module_create(const char *path, const char *alias, NodeList block) {
+    ImportModule *module = infernal_calloc(1, sizeof(*module));
+    module->path = infernal_strdup(path);
+    module->alias = infernal_strdup(alias);
+    module->block = block;
+    module->next = import_modules;
+    import_modules = module;
+    return module;
+}
+
+ImportModule *import_module_ref(ImportModule *module) {
+    if (module) module->references++;
+    return module;
+}
+
+void import_module_release(ImportModule *module) {
+    if (!module || --module->references != 0) return;
+    ImportModule **link = &import_modules;
+    while (*link && *link != module) link = &(*link)->next;
+    if (*link) *link = module->next;
+    nodelist_free_internal(&module->block);
+    free(module->path);
+    free(module->alias);
+    free(module);
+}
 
 /*
  * Conjunto hash de punteros AST registrados. No se puede usar un campo
@@ -331,7 +369,14 @@ static void ast_free_internal(ASTNode *node) {
         nodelist_free_internal(&node->data.func.body);
         break;
         case NODE_RETURN: ast_free_internal(node->data.ret.expr); break;
-        case NODE_IMPORT: free(node->data.import.path); free(node->data.import.alias); nodelist_free_internal(&node->data.import.module_block); break;
+        case NODE_IMPORT:
+            free(node->data.import.path);
+            free(node->data.import.alias);
+            if (node->data.import.cache)
+                import_module_release(node->data.import.cache);
+            else
+                nodelist_free_internal(&node->data.import.module_block);
+            break;
         case NODE_TRY: nodelist_free_internal(&node->data.try_stmt.try_block); nodelist_free_internal(&node->data.try_stmt.catch_block); break;
         case NODE_VAR: free(node->data.var.name); break;
         case NODE_LITERAL: free(node->data.lit.sval); break;

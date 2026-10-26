@@ -1460,6 +1460,8 @@ void exec_stmt(ASTNode *stmt) {
         }
 
         case NODE_IMPORT: {
+            ImportModule *module = stmt->data.import.cache;
+            if (module && module->loaded) break;
             Scope *old_scope = current_scope;
             jmp_buf saved_env;
             memcpy(&saved_env, &exception_env, sizeof(jmp_buf));
@@ -1473,10 +1475,11 @@ void exec_stmt(ASTNode *stmt) {
             }
 
             current_scope = global_scope;
-            exec_block_impl(&stmt->data.import.module_block);
+            exec_block_impl(module ? &module->block : &stmt->data.import.module_block);
             current_scope = old_scope;
             memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
             exception_raised = saved_raised;
+            if (module && control_flow == CF_NONE) module->loaded = true;
             if (control_flow == CF_REPEAT_LINE) return;
             break;
         }

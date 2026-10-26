@@ -136,6 +136,31 @@ static void require_statement_end(const char *what) {
              next.lexeme, what);
 }
 
+static void append_cached_import(NodeList *block, int line, char *alias,
+                                 ImportModule *module) {
+    ASTNode *stmt = node_create(NODE_IMPORT, line);
+    stmt->data.import.path = NULL;
+    stmt->data.import.alias = alias;
+    stmt->data.import.module_block = (NodeList){NULL, 0, 0};
+    stmt->data.import.cache = import_module_ref(module);
+    nodelist_add(block, stmt);
+    require_statement_end("la instrucción import");
+    ts_skip_newlines();
+}
+
+static void make_module_prefix(char *out, size_t out_size,
+                               const char *module_name, const char *alias) {
+    if (alias) {
+        snprintf(out, out_size, "%s", alias);
+        return;
+    }
+    const char *base = strrchr(module_name, '/');
+    base = base ? base + 1 : module_name;
+    snprintf(out, out_size, "%s", base);
+    char *dot = strrchr(out, '.');
+    if (dot) *dot = '\0';
+}
+
 static ASTNode *parse_typed_empty_collection(int vtype, int line) {
     if (ts_peek().type != TOK_LBRACKET ||
         ts.pos + 1 >= ts.count || ts.tokens[ts.pos + 1].type != TOK_RBRACKET) {
@@ -1325,6 +1350,7 @@ NodeList parse_block(const char *terminator) {
             Token nt = ts_peek();
             char * volatile module_name = NULL;
             char * volatile module_alias = NULL;
+            char * volatile module_cache_path = NULL;
             int use_embedded = 0;
             const unsigned char *emb_data = NULL;
             size_t emb_size = 0;
@@ -1433,6 +1459,20 @@ NodeList parse_block(const char *terminator) {
                           tried[0] ? tried : "        (ninguna)\n");
                 }
 
+                module_cache_path = realpath(module_name, NULL);
+                if (!module_cache_path) module_cache_path = strdup(module_name);
+                char module_prefix[PATH_MAX];
+                make_module_prefix(module_prefix, sizeof(module_prefix), module_name, module_alias);
+                ImportModule *cached = import_module_find(module_cache_path, module_prefix);
+                if (cached) {
+                    fclose(fp);
+                    free((void *)module_cache_path);
+                    module_cache_path = NULL;
+                    free((void *)module_name);
+                    append_cached_import(&block, t.line, module_alias, cached);
+                    continue;
+                }
+
                 ts_init();
                 source_lines = NULL;
                 source_line_count = 0;
@@ -1443,6 +1483,19 @@ NodeList parse_block(const char *terminator) {
              * CASO B: nombre embebido.
              * ============================================================ */
             else if (use_embedded) {
+                char embedded_key[PATH_MAX];
+                snprintf(embedded_key, sizeof(embedded_key), "<embedded:%s>", module_name);
+                module_cache_path = strdup(embedded_key);
+                char module_prefix[PATH_MAX];
+                make_module_prefix(module_prefix, sizeof(module_prefix), module_name, module_alias);
+                ImportModule *cached = import_module_find(module_cache_path, module_prefix);
+                if (cached) {
+                    free((void *)module_cache_path);
+                    module_cache_path = NULL;
+                    free((void *)module_name);
+                    append_cached_import(&block, t.line, module_alias, cached);
+                    continue;
+                }
                 ts_init();
                 source_lines = NULL;
                 source_line_count = 0;
@@ -1477,6 +1530,21 @@ NodeList parse_block(const char *terminator) {
                 }
 
                 if (fire_fp) {
+                    const char *fire_path = fire_local[0] && access(fire_local, R_OK) == 0
+                                          ? fire_local : fire_global;
+                    module_cache_path = realpath(fire_path, NULL);
+                    if (!module_cache_path) module_cache_path = strdup(fire_path);
+                    char module_prefix[PATH_MAX];
+                    make_module_prefix(module_prefix, sizeof(module_prefix), module_name, module_alias);
+                    ImportModule *cached = import_module_find(module_cache_path, module_prefix);
+                    if (cached) {
+                        fclose(fire_fp);
+                        free((void *)module_cache_path);
+                        module_cache_path = NULL;
+                        free((void *)module_name);
+                        append_cached_import(&block, t.line, module_alias, cached);
+                        continue;
+                    }
                     ts_init();
                     source_lines = NULL;
                     source_line_count = 0;
@@ -1501,6 +1569,7 @@ NodeList parse_block(const char *terminator) {
                         stmt->data.import.path = NULL;
                         stmt->data.import.alias = module_alias;
                         stmt->data.import.module_block = (NodeList){NULL, 0, 0};
+                        stmt->data.import.cache = NULL;
                         nodelist_add(&block, stmt);
 
                         DEBUG_INFO("parse_block: módulo Lava '%s' cargado en línea %d",
@@ -1561,6 +1630,7 @@ NodeList parse_block(const char *terminator) {
                      * transferidos al AST. */
                     free((void *)module_name);
                     free((void *)module_alias);
+                    free((void *)module_cache_path);
                     current_import_prefix = old_prefix;
                     fi_block_nesting = saved_fi_nesting;
                     if (ts.tokens) {
@@ -1593,12 +1663,25 @@ NodeList parse_block(const char *terminator) {
                 source_lines = old_source_lines;
                 source_line_count = old_source_line_count;
 
-                free(module_name);
                 require_statement_end("la instrucción import");
+                char module_prefix[PATH_MAX];
+                make_module_prefix(module_prefix, sizeof(module_prefix), module_name, module_alias);
+                if (!module_cache_path) {
+                    module_cache_path = strdup(module_name);
+                    if (!module_cache_path)
+                        error(t.line, "Memoria insuficiente para cachear el import '%s'", module_name);
+                }
+                ImportModule *module = import_module_create(module_cache_path,
+                                                            module_prefix,
+                                                            module_block);
+                free((void *)module_cache_path);
+                module_cache_path = NULL;
+                free(module_name);
                 stmt = node_create(NODE_IMPORT, t.line);
                 stmt->data.import.path = NULL;
                 stmt->data.import.alias = module_alias;
-                stmt->data.import.module_block = module_block;
+                stmt->data.import.module_block = (NodeList){NULL, 0, 0};
+                stmt->data.import.cache = import_module_ref(module);
                 nodelist_add(&block, stmt);
                 DEBUG_INFO("parse_block: añadido NODE_IMPORT en línea %d", stmt->line);
                 ts_skip_newlines();
