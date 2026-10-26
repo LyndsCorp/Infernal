@@ -21,6 +21,9 @@ Scope *current_scope = NULL;
 
 FuncEntry *func_table = NULL;
 FuncEntry *super_func_table = NULL;
+#define FUNC_BUCKET_COUNT 1024u
+static FuncEntry *func_buckets[FUNC_BUCKET_COUNT];
+static FuncEntry *super_func_buckets[FUNC_BUCKET_COUNT];
 char *current_import_prefix = NULL;
 int max_loop_iterations = 10000;
 bool command_fail_error = true;
@@ -44,6 +47,21 @@ char *current_source_file = NULL;
 
 int current_eval_line = 0;
 int flags_arg_index = 2;   /* primer argumento después del script */
+
+static unsigned long func_name_hash(const char *name) {
+    unsigned long hash = 1469598103934665603UL;
+    while (*name) {
+        hash ^= (unsigned char)*name++;
+        hash *= 1099511628211UL;
+    }
+    return hash;
+}
+
+static void func_index_insert(FuncEntry **buckets, FuncEntry *entry) {
+    size_t bucket = func_name_hash(entry->name) % FUNC_BUCKET_COUNT;
+    entry->hash_next = buckets[bucket];
+    buckets[bucket] = entry;
+}
 
 /* --- Registro de modos de flags definidos ------------------ */
 int defined_flags_modes[MAX_FLAGS_MODES] = {0};
@@ -176,6 +194,7 @@ void func_register(const char *name, ASTNode *def) {
     e->obj = obj;
     e->next = func_table;
     func_table = e;
+    func_index_insert(func_buckets, e);
 }
 
 void func_register_global(const char *name, ASTNode *def) {
@@ -187,6 +206,7 @@ void func_register_global(const char *name, ASTNode *def) {
     e->obj = obj;
     e->next = super_func_table;
     super_func_table = e;
+    func_index_insert(super_func_buckets, e);
 }
 
 void func_register_builtin(const char *name, BuiltinFunc fn) {
@@ -198,13 +218,15 @@ void func_register_builtin(const char *name, BuiltinFunc fn) {
     e->obj = obj;
     e->next = func_table;
     func_table = e;
+    func_index_insert(func_buckets, e);
 }
 
 FuncObject *func_lookup(const char *name) {
-    for (FuncEntry *e = func_table; e; e = e->next)
+    size_t bucket = func_name_hash(name) % FUNC_BUCKET_COUNT;
+    for (FuncEntry *e = func_buckets[bucket]; e; e = e->hash_next)
         if (strcmp(e->name, name) == 0)
             return e->obj;
-    for (FuncEntry *e = super_func_table; e; e = e->next)
+    for (FuncEntry *e = super_func_buckets[bucket]; e; e = e->hash_next)
         if (strcmp(e->name, name) == 0)
             return e->obj;
     return NULL;

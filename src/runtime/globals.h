@@ -28,6 +28,7 @@ typedef struct FuncEntry {
     char *name;
     FuncObject *obj;
     struct FuncEntry *next;
+    struct FuncEntry *hash_next;
 } FuncEntry;
 
 extern FuncEntry *func_table;
