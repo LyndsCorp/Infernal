@@ -85,6 +85,29 @@ static bool value_is_numeric(Value v) {
     return v.type == VAL_INT || v.type == VAL_FLOAT || v.type == VAL_BOOL;
 }
 
+/* Aísla el punto de recuperación en un helper para que eval_binop no tenga
+ * que preservar todos sus registros en el caso común. Los literales se
+ * evalúan sin protección: su evaluación no puede lanzar errores del lenguaje. */
+static Value eval_binop_right_protected(ASTNode *right_node, int line,
+                                        Value *left) {
+    jmp_buf saved_env;
+    memcpy(&saved_env, &exception_env, sizeof(jmp_buf));
+    int saved_raised = exception_raised;
+    if (setjmp(exception_env) != 0) {
+        value_free(left);
+        memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
+        exception_raised = saved_raised;
+        longjmp(exception_env, 1);
+    }
+
+    Value right = eval_expr(right_node);
+    if (right.type == VAL_REFERENCE)
+        right = resolve_reference(right, line);
+    memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
+    exception_raised = saved_raised;
+    return right;
+}
+
 static int checked_i64_to_int(int64_t value, int line, const char *op) {
     if (value < INT_MIN || value > INT_MAX)
         error(line, "Desbordamiento de int en '%s': resultado fuera del rango [%d, %d]",
@@ -272,9 +295,7 @@ static char *extract_map_key(ASTNode *node) {
  * ==================================================================== */
 
 Value eval_binop(ASTNode *expr) {
-    /* 'volatile' porque op_name sobrevive a los setjmp de este función
-     * (usados para limpiar si un error en eval_expr lanza longjmp). */
-    const char * volatile op_name = "?";
+    const char *op_name = "?";
     switch (expr->data.binop.op) {
         case TOK_PLUS:  op_name = "+"; break;
         case TOK_MINUS: op_name = "-"; break;
@@ -717,21 +738,13 @@ Value eval_binop(ASTNode *expr) {
         }
     }
 
-    jmp_buf saved_env;
-    memcpy(&saved_env, &exception_env, sizeof(jmp_buf));
-    int saved_raised = exception_raised;
-    if (setjmp(exception_env) != 0) {
-        value_free(&left);
-        memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
-        exception_raised = saved_raised;
-        longjmp(exception_env, 1);
+    ASTNode *right_node = expr->data.binop.right;
+    Value right;
+    if (right_node->kind == NODE_LITERAL) {
+        right = eval_expr(right_node);
+    } else {
+        right = eval_binop_right_protected(right_node, expr->line, &left);
     }
-
-    Value right = eval_expr(expr->data.binop.right);
-    if (right.type == VAL_REFERENCE)
-        right = resolve_reference(right, expr->line);
-    memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
-    exception_raised = saved_raised;
     DEBUG_INFO("Tipo de right: %d", right.type);
 
     /* NUEVO: void no es un operando válido. */
