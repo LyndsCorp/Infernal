@@ -312,6 +312,13 @@ static void ast_free_internal(ASTNode *node);
 static void nodelist_free_internal(NodeList *list) {
     if (!list) return;
 
+    if (list->repeat_line_index) {
+        free(list->repeat_line_index->lines);
+        free(list->repeat_line_index->indices);
+        free(list->repeat_line_index);
+    }
+    list->repeat_line_index = NULL;
+
     if (!list->stmts) {
         list->count = 0;
         list->cap = 0;

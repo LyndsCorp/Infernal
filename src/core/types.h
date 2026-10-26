@@ -9,6 +9,7 @@
 #define CORE_TYPES_H
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <setjmp.h>
 
 typedef enum {
@@ -55,9 +56,15 @@ typedef struct {
 } Token;
 
 typedef struct ASTNode ASTNode;
+typedef struct RepeatLineIndex {
+    size_t capacity;
+    int *lines;
+    int *indices;
+} RepeatLineIndex;
 typedef struct {
     ASTNode **stmts;
     int count, cap;
+    RepeatLineIndex *repeat_line_index;
 } NodeList;
 
 typedef struct ImportModule {

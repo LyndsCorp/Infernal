@@ -141,7 +141,7 @@ static void append_cached_import(NodeList *block, int line, char *alias,
     ASTNode *stmt = node_create(NODE_IMPORT, line);
     stmt->data.import.path = NULL;
     stmt->data.import.alias = alias;
-    stmt->data.import.module_block = (NodeList){NULL, 0, 0};
+    stmt->data.import.module_block = (NodeList){0};
     stmt->data.import.cache = import_module_ref(module);
     nodelist_add(block, stmt);
     require_statement_end("la instrucción import");
@@ -412,7 +412,7 @@ static ASTNode *parse_switch_statement(void) {
     stmt->data.switch_stmt.expr = parse_expression(0);
     stmt->data.switch_stmt.cases = NULL;
     stmt->data.switch_stmt.case_count = 0;
-    stmt->data.switch_stmt.default_block = (NodeList){NULL, 0, 0};
+    stmt->data.switch_stmt.default_block = (NodeList){0};
     stmt->data.switch_stmt.has_default = false;
 
     ts_skip_newlines();
@@ -447,7 +447,7 @@ static ASTNode *parse_switch_statement(void) {
             jmp_buf sw_saved_env;
             memcpy(&sw_saved_env, &exception_env, sizeof(jmp_buf));
             int sw_saved_raised = exception_raised;
-            NodeList body = {NULL, 0, 0};
+            NodeList body = {0};
             if (setjmp(exception_env) != 0) {
                 ts.tokens[boundary].type = saved_type;
                 memcpy(&exception_env, &sw_saved_env, sizeof(jmp_buf));
@@ -485,7 +485,7 @@ static ASTNode *parse_switch_statement(void) {
             jmp_buf sw_saved_env;
             memcpy(&sw_saved_env, &exception_env, sizeof(jmp_buf));
             int sw_saved_raised = exception_raised;
-            NodeList body = {NULL, 0, 0};
+            NodeList body = {0};
             if (setjmp(exception_env) != 0) {
                 ts.tokens[boundary].type = saved_type;
                 memcpy(&exception_env, &sw_saved_env, sizeof(jmp_buf));
@@ -529,7 +529,7 @@ ASTNode *parse_if_statement() {
     ASTNode *first_if = node_create(NODE_IF, line);
     first_if->data.if_stmt.cond = cond;
     first_if->data.if_stmt.then_block = then_block;
-    first_if->data.if_stmt.else_block = (NodeList){NULL,0,0};
+    first_if->data.if_stmt.else_block = (NodeList){0};
     ASTNode *current_if = first_if;
     while (ts_peek().type == TOK_ELSEIF) {
         ts_advance();
@@ -543,8 +543,8 @@ ASTNode *parse_if_statement() {
         ASTNode *elseif_node = node_create(NODE_IF, line);
         elseif_node->data.if_stmt.cond = elseif_cond;
         elseif_node->data.if_stmt.then_block = elseif_then;
-        elseif_node->data.if_stmt.else_block = (NodeList){NULL,0,0};
-        NodeList wrapper = {NULL, 0, 0};
+        elseif_node->data.if_stmt.else_block = (NodeList){0};
+        NodeList wrapper = {0};
         nodelist_add(&wrapper, elseif_node);
         current_if->data.if_stmt.else_block = wrapper;
         current_if = elseif_node;
@@ -726,7 +726,7 @@ ASTNode *parse_assignment_expr(int line) {
 }
 
 NodeList parse_block(const char *terminator) {
-    NodeList block = {NULL, 0, 0};
+    NodeList block = {0};
     DEBUG_INFO("=== parse_block: iniciando bloque, terminator='%s' ===", terminator ? terminator : "NULL");
 
     while (1) {
@@ -793,9 +793,9 @@ NodeList parse_block(const char *terminator) {
                     next_stmt->data.shell_cmd.cmd = cmd;
                 }
                 ASTNode *try_node = node_create(NODE_TRY, t.line);
-                try_node->data.try_stmt.try_block = (NodeList){NULL, 0, 0};
+                try_node->data.try_stmt.try_block = (NodeList){0};
                 nodelist_add(&try_node->data.try_stmt.try_block, stmt);
-                try_node->data.try_stmt.catch_block = (NodeList){NULL, 0, 0};
+                try_node->data.try_stmt.catch_block = (NodeList){0};
                 nodelist_add(&try_node->data.try_stmt.catch_block, next_stmt);
                 stmt = try_node;
             }
@@ -848,9 +848,9 @@ NodeList parse_block(const char *terminator) {
                     next_stmt->data.shell_cmd.cmd = cmd;
                 }
                 ASTNode *try_node = node_create(NODE_TRY, t.line);
-                try_node->data.try_stmt.try_block = (NodeList){NULL, 0, 0};
+                try_node->data.try_stmt.try_block = (NodeList){0};
                 nodelist_add(&try_node->data.try_stmt.try_block, stmt);
-                try_node->data.try_stmt.catch_block = (NodeList){NULL, 0, 0};
+                try_node->data.try_stmt.catch_block = (NodeList){0};
                 nodelist_add(&try_node->data.try_stmt.catch_block, next_stmt);
                 stmt = try_node;
             }
@@ -1198,7 +1198,7 @@ NodeList parse_block(const char *terminator) {
             stmt->data.func.params = NULL;
             stmt->data.func.ptypes = NULL;
             stmt->data.func.param_count = 0;
-            stmt->data.func.body = (NodeList){NULL, 0, 0};
+            stmt->data.func.body = (NodeList){0};
             nodelist_add(&block, stmt);
 
             /* El nombre efectivo lleva el prefijo del módulo si estamos
@@ -1437,7 +1437,7 @@ NodeList parse_block(const char *terminator) {
                     stmt = node_create(NODE_IMPORT, t.line);
                     stmt->data.import.path = NULL;
                     stmt->data.import.alias = module_alias;
-                    stmt->data.import.module_block = (NodeList){NULL, 0, 0};
+                    stmt->data.import.module_block = (NodeList){0};
                     nodelist_add(&block, stmt);
 
                     DEBUG_INFO("parse_block: módulo Lava '%s' cargado por ruta en línea %d",
@@ -1568,7 +1568,7 @@ NodeList parse_block(const char *terminator) {
                         stmt = node_create(NODE_IMPORT, t.line);
                         stmt->data.import.path = NULL;
                         stmt->data.import.alias = module_alias;
-                        stmt->data.import.module_block = (NodeList){NULL, 0, 0};
+                        stmt->data.import.module_block = (NodeList){0};
                         stmt->data.import.cache = NULL;
                         nodelist_add(&block, stmt);
 
@@ -1680,7 +1680,7 @@ NodeList parse_block(const char *terminator) {
                 stmt = node_create(NODE_IMPORT, t.line);
                 stmt->data.import.path = NULL;
                 stmt->data.import.alias = module_alias;
-                stmt->data.import.module_block = (NodeList){NULL, 0, 0};
+                stmt->data.import.module_block = (NodeList){0};
                 stmt->data.import.cache = import_module_ref(module);
                 nodelist_add(&block, stmt);
                 DEBUG_INFO("parse_block: añadido NODE_IMPORT en línea %d", stmt->line);
@@ -1771,7 +1771,7 @@ NodeList parse_block(const char *terminator) {
             stmt->data.func.params = NULL;
             stmt->data.func.ptypes = NULL;
             stmt->data.func.param_count = 0;
-            stmt->data.func.body = (NodeList){NULL, 0, 0};
+            stmt->data.func.body = (NodeList){0};
         nodelist_add(&block, stmt);
 
             if (func_lookup(stmt->data.func.name) != NULL)

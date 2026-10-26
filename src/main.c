@@ -353,7 +353,7 @@ int main(int argc, char **argv) {
     }
     ts_init();
 
-    NodeList program = {NULL, 0, 0};
+    NodeList program = {0};
 
     if (!setjmp(exception_env)) {
         if (code_string) {

@@ -102,6 +102,56 @@ Value eval_embedded(ASTNode *expr) {
 }
 
 /* --- Funciones auxiliares de bloque --- */
+static size_t repeat_line_hash(int line) {
+    uint32_t hash = (uint32_t)line;
+    hash ^= hash >> 16;
+    hash *= 0x7feb352du;
+    hash ^= hash >> 15;
+    hash *= 0x846ca68bu;
+    hash ^= hash >> 16;
+    return (size_t)hash;
+}
+
+static RepeatLineIndex *repeat_line_index_build(NodeList *block) {
+    size_t capacity = 16;
+    while (capacity < (size_t)block->count * 2) capacity *= 2;
+
+    RepeatLineIndex *index = calloc(1, sizeof(*index));
+    if (!index) error(current_eval_line, "Memoria insuficiente al indexar líneas del bloque");
+    index->lines = calloc(capacity, sizeof(*index->lines));
+    index->indices = malloc(capacity * sizeof(*index->indices));
+    if (!index->lines || !index->indices) {
+        free(index->lines);
+        free(index->indices);
+        free(index);
+        error(current_eval_line, "Memoria insuficiente al indexar líneas del bloque");
+    }
+    index->capacity = capacity;
+    for (size_t i = 0; i < capacity; i++) index->indices[i] = -1;
+
+    for (int i = 0; i < block->count; i++) {
+        ASTNode *stmt = block->stmts[i];
+        if (!stmt) continue;
+        size_t slot = repeat_line_hash(stmt->line) & (capacity - 1);
+        while (index->indices[slot] >= 0 && index->lines[slot] != stmt->line)
+            slot = (slot + 1) & (capacity - 1);
+        if (index->indices[slot] < 0) {
+            index->lines[slot] = stmt->line;
+            index->indices[slot] = i;
+        }
+    }
+    return index;
+}
+
+static int repeat_line_index_find(RepeatLineIndex *index, int line) {
+    size_t slot = repeat_line_hash(line) & (index->capacity - 1);
+    while (index->indices[slot] >= 0) {
+        if (index->lines[slot] == line) return index->indices[slot];
+        slot = (slot + 1) & (index->capacity - 1);
+    }
+    return -1;
+}
+
 void exec_block_impl(NodeList *block) {
     exec_block_from_impl(block, 0);
 }
@@ -113,12 +163,21 @@ void exec_block_from_impl(NodeList *block, int start_index) {
         if (control_flow == CF_REPEAT_LINE) {
             int target_line = repeat_line_target;
             int target_index = -1;
-            for (int j = 0; j < block->count; j++) {
-                ASTNode *candidate = block->stmts[j];
-                if (candidate && candidate->line == target_line) {
-                    target_index = j;
-                    break;
+            if (block->count < 16) {
+                for (int j = 0; j < block->count; j++) {
+                    ASTNode *candidate = block->stmts[j];
+                    if (candidate && candidate->line == target_line) {
+                        target_index = j;
+                        break;
+                    }
                 }
+            } else {
+                RepeatLineIndex *index = block->repeat_line_index;
+                if (!index) {
+                    index = repeat_line_index_build(block);
+                    block->repeat_line_index = index;
+                }
+                target_index = repeat_line_index_find(index, target_line);
             }
 
             if (target_index < 0) {
