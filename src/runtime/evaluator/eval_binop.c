@@ -748,7 +748,11 @@ Value eval_binop(ASTNode *expr) {
                 case VAL_NULL:   equal = true; break;
                 case VAL_BOOL:   equal = (left.data.bval == right.data.bval); break;
                 case VAL_INT: case VAL_UINT:
-                    equal = bigint_compare(value_as_bigint(left), value_as_bigint(right)) == 0; break;
+                    equal = !(VALUE_HAS_WIDE_INTEGER(left) || VALUE_HAS_WIDE_INTEGER(right))
+                        ? (left.type == VAL_UINT ? left.data.uval == right.data.uval
+                                                 : left.data.ival == right.data.ival)
+                        : bigint_compare(value_as_bigint(left), value_as_bigint(right)) == 0;
+                    break;
                 case VAL_FLOAT:  equal = (left.data.fval == right.data.fval); break;
                 case VAL_STRING: equal = (strcmp(left.data.sval, right.data.sval) == 0); break;
                 default: equal = false;
@@ -762,10 +766,14 @@ Value eval_binop(ASTNode *expr) {
             equal = (left.data.fval == bigint_to_double(value_as_bigint(right)));
         }
         else if (left.type == VAL_UINT && right.type == VAL_INT) {
-            equal = bigint_compare(value_as_bigint(left), value_as_bigint(right)) == 0;
+            equal = !(VALUE_HAS_WIDE_INTEGER(left) || VALUE_HAS_WIDE_INTEGER(right))
+                ? right.data.ival >= 0 && left.data.uval == (uint32_t)right.data.ival
+                : bigint_compare(value_as_bigint(left), value_as_bigint(right)) == 0;
         }
         else if (left.type == VAL_INT && right.type == VAL_UINT) {
-            equal = bigint_compare(value_as_bigint(left), value_as_bigint(right)) == 0;
+            equal = !(VALUE_HAS_WIDE_INTEGER(left) || VALUE_HAS_WIDE_INTEGER(right))
+                ? left.data.ival >= 0 && (uint32_t)left.data.ival == right.data.uval
+                : bigint_compare(value_as_bigint(left), value_as_bigint(right)) == 0;
         }
         else if (left.type == VAL_UINT && right.type == VAL_FLOAT) {
             equal = (bigint_to_double(value_as_bigint(left)) == right.data.fval);
@@ -858,8 +866,14 @@ Value eval_binop(ASTNode *expr) {
         }
         bool integer_comparison = (left.type == VAL_INT || left.type == VAL_UINT) &&
                                   (right.type == VAL_INT || right.type == VAL_UINT);
-        int integer_order = integer_comparison
-            ? bigint_compare(value_as_bigint(left), value_as_bigint(right)) : 0;
+        int integer_order = 0;
+        if (integer_comparison) {
+            if (!VALUE_HAS_WIDE_INTEGER(left) && !VALUE_HAS_WIDE_INTEGER(right)) {
+                int64_t a = left.type == VAL_UINT ? (int64_t)left.data.uval : left.data.ival;
+                int64_t b = right.type == VAL_UINT ? (int64_t)right.data.uval : right.data.ival;
+                integer_order = (a > b) - (a < b);
+            } else integer_order = bigint_compare(value_as_bigint(left), value_as_bigint(right));
+        }
         double lv = (left.type == VAL_INT || left.type == VAL_UINT) ? bigint_to_double(value_as_bigint(left))
         : (left.type == VAL_FLOAT) ? left.data.fval
         : (left.data.bval ? 1.0 : 0.0);
@@ -985,6 +999,51 @@ Value eval_binop(ASTNode *expr) {
 
     if ((left.type == VAL_UINT || left.type == VAL_INT) &&
         (right.type == VAL_UINT || right.type == VAL_INT)) {
+        if (!VALUE_HAS_WIDE_INTEGER(left) && !VALUE_HAS_WIDE_INTEGER(right)) {
+            bool unsigned_result = left.type == VAL_UINT || right.type == VAL_UINT;
+            int64_t a = left.type == VAL_UINT ? (int64_t)left.data.uval : left.data.ival;
+            int64_t b = right.type == VAL_UINT ? (int64_t)right.data.uval : right.data.ival;
+            Value small_result;
+            switch (expr->data.binop.op) {
+                case TOK_PLUS:
+                case TOK_STAR:
+                    if (left.type == VAL_UINT && right.type == VAL_UINT) {
+                        uint64_t n = expr->data.binop.op == TOK_PLUS
+                            ? (uint64_t)left.data.uval + right.data.uval
+                            : (uint64_t)left.data.uval * right.data.uval;
+                        InfernalBigInt integer = bigint_from_u64(n);
+                        value_free(&left); value_free(&right);
+                        return val_bigint(integer, true);
+                    }
+                    a = expr->data.binop.op == TOK_PLUS ? a + b : a * b;
+                    break;
+                case TOK_MINUS: a -= b; break;
+                case TOK_PERCENT:
+                    if (!b) { value_free(&left); value_free(&right); error(expr->line, "Módulo por cero"); }
+                    a %= b;
+                    break;
+                case TOK_SLASH:
+                    if (!b) { value_free(&left); value_free(&right); error(expr->line, "División por cero"); }
+                    value_free(&left); value_free(&right);
+                    return val_float((double)a / (double)b);
+                default:
+                    value_free(&left); value_free(&right);
+                    error(expr->line, "Operador no soportado");
+            }
+            InfernalBigInt integer = bigint_from_i64(a);
+            if (unsigned_result && integer.negative) {
+                Value negative = val_bigint(integer, false);
+                if (!try_convert_value(&negative, TOK_UINT)) {
+                    value_free(&negative); value_free(&left); value_free(&right);
+                    error(expr->line, "El resultado de '%s' es negativo para uint", op_name);
+                }
+                value_free(&left); value_free(&right);
+                return negative;
+            }
+            small_result = val_bigint(integer, unsigned_result);
+            value_free(&left); value_free(&right);
+            return small_result;
+        }
         InfernalBigInt a = value_as_bigint(left), b = value_as_bigint(right), result;
         bool unsigned_result = left.type == VAL_UINT || right.type == VAL_UINT;
         bool ok = true;

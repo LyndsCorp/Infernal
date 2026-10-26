@@ -10,6 +10,7 @@
 typedef struct {
     uint8_t bytes[INFERNAL_INT_MAX_BYTES]; /* little endian magnitude */
     bool negative;
+    uint8_t used; /* bytes significativos; cero si el entero vale 0 */
 } InfernalBigInt;
 
 InfernalBigInt bigint_zero(void);

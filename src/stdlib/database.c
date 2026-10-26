@@ -915,6 +915,8 @@ static Value deserialize_value_binary(const unsigned char *buffer, size_t *offse
                 error(current_eval_line, "Buffer corrupto (ancho de entero no válido)");
             InfernalBigInt number = bigint_zero();
             for (size_t i = 0; i < width; ++i) number.bytes[i] = buffer[(*offset)++];
+            number.used = (uint8_t)width;
+            while (number.used && !number.bytes[number.used - 1]) --number.used;
             number.negative = negative;
             return val_bigint(number, type == 'K');
         }
