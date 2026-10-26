@@ -26,6 +26,11 @@ typedef struct MapData {
 Value val_make_null(void);
 Value val_void(void);
 Value val_int(int x);
+Value val_uint(uint32_t x);
+Value val_bigint(InfernalBigInt x, bool is_unsigned);
+InfernalBigInt value_as_bigint(Value value);
+bool value_integer_fits(Value value, size_t width, bool is_signed);
+bool value_integer_to_i64(Value value, int64_t *out);
 Value val_float(double x);
 Value val_bool(bool x);
 Value val_string(const char *s);

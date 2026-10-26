@@ -214,7 +214,7 @@ ASTNode *parse_flags() {
                     spec.vtype = TOK_STRING;   /* tipado automático: string */
                 } else {
                     error(ts_peek().line,
-                          "Se esperaba un tipo (int, float, bool, string, list, map) "
+                          "Se esperaba un tipo (int, uint, float, bool, string, list, map) "
                           "o un nombre de variable después de '='");
                 }
 

@@ -13,6 +13,7 @@
 #include <ctype.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <limits.h>
 #include "cut.h"
 #include "core/value.h"
 #include "runtime/error.h"
@@ -381,10 +382,12 @@ static int utf8_find_first(const CharSegment *haystack, int hay_count,
                                                      static Value builtin_cutHead(int argc, Value *args) {
                                                          if (argc != 2) error(current_eval_line, "cutHead() espera exactamente 2 argumentos");
                                                          if (args[0].type != VAL_STRING) error(current_eval_line, "cutHead() espera un string como primer argumento");
-                                                         if (args[1].type != VAL_INT) error(current_eval_line, "cutHead() espera un entero como segundo argumento");
+                                                         if (args[1].type != VAL_INT && args[1].type != VAL_UINT) error(current_eval_line, "cutHead() espera un entero como segundo argumento");
 
                                                          const char *s = args[0].data.sval;
-                                                         int n = args[1].data.ival;
+                                                         int64_t n64;
+                                                         if (!value_integer_to_i64(args[1], &n64) || n64 > INT_MAX || n64 < INT_MIN) error(current_eval_line, "cutHead() número demasiado grande");
+                                                         int n = (int)n64;
                                                          if (n < 0) error(current_eval_line, "cutHead() no acepta índices negativos");
 
                                                          char *res = cut_head(s, n);
@@ -398,10 +401,12 @@ static int utf8_find_first(const CharSegment *haystack, int hay_count,
                                                      static Value builtin_cutTail(int argc, Value *args) {
                                                          if (argc != 2) error(current_eval_line, "cutTail() espera exactamente 2 argumentos");
                                                          if (args[0].type != VAL_STRING) error(current_eval_line, "cutTail() espera un string como primer argumento");
-                                                         if (args[1].type != VAL_INT) error(current_eval_line, "cutTail() espera un entero como segundo argumento");
+                                                         if (args[1].type != VAL_INT && args[1].type != VAL_UINT) error(current_eval_line, "cutTail() espera un entero como segundo argumento");
 
                                                          const char *s = args[0].data.sval;
-                                                         int n = args[1].data.ival;
+                                                         int64_t n64;
+                                                         if (!value_integer_to_i64(args[1], &n64) || n64 > INT_MAX || n64 < INT_MIN) error(current_eval_line, "cutTail() número demasiado grande");
+                                                         int n = (int)n64;
                                                          if (n < 0) error(current_eval_line, "cutTail() no acepta índices negativos");
 
                                                          char *res = cut_tail(s, n);

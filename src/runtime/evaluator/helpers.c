@@ -24,7 +24,7 @@
 bool val_is_truthy(Value v) {
     switch (v.type) {
         case VAL_BOOL:   return v.data.bval;
-        case VAL_INT:    return v.data.ival != 0;
+        case VAL_INT: case VAL_UINT: return !bigint_is_zero(value_as_bigint(v));
         case VAL_FLOAT:  return v.data.fval != 0.0;
         case VAL_STRING: return v.data.sval && strlen(v.data.sval) > 0;
         case VAL_LIST:   return v.data.list.count > 0;
@@ -53,6 +53,7 @@ const char *value_type_name(int val_type) {
     switch (val_type) {
         case VAL_NULL:      return "null";
         case VAL_INT:       return "int";
+        case VAL_UINT:      return "uint";
         case VAL_FLOAT:     return "float";
         case VAL_BOOL:      return "bool";
         case VAL_STRING:    return "string";
@@ -227,14 +228,33 @@ void assign_reference(Value *reference, Value value, int line) {
 int extract_integer_index(ASTNode *node, int line) {
     if (!node) error(line, "Nodo nulo al extraer índice");
 
-    if (node->kind == NODE_LITERAL && node->data.lit.type == TOK_INT)
-        return node->data.lit.ival;
+    if (node->kind == NODE_LITERAL && node->data.lit.type == TOK_INT) {
+        if (!node->data.lit.integer_wide) return node->data.lit.ival;
+        int64_t wide;
+        if (!bigint_to_i64(node->data.lit.integer, &wide) || wide < INT_MIN || wide > INT_MAX)
+            error(line, "El índice int excede el tamaño máximo de una lista");
+        return (int)wide;
+    }
+    if (node->kind == NODE_LITERAL && node->data.lit.type == TOK_UINT &&
+        (!node->data.lit.integer_wide && node->data.lit.uval <= INT_MAX))
+        return (int)node->data.lit.uval;
 
     if (node->kind == NODE_INDEX) {
         Value idx_val = eval_expr(node->data.idx.index);
+        int64_t wide;
+        if ((idx_val.type == VAL_UINT || idx_val.type == VAL_INT) &&
+            value_integer_to_i64(idx_val, &wide) && wide >= INT_MIN && wide <= INT_MAX) {
+            int result = (int)wide;
+            value_free(&idx_val);
+            return result;
+        }
         if (idx_val.type != VAL_INT) {
             value_free(&idx_val);
             error(line, "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
+        }
+        if (idx_val.integer_wide) {
+            value_free(&idx_val);
+            error(line, "El índice int excede el tamaño máximo de una lista");
         }
         return idx_val.data.ival;
     }
@@ -244,15 +264,18 @@ int extract_integer_index(ASTNode *node, int line) {
     }
 
     Value v = eval_expr(node);
-    if (v.type == VAL_INT) {
-        int result = v.data.ival;
+    int64_t wide;
+    if ((v.type == VAL_INT || v.type == VAL_UINT) && value_integer_to_i64(v, &wide) &&
+        wide >= INT_MIN && wide <= INT_MAX) {
+        int result = (int)wide;
         value_free(&v);
         return result;
     }
     if (v.type == VAL_LIST && v.data.list.count == 1) {
         Value item = v.data.list.items[0];
-        if (item.type == VAL_INT) {
-            int result = item.data.ival;
+        if ((item.type == VAL_INT || item.type == VAL_UINT) &&
+            value_integer_to_i64(item, &wide) && wide >= INT_MIN && wide <= INT_MAX) {
+            int result = (int)wide;
             value_free(&v);
             return result;
         }
@@ -264,25 +287,11 @@ int extract_integer_index(ASTNode *node, int line) {
 }
 
 bool try_convert_value(Value *val, int target_tok_type) {
-    if (target_tok_type == TOK_UINT) {
-        if (val->type == VAL_STRING) {
-            char *end = NULL;
-            errno = 0;
-            long n = strtol(val->data.sval, &end, 10);
-            if (errno || end == val->data.sval || *end || n < INT_MIN || n > INT_MAX)
-                return false;
-            free(val->data.sval);
-            val->type = VAL_INT;
-            val->data.ival = (int)n;
-        } else if (val->type == VAL_FLOAT) {
-            double f = val->data.fval;
-            if (!isfinite(f) || f < (double)INT_MIN || f > (double)INT_MAX)
-                return false;
-            val->type = VAL_INT;
-            val->data.ival = (int)f;
-        }
-        if (val->type != VAL_INT) return false;
-        if (val->data.ival < 0) {
+    if ((target_tok_type == TOK_INT || target_tok_type == TOK_UINT) &&
+        (val->type == VAL_INT || val->type == VAL_UINT)) {
+        InfernalBigInt number = value_as_bigint(*val);
+        bool want_unsigned = target_tok_type == TOK_UINT;
+        if (want_unsigned && number.negative) {
             Value policy = val_make_null();
             if (!constants_lookup("_UINT_NEGATIVE_ERROR", &policy) ||
                 policy.type != VAL_BOOL || policy.data.bval) {
@@ -290,7 +299,73 @@ bool try_convert_value(Value *val, int target_tok_type) {
                 error(current_eval_line, "Un valor uint no puede ser negativo");
             }
             value_free(&policy);
-            val->data.ival = 0;
+            number = bigint_zero();
+        }
+        if (!bigint_min_width(number, !want_unsigned)) return false;
+        *val = val_bigint(number, want_unsigned);
+        return true;
+    }
+    if ((target_tok_type == TOK_INT || target_tok_type == TOK_UINT) &&
+        (val->type == VAL_STRING || val->type == VAL_FLOAT)) {
+        InfernalBigInt number;
+        char float_text[512];
+        const char *text = val->data.sval;
+        if (val->type == VAL_FLOAT) {
+            if (!isfinite(val->data.fval)) return false;
+            snprintf(float_text, sizeof(float_text), "%.0f", val->data.fval);
+            text = float_text;
+        }
+        if (!bigint_parse(text, &number)) return false;
+        bool want_unsigned = target_tok_type == TOK_UINT;
+        if (want_unsigned && number.negative) {
+            Value policy = val_make_null();
+            if (!constants_lookup("_UINT_NEGATIVE_ERROR", &policy) ||
+                policy.type != VAL_BOOL || policy.data.bval) {
+                value_free(&policy);
+                error(current_eval_line, "Un valor uint no puede ser negativo");
+            }
+            value_free(&policy);
+            number = bigint_zero();
+        }
+        if (!bigint_min_width(number, !want_unsigned)) return false;
+        if (val->type == VAL_STRING) free(val->data.sval);
+        *val = val_bigint(number, want_unsigned);
+        return true;
+    }
+    if (target_tok_type == TOK_UINT) {
+        if (val->type == VAL_STRING) {
+            char *end = NULL;
+            errno = 0;
+            long long n = strtoll(val->data.sval, &end, 10);
+            bool negative_text = val->data.sval[0] == '-';
+            bool negative_value = n < 0 || (errno == ERANGE && negative_text);
+            if ((errno && !negative_text) || end == val->data.sval || *end ||
+                (n >= 0 && (unsigned long long)n > UINT32_MAX))
+                return false;
+            free(val->data.sval);
+            *val = negative_value ? val_int(-1) : val_uint((uint32_t)n);
+        } else if (val->type == VAL_FLOAT) {
+            double f = val->data.fval;
+            if (!isfinite(f) || f > (double)UINT32_MAX)
+                return false;
+            if (f < 0.0) *val = val_int(-1);
+            else *val = val_uint((uint32_t)f);
+        }
+        if (val->type == VAL_UINT) return true;
+        if (val->type == VAL_INT && val->data.ival >= 0) {
+            *val = val_uint((uint32_t)val->data.ival);
+            return true;
+        }
+        if (val->type != VAL_INT) return false;
+        {
+            Value policy = val_make_null();
+            if (!constants_lookup("_UINT_NEGATIVE_ERROR", &policy) ||
+                policy.type != VAL_BOOL || policy.data.bval) {
+                value_free(&policy);
+                error(current_eval_line, "Un valor uint no puede ser negativo");
+            }
+            value_free(&policy);
+            *val = val_uint(0);
         }
         return true;
     }
@@ -416,10 +491,10 @@ bool try_convert_value(Value *val, int target_tok_type) {
         size_t total_len = 0;
         for (int i = 0; i < val->data.list.count; i++) {
             Value item = val->data.list.items[i];
-            char buf[64];
+            char buf[160];
             const char *str;
             switch (item.type) {
-                case VAL_INT:    snprintf(buf, sizeof(buf), "%d", item.data.ival); str = buf; break;
+                case VAL_INT: case VAL_UINT: { char *s = bigint_to_string(value_as_bigint(item)); snprintf(buf, sizeof(buf), "%s", s ? s : "0"); free(s); str = buf; break; }
                 case VAL_FLOAT:  snprintf(buf, sizeof(buf), "%g", item.data.fval); str = buf; break;
                 case VAL_BOOL:   str = item.data.bval ? "true" : "false"; break;
                 case VAL_STRING: str = item.data.sval ? item.data.sval : ""; break;
@@ -433,10 +508,10 @@ bool try_convert_value(Value *val, int target_tok_type) {
         char *p = out;
         for (int i = 0; i < val->data.list.count; i++) {
             Value item = val->data.list.items[i];
-            char buf[64];
+            char buf[160];
             const char *str;
             switch (item.type) {
-                case VAL_INT:    snprintf(buf, sizeof(buf), "%d", item.data.ival); str = buf; break;
+                case VAL_INT: case VAL_UINT: { char *s = bigint_to_string(value_as_bigint(item)); snprintf(buf, sizeof(buf), "%s", s ? s : "0"); free(s); str = buf; break; }
                 case VAL_FLOAT:  snprintf(buf, sizeof(buf), "%g", item.data.fval); str = buf; break;
                 case VAL_BOOL:   str = item.data.bval ? "true" : "false"; break;
                 case VAL_STRING: str = item.data.sval ? item.data.sval : ""; break;
@@ -460,8 +535,21 @@ bool try_convert_value(Value *val, int target_tok_type) {
         return true;
     }
     if (val->type == VAL_INT && target_tok_type == TOK_FLOAT) {
+        double number = bigint_to_double(value_as_bigint(*val));
         val->type = VAL_FLOAT;
-        val->data.fval = (double)val->data.ival;
+        val->data.fval = number;
+        return true;
+    }
+    if (val->type == VAL_UINT && target_tok_type == TOK_FLOAT) {
+        double number = bigint_to_double(value_as_bigint(*val));
+        val->type = VAL_FLOAT;
+        val->data.fval = number;
+        return true;
+    }
+    if (val->type == VAL_UINT && target_tok_type == TOK_INT) {
+        if (val->data.uval > INT_MAX) return false;
+        val->type = VAL_INT;
+        val->data.ival = (int)val->data.uval;
         return true;
     }
     if (val->type == VAL_FLOAT && target_tok_type == TOK_INT) {

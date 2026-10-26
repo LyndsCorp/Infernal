@@ -465,8 +465,22 @@ ASTNode *parse_primary() {
             }
             n->data.lit.fval = fv;
         } else {
-            n->data.lit.type = TOK_INT;
-            n->data.lit.ival = parse_int_literal(t.lexeme, t.line, "literal entero");
+            InfernalBigInt integer;
+            if (!bigint_parse(t.lexeme, &integer))
+                error(t.line, "Número entero fuera del rango máximo de 64 bytes");
+            if (bigint_fits_width(integer, 4, true)) {
+                n->data.lit.type = TOK_INT;
+                int64_t small = 0; (void)bigint_to_i64(integer, &small);
+                n->data.lit.ival = (int)small;
+            } else if (bigint_min_width(integer, false)) {
+                n->data.lit.type = TOK_UINT;
+                n->data.lit.integer = integer;
+                n->data.lit.integer_wide = bigint_min_width(integer, false) > 4;
+                if (!n->data.lit.integer_wide) {
+                    uint64_t small = 0; (void)bigint_to_u64(integer, &small);
+                    n->data.lit.uval = (uint32_t)small;
+                }
+            } else error(t.line, "Número entero fuera del rango máximo de 64 bytes");
         }
         /* Permitir indexación/slice sobre un literal numérico:
          *   3[i]      → NODE_INDEX(list=3, index=i)
@@ -818,26 +832,25 @@ static ASTNode *parse_unary() {
     }
 
     if (ts_match(TOK_MINUS)) {
-        /* INT_MIN no puede representarse como literal positivo porque su
-         * magnitud es INT_MAX + 1. Lo tratamos aquí, antes de parse_primary,
-         * sin relajar el límite de los literales positivos. */
+        /* El signo forma parte del literal para poder admitir hasta 64 bytes. */
         Token next = ts_peek();
         if (next.type == TOK_NUMBER && !strchr(next.lexeme, '.') &&
             !strchr(next.lexeme, 'e') && !strchr(next.lexeme, 'E')) {
-            char *end = NULL;
-            errno = 0;
-            unsigned long long magnitude = strtoull(next.lexeme, &end, 10);
-            unsigned long long min_magnitude = (unsigned long long)INT_MAX + 1ULL;
-            if (errno == ERANGE || end == next.lexeme || *end != '\0' ||
-                magnitude > min_magnitude) {
-                error(next.line, "Número entero fuera de rango en literal negativo (límite: %d..%d)",
-                      INT_MIN, INT_MAX);
-            }
-            if (magnitude == min_magnitude) {
+            InfernalBigInt integer;
+            if (!bigint_parse(next.lexeme, &integer))
+                error(next.line, "Número entero fuera del rango máximo de 64 bytes");
+            integer.negative = !bigint_is_zero(integer);
+            if (!bigint_min_width(integer, true))
+                error(next.line, "Literal negativo fuera del rango de int (máximo: 64 bytes)");
+            int64_t small = 0;
+            bool is_int_min = bigint_to_i64(integer, &small) && small == INT_MIN;
+            if (bigint_min_width(integer, true) > 4 || is_int_min) {
                 ts_advance();
                 ASTNode *node = node_create(NODE_LITERAL, next.line);
                 node->data.lit.type = TOK_INT;
-                node->data.lit.ival = INT_MIN;
+                node->data.lit.integer = integer;
+                node->data.lit.integer_wide = bigint_min_width(integer, true) > 4;
+                if (!node->data.lit.integer_wide) node->data.lit.ival = (int)small;
                 return node;
             }
         }

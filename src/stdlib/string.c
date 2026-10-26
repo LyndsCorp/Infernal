@@ -9,6 +9,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <limits.h>
 #include <string.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -818,8 +819,11 @@ static Value builtin_head(int argc, Value *args) {
     const char *s = args[0].data.sval ? args[0].data.sval : "";
     size_t byte_len = strlen(s);
 
-    if (args[1].type == VAL_INT) {
-        int n = args[1].data.ival;
+    if (args[1].type == VAL_INT || args[1].type == VAL_UINT) {
+        int64_t n64;
+        if (!value_integer_to_i64(args[1], &n64) || n64 > INT_MAX || n64 < INT_MIN)
+            error(current_eval_line, "head: el número supera el máximo admitido");
+        int n = (int)n64;
         if (n < 0) n = 0;
 
         /* Avanzo `n` codepoints (o hasta NUL). */
@@ -854,8 +858,11 @@ static Value builtin_tail(int argc, Value *args) {
     const char *s = args[0].data.sval ? args[0].data.sval : "";
     size_t byte_len = strlen(s);
 
-    if (args[1].type == VAL_INT) {
-        int n = args[1].data.ival;
+    if (args[1].type == VAL_INT || args[1].type == VAL_UINT) {
+        int64_t n64;
+        if (!value_integer_to_i64(args[1], &n64) || n64 > INT_MAX || n64 < INT_MIN)
+            error(current_eval_line, "tail: el número supera el máximo admitido");
+        int n = (int)n64;
         if (n < 0) n = 0;
 
         /* Pasada única forward con ventana deslizante: `tail_start`

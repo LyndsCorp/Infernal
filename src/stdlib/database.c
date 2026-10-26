@@ -218,8 +218,13 @@ static int value_to_text_rec(Value v, char **out, size_t *cap, size_t *len,
         error(current_eval_line, "Demasiada profundidad en la serialización de datos");
 
     switch (v.type) {
-        case VAL_INT:
-            return append_printf(out, cap, len, "%d", v.data.ival);
+        case VAL_INT: case VAL_UINT: {
+            char *number = bigint_to_string(value_as_bigint(v));
+            if (!number) error(current_eval_line, "Memoria insuficiente al serializar un entero");
+            int ok = append_string(out, cap, len, number);
+            free(number);
+            return ok;
+        }
 
         case VAL_FLOAT: {
             if (!isfinite(v.data.fval))
@@ -589,22 +594,28 @@ static Value parse_value(TextParser *p, int depth) {
             return val_float(fval);
         }
 
-        errno = 0;
-        long ival = strtol(start, &end, 10);
-        if (errno == ERANGE || end == start)
+        end = (char *)start;
+        if (*end == '-' || *end == '+') ++end;
+        while (*end && isdigit((unsigned char)*end)) ++end;
+        if (end == start || ((start[0] == '-' || start[0] == '+') && end == start + 1))
             error(current_eval_line, "Número entero inválido");
-        if (ival < INT_MIN || ival > INT_MAX) {
-            errno = 0;
-            double fval = strtod(start, &end);
-            if (errno == ERANGE || end == start)
-                error(current_eval_line, "Número fuera de rango");
-            if (!isfinite(fval))
-                error(current_eval_line, "Número flotante fuera de rango");
-            p->pos = end - p->input;
-            return val_float(fval);
-        }
+        size_t number_len = (size_t)(end - start);
+        char *number_text = malloc(number_len + 1);
+        if (!number_text) error(current_eval_line, "Memoria insuficiente al leer un entero");
+        memcpy(number_text, start, number_len);
+        number_text[number_len] = '\0';
+        InfernalBigInt integer;
+        bool parsed = bigint_parse(number_text, &integer);
+        free(number_text);
+        if (!parsed) error(current_eval_line, "Entero fuera del límite de 64 bytes");
         p->pos = end - p->input;
-        return val_int((int)ival);
+        if (integer.negative) {
+            if (!bigint_min_width(integer, true)) error(current_eval_line, "Entero fuera del límite de int");
+            return val_bigint(integer, false);
+        }
+        if (bigint_fits_width(integer, 4, true)) return val_bigint(integer, false);
+        if (!bigint_min_width(integer, false)) error(current_eval_line, "Entero fuera del límite de uint");
+        return val_bigint(integer, true);
     }
 
     error(current_eval_line, "Token inesperado en la entrada: '%c' (pos %zu)", c, p->pos);
@@ -749,8 +760,26 @@ static void serialize_value_binary_rec(ByteBuffer *buf, Value v, int depth) {
 
     switch (v.type) {
         case VAL_INT: {
-            buf_append_byte(buf, 'I');
-            buf_append_u32_le(buf, (uint32_t)(int32_t)v.data.ival);
+            if (!v.integer_wide) {
+                buf_append_byte(buf, 'I');
+                buf_append_u32_le(buf, (uint32_t)(int32_t)v.data.ival);
+            } else {
+                buf_append_byte(buf, 'J');
+                buf_append_byte(buf, v.integer_width);
+                buf_append_byte(buf, v.integer.negative ? 1 : 0);
+                for (size_t i = 0; i < v.integer_width; ++i) buf_append_byte(buf, v.integer.bytes[i]);
+            }
+            break;
+        }
+        case VAL_UINT: {
+            if (!v.integer_wide) {
+                buf_append_byte(buf, 'U');
+                buf_append_u32_le(buf, v.data.uval);
+            } else {
+                buf_append_byte(buf, 'K');
+                buf_append_byte(buf, v.integer_width);
+                for (size_t i = 0; i < v.integer_width; ++i) buf_append_byte(buf, v.integer.bytes[i]);
+            }
             break;
         }
         case VAL_FLOAT: {
@@ -864,6 +893,26 @@ static Value deserialize_value_binary(const unsigned char *buffer, size_t *offse
             int32_t val;
             memcpy(&val, &bits, sizeof(val));
             return val_int((int)val);
+        }
+        case 'U': {
+            if (sizeof(uint32_t) > total_len - *offset)
+                error(current_eval_line, "Buffer corrupto (UINT incompleto)");
+            uint32_t val = read_u32_le(buffer + *offset);
+            *offset += sizeof(uint32_t);
+            return val_uint(val);
+        }
+        case 'J': case 'K': {
+            if (total_len - *offset < 2)
+                error(current_eval_line, "Buffer corrupto (entero ampliado incompleto)");
+            size_t width = buffer[(*offset)++];
+            bool negative = false;
+            if (type == 'J') negative = buffer[(*offset)++] != 0;
+            if (width < 8 || width > INFERNAL_INT_MAX_BYTES || width > total_len - *offset)
+                error(current_eval_line, "Buffer corrupto (ancho de entero no válido)");
+            InfernalBigInt number = bigint_zero();
+            for (size_t i = 0; i < width; ++i) number.bytes[i] = buffer[(*offset)++];
+            number.negative = negative;
+            return val_bigint(number, type == 'K');
         }
         case 'F': {
             if (sizeof(uint64_t) > total_len - *offset)

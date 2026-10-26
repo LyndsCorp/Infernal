@@ -206,11 +206,16 @@ void exec_block_from_impl(NodeList *block, int start_index) {
 }
 
 static bool switch_values_equal(Value left, Value right) {
+    if (left.type == VAL_UINT && right.type == VAL_INT)
+        return right.data.ival >= 0 && left.data.uval == (uint32_t)right.data.ival;
+    if (left.type == VAL_INT && right.type == VAL_UINT)
+        return left.data.ival >= 0 && (uint32_t)left.data.ival == right.data.uval;
     if (left.type != right.type) return false;
     switch (left.type) {
         case VAL_NULL: return true;
         case VAL_BOOL: return left.data.bval == right.data.bval;
         case VAL_INT: return left.data.ival == right.data.ival;
+        case VAL_UINT: return left.data.uval == right.data.uval;
         case VAL_FLOAT: return left.data.fval == right.data.fval;
         case VAL_STRING:
             return left.data.sval && right.data.sval && strcmp(left.data.sval, right.data.sval) == 0;
@@ -228,6 +233,7 @@ static bool forin_values_equal(Value a, Value b) {
     switch (a.type) {
         case VAL_NULL:   return true;
         case VAL_INT:    return a.data.ival == b.data.ival;
+        case VAL_UINT:   return a.data.uval == b.data.uval;
         case VAL_FLOAT:  return a.data.fval == b.data.fval;
         case VAL_BOOL:   return a.data.bval == b.data.bval;
         case VAL_STRING:
@@ -366,7 +372,7 @@ static void assign_nested_index(Value *var_value, ASTNode *lhs_index,
                 }
             }
         } else if (container->type == VAL_LIST) {
-            if (key.type != VAL_INT && key.type != VAL_FLOAT) {
+            if (key.type != VAL_INT && key.type != VAL_UINT && key.type != VAL_FLOAT) {
                 if (key.type == VAL_STRING) {
                     char msg_buf[1024];
                     snprintf(msg_buf, sizeof(msg_buf),
@@ -388,6 +394,14 @@ static void assign_nested_index(Value *var_value, ASTNode *lhs_index,
                       "No se puede hacer %s[?] = ...: el índice debe ser int "
                       "(se recibió \'%s\').",
                       name, value_type_name(key_type));
+            }
+            if (key.type == VAL_UINT) {
+                if (key.data.uval > INT_MAX) {
+                    value_free(&key);
+                    error(line, "El índice uint excede el tamaño máximo de una lista");
+                }
+                key.type = VAL_INT;
+                key.data.ival = (int)key.data.uval;
             }
             if (key.type == VAL_FLOAT) {
                 double f = key.data.fval;
@@ -439,6 +453,10 @@ static void assign_nested_index(Value *var_value, ASTNode *lhs_index,
                 error(line,
                       "No se puede indexar un carácter del string '%s' como contenedor.",
                       name);
+            }
+            if (key.type == VAL_UINT && key.data.uval <= INT_MAX) {
+                key.type = VAL_INT;
+                key.data.ival = (int)key.data.uval;
             }
             if (key.type != VAL_INT) {
                 int key_type = key.type;
@@ -804,7 +822,8 @@ void exec_stmt(ASTNode *stmt) {
                         /* Declaración con índice sin valor: usamos el
                          * valor por defecto del tipo declarado. */
                         int vtype = stmt->data.assign.vtype;
-                        if (vtype == TOK_INT || vtype == TOK_UINT) new_val = val_int(0);
+                        if (vtype == TOK_INT) new_val = val_int(0);
+                        else if (vtype == TOK_UINT) new_val = val_uint(0);
                         else if (vtype == TOK_FLOAT)  new_val = val_float(0.0);
                         else if (vtype == TOK_BOOL)   new_val = val_bool(false);
                         else if (vtype == TOK_STRING) new_val = val_string("");
@@ -885,8 +904,10 @@ void exec_stmt(ASTNode *stmt) {
                         val = eval_expr(stmt->data.assign.value);
                     }
                 }
-                else if (stmt->data.assign.vtype == TOK_INT || stmt->data.assign.vtype == TOK_UINT)
+                else if (stmt->data.assign.vtype == TOK_INT)
                     val = val_int(0);
+                else if (stmt->data.assign.vtype == TOK_UINT)
+                    val = val_uint(0);
                 else if (stmt->data.assign.vtype == TOK_FLOAT)
                     val = val_float(0.0);
                 else if (stmt->data.assign.vtype == TOK_BOOL)
@@ -1174,7 +1195,7 @@ void exec_stmt(ASTNode *stmt) {
                 int vtype = stmt->data.for_stmt.vtype;
                 switch (vtype) {
                     case TOK_INT:    init_val = val_int(0);       break;
-                    case TOK_UINT:   init_val = val_int(0);       break;
+                    case TOK_UINT:   init_val = val_uint(0);      break;
                     case TOK_FLOAT:  init_val = val_float(0.0);   break;
                     case TOK_BOOL:   init_val = val_bool(false);  break;
                     case TOK_STRING: init_val = val_string("");   break;
@@ -1468,7 +1489,7 @@ void exec_stmt(ASTNode *stmt) {
                 }
 
                 int actual = valtype_to_tokentype(result.type);
-                if (actual != expected && !(expected == TOK_UINT && actual == TOK_INT)) {
+                if (actual != expected) {
                     bool was_void = (result.type == VAL_VOID);
                     value_free(&result);
                     if (was_void) {
@@ -1516,6 +1537,8 @@ void exec_stmt(ASTNode *stmt) {
                 repeat_line_target = p->line;
             } else {
                 Value line_val = eval_expr(stmt->data.repeat.line_expr);
+                if (line_val.type == VAL_UINT && line_val.data.uval <= INT_MAX)
+                    line_val = val_int((int)line_val.data.uval);
                 if (line_val.type != VAL_INT)
                     error(stmt->line, "repeat line requiere un número entero");
                 repeat_line_target = line_val.data.ival;

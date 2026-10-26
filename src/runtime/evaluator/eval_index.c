@@ -139,6 +139,19 @@ Value eval_index(ASTNode *expr) {
      * aunque b[c] sí lo sea. */
     if (idx.type == VAL_REFERENCE)
         idx = resolve_reference(idx, line);
+    if (idx.type == VAL_UINT) {
+        int64_t index_value;
+        if (!value_integer_to_i64(idx, &index_value) || index_value > INT_MAX)
+            eval_index_error(&base, &idx, base_borrowed, line,
+                             "El índice uint excede el tamaño máximo de una lista");
+        idx = val_int((int)index_value);
+    } else if (idx.type == VAL_INT && idx.integer_wide) {
+        int64_t index_value;
+        if (!value_integer_to_i64(idx, &index_value) || index_value < INT_MIN || index_value > INT_MAX)
+            eval_index_error(&base, &idx, base_borrowed, line,
+                             "El índice int excede el tamaño máximo de una lista");
+        idx = val_int((int)index_value);
+    }
     Value result = val_make_null();
 
     switch (base.type) {
@@ -151,9 +164,9 @@ Value eval_index(ASTNode *expr) {
              * un bool, una lista o un decimal como índice. */
 
             /* Fase 1: tipo del índice. Solo int y float son válidos. */
-            if (idx.type != VAL_INT && idx.type != VAL_FLOAT) {
+            if (idx.type != VAL_INT && idx.type != VAL_UINT && idx.type != VAL_FLOAT) {
                 eval_index_error(&base, &idx, base_borrowed, line,
-                                 "El índice de una lista debe ser un número entero (int), "
+                                 "El índice de una lista debe ser un número entero (int o uint), "
                                  "pero se recibió un valor de tipo '%s'.\n"
                                  "    Para acceder a un elemento por su posición usa un entero:\n"
                                  "        mi_lista[1]       (primer elemento)\n"
@@ -162,18 +175,26 @@ Value eval_index(ASTNode *expr) {
                                  value_type_name(idx.type));
             }
 
+            if (idx.type == VAL_UINT) {
+                int64_t index_value;
+                if (!value_integer_to_i64(idx, &index_value) || index_value > INT_MAX)
+                    eval_index_error(&base, &idx, base_borrowed, line,
+                                     "El índice uint excede el tamaño máximo de una lista");
+                idx = val_int((int)index_value);
+            }
+
             /* Fase 2: si es float, debe ser finito y sin parte decimal. */
             if (idx.type == VAL_FLOAT) {
                 double f = idx.data.fval;
                 if (!isfinite(f)) {
                     eval_index_error(&base, &idx, base_borrowed, line,
-                                     "El índice de una lista debe ser un número entero (int), "
+                                     "El índice de una lista debe ser un número entero (int o uint), "
                                      "pero se recibió un valor no finito (%g).",
                                      f);
                 }
                 if (trunc(f) != f) {
                     eval_index_error(&base, &idx, base_borrowed, line,
-                                     "El índice de una lista debe ser un número entero (int), "
+                                     "El índice de una lista debe ser un número entero (int o uint), "
                                      "pero se recibió el decimal %g.\n"
                                      "    Los índices de list no admiten parte decimal.",
                                      f);

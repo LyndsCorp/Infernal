@@ -244,14 +244,14 @@ void scope_assign(Scope *scope, const char *name, Value val, int line) {
         }
         int expected = e->vtype;
         int new_type = valtype_to_tokentype(val.type);
-        if (expected == TOK_UINT) {
+        if (expected == TOK_UINT && new_type != TOK_UINT) {
             if (!try_convert_value(&val, TOK_UINT)) {
                 value_free(&val);
                 error(line, "La variable uint '%s' requiere un entero válido", name);
             }
-            new_type = TOK_INT;
+            new_type = valtype_to_tokentype(val.type);
         }
-        if (expected != 0 && expected != TOK_UINT && new_type != expected) {
+        if (expected != 0 && new_type != expected) {
             value_free(&val);
             error(line, "Tipado fijo: la variable '%s' es de tipo %s, no se puede asignar un valor de tipo %s",
                   name, type_name(expected), type_name(new_type));

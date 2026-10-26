@@ -28,11 +28,20 @@
 
 /* --- Helper: aplica +/- 1 sobre un Value numérico --- */
 static Value compute_incdec(Value base, int delta, int line) {
-    if (base.type == VAL_INT) {
-        if ((delta > 0 && base.data.ival == INT_MAX) ||
-            (delta < 0 && base.data.ival == INT_MIN))
-            error(line, "Desbordamiento de entero en incremento/decremento");
-        return val_int(base.data.ival + delta);
+    if (base.type == VAL_UINT || base.type == VAL_INT) {
+        InfernalBigInt result;
+        InfernalBigInt step = bigint_from_i64(delta);
+        if (!bigint_add(value_as_bigint(base), step, &result))
+            error(line, "Desbordamiento del entero (máximo: 64 bytes)");
+        if (base.type == VAL_UINT && result.negative) {
+            Value underflow = val_bigint(result, false);
+            if (!try_convert_value(&underflow, TOK_UINT)) {
+                value_free(&underflow);
+                error(line, "Un valor uint no puede ser negativo");
+            }
+            return underflow;
+        }
+        return val_bigint(result, base.type == VAL_UINT);
     }
     if (base.type == VAL_FLOAT)
         return val_float(base.data.fval + (double)delta);
@@ -95,10 +104,8 @@ Value eval_expr(ASTNode *expr) {
                 Value new_val = compute_incdec(base, delta, expr->line);
                 value_free(&base);
 
-                if (e->vtype == TOK_UINT && !try_convert_value(&new_val, TOK_UINT)) {
-                    value_free(&new_val);
-                    error(expr->line, "La variable uint '%s' requiere un entero válido", name);
-                }
+                if (e->vtype == TOK_UINT && new_val.type != VAL_UINT)
+                    (void)try_convert_value(&new_val, TOK_UINT);
 
                 if (target->data.var.clone) {
                     return new_val;

@@ -12,6 +12,7 @@
 #include "value.h"
 #include "memory.h"
 #include "runtime/error.h"
+#include "runtime/evaluator/helpers.h"
 
 Value val_make_null(void) {
     Value v; v.type = VAL_NULL; return v;
@@ -22,7 +23,45 @@ Value val_void(void) {
 }
 
 Value val_int(int x) {
-    Value v; v.type = VAL_INT; v.data.ival = x; return v;
+    Value v; v.type = VAL_INT; v.data.ival = x; v.integer_wide = false; v.integer_width = 4; return v;
+}
+
+Value val_uint(uint32_t x) {
+    Value v; v.type = VAL_UINT; v.data.uval = x; v.integer_wide = false; v.integer_width = 4; return v;
+}
+
+InfernalBigInt value_as_bigint(Value value) {
+    if (value.integer_wide) return value.integer;
+    return value.type == VAL_UINT ? bigint_from_u64(value.data.uval)
+                                  : bigint_from_i64(value.data.ival);
+}
+
+bool value_integer_fits(Value value, size_t width, bool is_signed) {
+    return bigint_fits_width(value_as_bigint(value), width, is_signed);
+}
+
+bool value_integer_to_i64(Value value, int64_t *out) {
+    return (value.type == VAL_INT || value.type == VAL_UINT) &&
+           bigint_to_i64(value_as_bigint(value), out);
+}
+
+Value val_bigint(InfernalBigInt x, bool is_unsigned) {
+    size_t width = bigint_min_width(x, !is_unsigned);
+    if (!width) error(0, "Entero fuera del rango máximo de 64 bytes");
+    Value v;
+    if (width == 4) {
+        uint64_t magnitude = 0;
+        (void)bigint_to_u64(x, &magnitude);
+        if (is_unsigned) return val_uint((uint32_t)magnitude);
+        int64_t signed_value = 0;
+        (void)bigint_to_i64(x, &signed_value);
+        return val_int((int)signed_value);
+    }
+    v.type = is_unsigned ? VAL_UINT : VAL_INT;
+    v.integer = x;
+    v.integer_width = (uint8_t)width;
+    v.integer_wide = true;
+    return v;
 }
 
 Value val_float(double x) {
@@ -98,6 +137,7 @@ Value val_list_copy(Value *src) {
 int valtype_to_tokentype(int vtype) {
     switch (vtype) {
         case VAL_INT:    return TOK_INT;
+        case VAL_UINT:   return TOK_UINT;
         case VAL_FLOAT:  return TOK_FLOAT;
         case VAL_BOOL:   return TOK_BOOL;
         case VAL_STRING: return TOK_STRING;
@@ -178,6 +218,27 @@ void val_map_set_typed(Value *map, const char *key, Value value, int value_type)
         error(0, "val_map_set_typed: el valor no es un mapa");
     }
     MapData *md = map->data.map;
+    int existing_type = 0;
+    for (int i = 0; i < md->count; i++) {
+        if (strcmp(md->pairs[i].key, key) == 0) {
+            existing_type = md->pairs[i].value_type;
+            break;
+        }
+    }
+    int requested_type = existing_type ? existing_type : value_type;
+    if (existing_type && value_type && existing_type != value_type)
+        requested_type = 0;
+    Value normalized = val_make_null();
+    bool owns_normalized = false;
+    if (requested_type == TOK_UINT && value.type != VAL_UINT) {
+        normalized = copy_value_secure(value);
+        if (!try_convert_value(&normalized, TOK_UINT)) {
+            value_free(&normalized);
+            error(0, "El valor de la clave '%s' no cabe en uint", key);
+        }
+        value = normalized;
+        owns_normalized = true;
+    }
     for (int i = 0; i < md->count; i++) {
         if (strcmp(md->pairs[i].key, key) == 0) {
             int expected = md->pairs[i].value_type;
@@ -194,6 +255,7 @@ void val_map_set_typed(Value *map, const char *key, Value value, int value_type)
             value_free(&md->pairs[i].value);
             md->pairs[i].value = copy_value_secure(value);
             md->pairs[i].value_type = expected;
+            if (owns_normalized) value_free(&normalized);
             return;
         }
     }
@@ -214,6 +276,7 @@ void val_map_set_typed(Value *map, const char *key, Value value, int value_type)
     md->pairs[md->count].value = copy_value_secure(value);
     md->pairs[md->count].value_type = expected;
     md->count++;
+    if (owns_normalized) value_free(&normalized);
 }
 
 void val_map_set(Value *map, const char *key, Value value) {

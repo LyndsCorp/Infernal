@@ -82,7 +82,7 @@ static const char *utf8_advance(const char *s, size_t n) {
 }
 
 static bool value_is_numeric(Value v) {
-    return v.type == VAL_INT || v.type == VAL_FLOAT || v.type == VAL_BOOL;
+    return v.type == VAL_INT || v.type == VAL_UINT || v.type == VAL_FLOAT || v.type == VAL_BOOL;
 }
 
 /* Aísla el punto de recuperación en un helper para que eval_binop no tenga
@@ -106,50 +106,6 @@ static Value eval_binop_right_protected(ASTNode *right_node, int line,
     memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
     exception_raised = saved_raised;
     return right;
-}
-
-static int checked_i64_to_int(int64_t value, int line, const char *op) {
-    if (value < INT_MIN || value > INT_MAX)
-        error(line, "Desbordamiento de int en '%s': resultado fuera del rango [%d, %d]",
-              op, INT_MIN, INT_MAX);
-    return (int)value;
-}
-
-static int checked_int_add(int a, int b, int line) {
-    return checked_i64_to_int((int64_t)a + (int64_t)b, line, "+");
-}
-
-static int checked_int_sub(int a, int b, int line) {
-    return checked_i64_to_int((int64_t)a - (int64_t)b, line, "-");
-}
-
-static int checked_int_mul(int a, int b, int line) {
-    return checked_i64_to_int((int64_t)a * (int64_t)b, line, "*");
-}
-
-static int checked_int_pow(int base, int exponent, int line) {
-    int64_t result = 1;
-    int64_t factor = base;
-    int exp = exponent;
-    while (exp > 0) {
-        if (exp & 1) {
-            result *= factor;
-            if (result < INT_MIN || result > INT_MAX)
-                error(line, "Desbordamiento de int en '**': resultado fuera del rango [%d, %d]",
-                      INT_MIN, INT_MAX);
-        }
-        exp >>= 1;
-        if (exp == 0) break;
-        factor *= factor;
-        if (factor < INT_MIN || factor > INT_MAX) {
-            /* A partir de aquí solo necesitamos saber que el siguiente
-             * producto no puede caber si vuelve a utilizarse. */
-            if (exp > 0)
-                error(line, "Desbordamiento de int en '**': resultado fuera del rango [%d, %d]",
-                      INT_MIN, INT_MAX);
-        }
-    }
-    return (int)result;
 }
 
 /* Traduce un NODE_SLICE de string a un rango [lo, hi] de caracteres
@@ -352,12 +308,17 @@ Value eval_binop(ASTNode *expr) {
             idx = extract_integer_index(right_node->data.list_lit.items[0], expr->line);
         } else if (right_node->kind == NODE_LITERAL && right_node->data.lit.type == TOK_INT) {
             idx = right_node->data.lit.ival;
+        } else if (right_node->kind == NODE_LITERAL && right_node->data.lit.type == TOK_UINT &&
+                   right_node->data.lit.uval <= INT_MAX) {
+            idx = (int)right_node->data.lit.uval;
         } else {
             Value right_val = eval_expr(right_node);
             if (right_val.type == VAL_INT) idx = right_val.data.ival;
+            else if (right_val.type == VAL_UINT && right_val.data.uval <= INT_MAX) idx = (int)right_val.data.uval;
             else if (right_val.type == VAL_LIST && right_val.data.list.count == 1) {
                 Value item = right_val.data.list.items[0];
                 if (item.type == VAL_INT) idx = item.data.ival;
+                else if (item.type == VAL_UINT && item.data.uval <= INT_MAX) idx = (int)item.data.uval;
             }
             value_free(&right_val);
         }
@@ -409,6 +370,8 @@ Value eval_binop(ASTNode *expr) {
 
         if (index_val.type == VAL_INT) {
             pos = index_val.data.ival;
+        } else if (index_val.type == VAL_UINT && index_val.data.uval <= INT_MAX) {
+            pos = (int)index_val.data.uval;
         } else if (index_val.type == VAL_FLOAT) {
             double f = index_val.data.fval;
             if (isfinite(f) && f >= 1.0 && f <= (double)INT_MAX && trunc(f) == f) {
@@ -601,12 +564,17 @@ Value eval_binop(ASTNode *expr) {
             idx = extract_integer_index(right_node->data.list_lit.items[0], expr->line);
         } else if (right_node->kind == NODE_LITERAL && right_node->data.lit.type == TOK_INT) {
             idx = right_node->data.lit.ival;
+        } else if (right_node->kind == NODE_LITERAL && right_node->data.lit.type == TOK_UINT &&
+                   right_node->data.lit.uval <= INT_MAX) {
+            idx = (int)right_node->data.lit.uval;
         } else {
             Value right_val = eval_expr(right_node);
             if (right_val.type == VAL_INT) idx = right_val.data.ival;
+            else if (right_val.type == VAL_UINT && right_val.data.uval <= INT_MAX) idx = (int)right_val.data.uval;
             else if (right_val.type == VAL_LIST && right_val.data.list.count == 1) {
                 Value item = right_val.data.list.items[0];
                 if (item.type == VAL_INT) idx = item.data.ival;
+                else if (item.type == VAL_UINT && item.data.uval <= INT_MAX) idx = (int)item.data.uval;
             }
             value_free(&right_val);
         }
@@ -692,6 +660,8 @@ Value eval_binop(ASTNode *expr) {
             int pos = -1;
             if (index_val.type == VAL_INT) {
                 pos = index_val.data.ival;
+            } else if (index_val.type == VAL_UINT && index_val.data.uval <= INT_MAX) {
+                pos = (int)index_val.data.uval;
             } else if (index_val.type == VAL_FLOAT) {
                 double f = index_val.data.fval;
                 if (isfinite(f) && f >= 1.0 && f <= (double)INT_MAX && trunc(f) == f)
@@ -777,7 +747,8 @@ Value eval_binop(ASTNode *expr) {
             switch (left.type) {
                 case VAL_NULL:   equal = true; break;
                 case VAL_BOOL:   equal = (left.data.bval == right.data.bval); break;
-                case VAL_INT:    equal = (left.data.ival == right.data.ival); break;
+                case VAL_INT: case VAL_UINT:
+                    equal = bigint_compare(value_as_bigint(left), value_as_bigint(right)) == 0; break;
                 case VAL_FLOAT:  equal = (left.data.fval == right.data.fval); break;
                 case VAL_STRING: equal = (strcmp(left.data.sval, right.data.sval) == 0); break;
                 default: equal = false;
@@ -785,10 +756,22 @@ Value eval_binop(ASTNode *expr) {
         }
         /* int vs float: comparación numérica (como Python). */
         else if (left.type == VAL_INT && right.type == VAL_FLOAT) {
-            equal = ((double)left.data.ival == right.data.fval);
+            equal = (bigint_to_double(value_as_bigint(left)) == right.data.fval);
         }
         else if (left.type == VAL_FLOAT && right.type == VAL_INT) {
-            equal = (left.data.fval == (double)right.data.ival);
+            equal = (left.data.fval == bigint_to_double(value_as_bigint(right)));
+        }
+        else if (left.type == VAL_UINT && right.type == VAL_INT) {
+            equal = bigint_compare(value_as_bigint(left), value_as_bigint(right)) == 0;
+        }
+        else if (left.type == VAL_INT && right.type == VAL_UINT) {
+            equal = bigint_compare(value_as_bigint(left), value_as_bigint(right)) == 0;
+        }
+        else if (left.type == VAL_UINT && right.type == VAL_FLOAT) {
+            equal = (bigint_to_double(value_as_bigint(left)) == right.data.fval);
+        }
+        else if (left.type == VAL_FLOAT && right.type == VAL_UINT) {
+            equal = (left.data.fval == bigint_to_double(value_as_bigint(right)));
         }
         Value result = val_bool(expr->data.binop.op == TOK_EEQ ? equal : !equal);
         value_free(&left);
@@ -801,8 +784,8 @@ Value eval_binop(ASTNode *expr) {
 
         /* --- Conversión automática string → número -----------------------
          *
-         * Si un operando es un string y el otro es numérico (int, float o
-         * bool), intentamos convertir el string al tipo del operando
+         * Si un operando es un string y el otro es numérico (int, uint,
+         * float o bool), intentamos convertir el string al tipo del operando
          * numérico. Esto permite escribir cosas como:
          *
          *     local n = input("> ")       # input() devuelve string
@@ -818,7 +801,8 @@ Value eval_binop(ASTNode *expr) {
          * float como alternativa razonable, para no ser más estrictos
          * aquí que en cualquier otra operación numérica. */
         if (left.type == VAL_STRING && value_is_numeric(right)) {
-            int target = (right.type == VAL_FLOAT) ? TOK_FLOAT : TOK_INT;
+            int target = (right.type == VAL_FLOAT) ? TOK_FLOAT :
+                         (right.type == VAL_UINT) ? TOK_UINT : TOK_INT;
             if (!try_convert_value(&left, target)) {
                 if (target == TOK_INT && try_convert_value(&left, TOK_FLOAT)) {
                     /* El string tenía decimales; comparamos como float. */
@@ -840,7 +824,8 @@ Value eval_binop(ASTNode *expr) {
                 }
             }
         } else if (right.type == VAL_STRING && value_is_numeric(left)) {
-            int target = (left.type == VAL_FLOAT) ? TOK_FLOAT : TOK_INT;
+            int target = (left.type == VAL_FLOAT) ? TOK_FLOAT :
+                         (left.type == VAL_UINT) ? TOK_UINT : TOK_INT;
             if (!try_convert_value(&right, target)) {
                 if (target == TOK_INT && try_convert_value(&right, TOK_FLOAT)) {
                     /* El string tenía decimales; comparamos como float. */
@@ -871,18 +856,22 @@ Value eval_binop(ASTNode *expr) {
             error(expr->line, "Los operadores '<', '>', '<=' y '>=' requieren que valores sean numéricos como int o float (se recibió %s y %s)",
                   lt, rt);
         }
-        double lv = (left.type == VAL_INT) ? left.data.ival
+        bool integer_comparison = (left.type == VAL_INT || left.type == VAL_UINT) &&
+                                  (right.type == VAL_INT || right.type == VAL_UINT);
+        int integer_order = integer_comparison
+            ? bigint_compare(value_as_bigint(left), value_as_bigint(right)) : 0;
+        double lv = (left.type == VAL_INT || left.type == VAL_UINT) ? bigint_to_double(value_as_bigint(left))
         : (left.type == VAL_FLOAT) ? left.data.fval
         : (left.data.bval ? 1.0 : 0.0);
-        double rv = (right.type == VAL_INT) ? right.data.ival
+        double rv = (right.type == VAL_INT || right.type == VAL_UINT) ? bigint_to_double(value_as_bigint(right))
         : (right.type == VAL_FLOAT) ? right.data.fval
         : (right.data.bval ? 1.0 : 0.0);
         bool result = false;
         switch (expr->data.binop.op) {
-            case TOK_LT_OP: result = (lv < rv); break;
-            case TOK_GT_OP: result = (lv > rv); break;
-            case TOK_LE:    result = (lv <= rv); break;
-            case TOK_GE:    result = (lv >= rv); break;
+            case TOK_LT_OP: result = integer_comparison ? integer_order < 0 : lv < rv; break;
+            case TOK_GT_OP: result = integer_comparison ? integer_order > 0 : lv > rv; break;
+            case TOK_LE:    result = integer_comparison ? integer_order <= 0 : lv <= rv; break;
+            case TOK_GE:    result = integer_comparison ? integer_order >= 0 : lv >= rv; break;
             default: break;
         }
         Value result_value = val_bool(result);
@@ -898,17 +887,31 @@ Value eval_binop(ASTNode *expr) {
             value_free(&left);
             value_free(&right);
             error(expr->line,
-                  "El operador '**' requiere operandos numéricos (int, float o bool); "
+                  "El operador '**' requiere operandos numéricos (int, uint, float o bool); "
                   "se recibió %s y %s", lt, rt);
         }
-        if (left.type == VAL_INT && right.type == VAL_INT && right.data.ival >= 0) {
-            int result = checked_int_pow(left.data.ival, right.data.ival, expr->line);
-            value_free(&left);
-            value_free(&right);
-            return val_int(result);
+        if ((left.type == VAL_INT || left.type == VAL_UINT) &&
+            (right.type == VAL_INT || right.type == VAL_UINT)) {
+            InfernalBigInt exponent_value = value_as_bigint(right);
+            uint64_t exponent = 0;
+            InfernalBigInt powered;
+            bool unsigned_power = left.type == VAL_UINT;
+            if (exponent_value.negative || !bigint_to_u64(exponent_value, &exponent) ||
+                exponent > UINT32_MAX ||
+                !bigint_pow(value_as_bigint(left), (uint32_t)exponent, &powered)) {
+                value_free(&left); value_free(&right);
+                error(expr->line, "Desbordamiento o exponente no válido en '**' (máximo: 64 bytes)");
+            }
+            if (unsigned_power && powered.negative) {
+                value_free(&left); value_free(&right);
+                error(expr->line, "Un valor uint no puede ser negativo");
+            }
+            Value result = val_bigint(powered, unsigned_power);
+            value_free(&left); value_free(&right);
+            return result;
         }
-        double lv = (left.type == VAL_INT) ? left.data.ival : left.data.fval;
-        double rv = (right.type == VAL_INT) ? right.data.ival : right.data.fval;
+        double lv = (left.type == VAL_INT || left.type == VAL_UINT) ? bigint_to_double(value_as_bigint(left)) : left.data.fval;
+        double rv = (right.type == VAL_INT || right.type == VAL_UINT) ? bigint_to_double(value_as_bigint(right)) : right.data.fval;
         errno = 0;
         double powered = pow(lv, rv);
         if (!isfinite(powered) && isfinite(lv) && isfinite(rv)) {
@@ -934,12 +937,15 @@ Value eval_binop(ASTNode *expr) {
                   "convierte explícitamente ambos lados a número.",
                   op_name, lt, rt);
         }
-        char lbuf[64], rbuf[64];
+        char lbuf[160], rbuf[160];
         const char *ls = left.type == VAL_STRING ? left.data.sval : lbuf;
         const char *rs = right.type == VAL_STRING ? right.data.sval : rbuf;
         if (left.type != VAL_STRING) {
-            if (left.type == VAL_INT)
-                snprintf(lbuf, sizeof(lbuf), "%d", left.data.ival);
+            if (left.type == VAL_INT || left.type == VAL_UINT) {
+                char *number = bigint_to_string(value_as_bigint(left));
+                snprintf(lbuf, sizeof(lbuf), "%s", number ? number : "0");
+                free(number);
+            }
             else if (left.type == VAL_FLOAT)
                 snprintf(lbuf, sizeof(lbuf), "%.15g", left.data.fval);
             else if (left.type == VAL_BOOL)
@@ -951,8 +957,11 @@ Value eval_binop(ASTNode *expr) {
                       value_type_name(left.type));
         }
         if (right.type != VAL_STRING) {
-            if (right.type == VAL_INT)
-                snprintf(rbuf, sizeof(rbuf), "%d", right.data.ival);
+            if (right.type == VAL_INT || right.type == VAL_UINT) {
+                char *number = bigint_to_string(value_as_bigint(right));
+                snprintf(rbuf, sizeof(rbuf), "%s", number ? number : "0");
+                free(number);
+            }
             else if (right.type == VAL_FLOAT)
                 snprintf(rbuf, sizeof(rbuf), "%.15g", right.data.fval);
             else if (right.type == VAL_BOOL)
@@ -974,42 +983,48 @@ Value eval_binop(ASTNode *expr) {
         return result;
     }
 
-    if (left.type == VAL_INT && right.type == VAL_INT) {
-        int lv = left.data.ival, rv = right.data.ival;
-        Value result;
+    if ((left.type == VAL_UINT || left.type == VAL_INT) &&
+        (right.type == VAL_UINT || right.type == VAL_INT)) {
+        InfernalBigInt a = value_as_bigint(left), b = value_as_bigint(right), result;
+        bool unsigned_result = left.type == VAL_UINT || right.type == VAL_UINT;
+        bool ok = true;
         switch (expr->data.binop.op) {
-            case TOK_PLUS:
-                result = val_int(checked_int_add(lv, rv, expr->line));
+            case TOK_PLUS: ok = bigint_add(a, b, &result); break;
+            case TOK_MINUS: ok = bigint_sub(a, b, &result); break;
+            case TOK_STAR: ok = bigint_mul(a, b, &result); break;
+            case TOK_PERCENT: {
+                InfernalBigInt quotient;
+                ok = bigint_divmod(a, b, &quotient, &result);
+                if (!ok) { value_free(&left); value_free(&right); error(expr->line, "Módulo por cero"); }
                 break;
-            case TOK_MINUS:
-                result = val_int(checked_int_sub(lv, rv, expr->line));
-                break;
-            case TOK_STAR:
-                result = val_int(checked_int_mul(lv, rv, expr->line));
-                break;
-            case TOK_SLASH:
-                if (rv == 0) error(expr->line, "División por cero");
-                result = val_float((double)lv / (double)rv);
-                break;
-            case TOK_PERCENT:
-                if (rv == 0) error(expr->line, "Módulo por cero");
-                if (lv == INT_MIN && rv == -1)
-                    error(expr->line, "Desbordamiento de int en '%': resultado fuera del rango [%d, %d]",
-                          INT_MIN, INT_MAX);
-                result = val_int(lv % rv);
-                break;
-            default:
-                error(expr->line, "Operador no soportado");
+            }
+            case TOK_SLASH: {
+                if (bigint_is_zero(b)) { value_free(&left); value_free(&right); error(expr->line, "División por cero"); }
+                double lv = bigint_to_double(a), rv = bigint_to_double(b);
+                value_free(&left); value_free(&right);
+                return val_float(lv / rv);
+            }
+            default: ok = false; break;
         }
-        value_free(&left);
-        value_free(&right);
-        return result;
+        if (!ok) { value_free(&left); value_free(&right); error(expr->line, "Operación entera fuera del límite de 64 bytes o no soportada"); }
+        if (unsigned_result && result.negative) {
+            Value negative = val_bigint(result, false);
+            if (!try_convert_value(&negative, TOK_UINT)) {
+                value_free(&negative); value_free(&left); value_free(&right);
+                error(expr->line, "El resultado de '%s' es negativo para uint", op_name);
+            }
+            value_free(&left); value_free(&right);
+            return negative;
+        }
+        Value value = val_bigint(result, unsigned_result);
+        value_free(&left); value_free(&right);
+        return value;
     }
 
-    double lv = (left.type == VAL_INT) ? left.data.ival :
+    double lv = (left.type == VAL_INT || left.type == VAL_UINT) ? bigint_to_double(value_as_bigint(left)) :
     (left.type == VAL_FLOAT) ? left.data.fval :
     (left.type == VAL_BOOL) ? (left.data.bval ? 1.0 : 0.0) : 0.0;
-    double rv = (right.type == VAL_INT) ? right.data.ival :
+    double rv = (right.type == VAL_INT || right.type == VAL_UINT) ? bigint_to_double(value_as_bigint(right)) :
     (right.type == VAL_FLOAT) ? right.data.fval :
     (right.type == VAL_BOOL) ? (right.data.bval ? 1.0 : 0.0) : 0.0;
     Value result;

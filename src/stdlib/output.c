@@ -41,7 +41,11 @@ static void fprint_value_literal(FILE *out, Value v);
 /* Imprime un valor en su forma normal de salida. */
 static void fprint_value(FILE *out, Value v) {
     switch (v.type) {
-        case VAL_INT:    fprintf(out, "%d", v.data.ival); break;
+        case VAL_INT: case VAL_UINT: {
+            char *number = bigint_to_string(value_as_bigint(v));
+            if (number) { fputs(number, out); free(number); }
+            break;
+        }
         case VAL_FLOAT:  fprintf(out, "%.15g", v.data.fval); break;
         case VAL_BOOL:   fprintf(out, "%s", v.data.bval ? "true" : "false"); break;
         case VAL_STRING: fprintf(out, "%s", v.data.sval ? v.data.sval : ""); break;

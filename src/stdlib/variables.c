@@ -97,13 +97,11 @@ static Value convert_string_to_type(const char *s, int tok_type) {
             return val_int((int)n);
         }
         case TOK_UINT: {
-            char *end = NULL;
-            errno = 0;
-            long n = strtol(s, &end, 10);
-            if (errno || end == s || *end || n < INT_MIN || n > INT_MAX)
+            Value result = val_string(s);
+            if (!try_convert_value(&result, TOK_UINT)) {
+                value_free(&result);
                 error(current_eval_line, "mkvar(): \"%s\" no es un uint válido", s);
-            Value result = val_int((int)n);
-            (void)try_convert_value(&result, TOK_UINT);
+            }
             return result;
         }
         case TOK_FLOAT: {
@@ -419,7 +417,7 @@ static Value builtin_mkvar(int argc, Value *args) {
     if (tok_type == -1) {
         error(current_eval_line,
               "mkvar(): tipo \"%s\" no reconocido. "
-              "Usa uno de: int, float, bool, string, list, map",
+              "Usa uno de: int, uint, float, bool, string, list, map",
               type_str ? type_str : "");
     }
 

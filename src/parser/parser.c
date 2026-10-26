@@ -1845,7 +1845,7 @@ NodeList parse_block(const char *terminator) {
                 ts_peek().type == TOK_LIST || ts_peek().type == TOK_MAP) {
                 vtype = ts_advance().type;
                 } else if (ts_peek().type != TOK_IDENT) {
-                    error(t.line, "Se esperaba un tipo (int, float, bool, string, list, map) o un nombre de variable");
+                    error(t.line, "Se esperaba un tipo (int, uint, float, bool, string, list, map) o un nombre de variable");
                 }
 
                 /* Una sola línea puede declarar varias variables, pero todas

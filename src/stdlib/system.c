@@ -8,6 +8,7 @@
 */
 
 #include <stdlib.h>
+#include <limits.h>
 #include <string.h>
 #include "system.h"
 #include "core/value.h"
@@ -25,7 +26,8 @@ static Value builtin_exit(int argc, Value *args) {
     int code = 0;
     if (argc > 0) {
         Value v = args[0];
-        code = (v.type == VAL_INT) ? v.data.ival : 0;
+        code = (v.type == VAL_INT) ? v.data.ival :
+               (v.type == VAL_UINT && v.data.uval <= INT_MAX) ? (int)v.data.uval : 0;
     }
     exit(code);
     /* Inalcanzable: exit() no retorna. Pero el compilador exige un

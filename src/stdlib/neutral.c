@@ -42,7 +42,11 @@ static Value builtin_has(int argc, Value *args) {
             Value item = container.data.list.items[i];
             if (item.type == element.type) {
                 switch (item.type) {
-                    case VAL_INT:    if (item.data.ival == element.data.ival) return val_bool(true); break;
+                    case VAL_INT: case VAL_UINT:
+                        if ((element.type == VAL_INT || element.type == VAL_UINT) &&
+                            bigint_compare(value_as_bigint(item), value_as_bigint(element)) == 0)
+                            return val_bool(true);
+                        break;
                     case VAL_FLOAT:  if (item.data.fval == element.data.fval) return val_bool(true); break;
                     case VAL_BOOL:   if (item.data.bval == element.data.bval) return val_bool(true); break;
                     case VAL_STRING: if (strcmp(item.data.sval, element.data.sval) == 0) return val_bool(true); break;

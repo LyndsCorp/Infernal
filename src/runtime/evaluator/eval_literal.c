@@ -19,7 +19,8 @@
 #include <setjmp.h>
 
 Value eval_literal(ASTNode *expr) {
-    if (expr->data.lit.type == TOK_INT)    return val_int(expr->data.lit.ival);
+    if (expr->data.lit.type == TOK_INT)    return expr->data.lit.integer_wide ? val_bigint(expr->data.lit.integer, false) : val_int(expr->data.lit.ival);
+    if (expr->data.lit.type == TOK_UINT)   return expr->data.lit.integer_wide ? val_bigint(expr->data.lit.integer, true) : val_uint(expr->data.lit.uval);
     if (expr->data.lit.type == TOK_FLOAT)  return val_float(expr->data.lit.fval);
     if (expr->data.lit.type == TOK_BOOL)   return val_bool(expr->data.lit.bval);
     if (expr->data.lit.type == TOK_STRING) return val_string(expr->data.lit.sval);
@@ -148,6 +149,12 @@ Value eval_map(ASTNode *expr) {
             }
         } else {
             val = eval_expr(value_node);
+        }
+        if (declared_type == TOK_UINT && valtype_to_tokentype(val.type) != TOK_UINT) {
+            if (!try_convert_value(&val, TOK_UINT)) {
+                value_free(&val);
+                error(expr->line, "Error de tipado del mapa: la clave '%s' requiere un uint", key);
+            }
         }
         if (declared_type != 0 && valtype_to_tokentype(val.type) != declared_type) {
             int actual_type = valtype_to_tokentype(val.type);

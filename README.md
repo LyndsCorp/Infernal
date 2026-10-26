@@ -56,7 +56,7 @@ fi
 
 | Característica                       | Bash                                  | Python                                  | Lua                          | Rust                          | Go                            | **Infernal**                                                                  |
 | ------------------------------------ | ------------------------------------- | --------------------------------------- | ---------------------------- | ----------------------------- | ----------------------------- | ----------------------------------------------------------------------------- |
-| Tipado estático/fijo                 | ❌                                    | ❌                                      | ❌                           | ✅                            | ✅                            | ⚠️ Anotaciones opcionales verificadas en runtime `int y = 5`                  |
+| Tipado estático/fijo                 | ❌                                    | ❌                                      | ❌                           | ✅                            | ✅                            | ⚠️ Anotaciones opcionales verificadas en runtime `int y = 5`, `uint z = 6`    |
 | Inferencia de tipos                  | ⚠️ Limitada                          | ⚠️ Dinámica                            | ⚠️ Dinámica                  | ✅                            | ✅                            | ⚠️ Por valor asignado `x = 10`                                                |
 | Integración con shell                | ✅ Nativa                             | ⚠️ Mediante APIs                        | ⚠️ Mediante APIs             | ⚠️ Mediante APIs              | ⚠️ Mediante APIs              | ✅ Directa (comandos desnudos y `!cmd!`)                                      |
 | Cierre uniforme de bloques           | ❌ (`fi`, `done`, `esac`)            | ✅ (indentación)                       | ✅ (`end`)                  | ✅ (`}`)                     | ✅ (`}`)                     | ✅ (`fi` para todo)                                                           |
@@ -79,7 +79,12 @@ fi
 | Gestor de paquetes oficial/integrado | ❌                                    | ⚠️ `pip`                               | ⚠️ LuaRocks                  | ✅ Cargo                      | ✅ Go Modules                 | ❌                                                                             |
 | Tiempo de ejecución                  | Interpretado                         | Interpretado / bytecode                 | Interpretado / bytecode      | Compilado a nativo            | Compilado a nativo            | Interpretado (tree-walking)                                                   |
 
-### Tipo `uint`
+### Tipos `int` y `uint`
+
+Ambos enteros empiezan con 4 bytes y amplían su ancho automáticamente en
+potencias de dos (4, 8, 16, 32 y 64 bytes) cuando el resultado no cabe. El
+límite es 64 bytes (512 bits); no hay variantes adicionales como `long`.
+`int` admite negativos y `uint` no.
 
 `uint` declara un entero que no admite valores negativos:
 
@@ -88,9 +93,8 @@ uint contador = 3
 contador--
 ```
 
-Por defecto, asignar o producir un valor negativo da error. Si se define
-`_UINT_NEGATIVE_ERROR false`, esos valores se saturan a `0`. El rango numérico
-sigue siendo el de `int` en esta versión del intérprete.
+Por defecto, asignar o producir un valor negativo a `uint` da error. Si se
+define `_UINT_NEGATIVE_ERROR false`, esos valores se saturan a `0`.
 | Compilación a código nativo          | ❌                                    | ❌                                      | ❌                           | ✅                            | ✅                            | ❌                                                                             |
 | Rendimiento                          | Bajo–medio                           | Medio                                   | Medio–alto                   | **Muy alto**                  | **Muy alto**                  | **Bajo–medio**                                                                |
 | Curva de aprendizaje                 | Media                                | Baja                                    | Baja–media                   | Alta                          | Media–baja                    | **Media**                                                                     |

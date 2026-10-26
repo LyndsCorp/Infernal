@@ -51,6 +51,7 @@ do { \
 do { \
     switch ((value).type) { \
         case VAL_INT:    DEBUG_INFO("Variable '%s' = %d (int)", name, (value).data.ival); break; \
+        case VAL_UINT:   DEBUG_INFO("Variable '%s' = %u (uint)", name, (value).data.uval); break; \
         case VAL_FLOAT:  DEBUG_INFO("Variable '%s' = %g (float)", name, (value).data.fval); break; \
         case VAL_BOOL:   DEBUG_INFO("Variable '%s' = %s (bool)", name, (value).data.bval ? "true" : "false"); break; \
         case VAL_STRING: DEBUG_INFO("Variable '%s' = \"%s\" (string)", name, (value).data.sval); break; \

@@ -18,6 +18,7 @@
 #include <sys/types.h>
 #include <pwd.h>
 #include <dlfcn.h>
+#include "core/value.h"
 #include <sys/wait.h>
 #include <stdint.h>
 
@@ -48,7 +49,12 @@ char *get_var_string(const char *name) {
         char buf[256];
         char *result = NULL;
         switch (constant_value.type) {
-            case VAL_INT: snprintf(buf, sizeof(buf), "%d", constant_value.data.ival); result = strdup(buf); break;
+            case VAL_INT: case VAL_UINT: {
+                char *number = bigint_to_string(value_as_bigint(constant_value));
+                result = strdup(number ? number : "0");
+                free(number);
+                break;
+            }
             case VAL_FLOAT: snprintf(buf, sizeof(buf), "%g", constant_value.data.fval); result = strdup(buf); break;
             case VAL_BOOL: result = strdup(constant_value.data.bval ? "true" : "false"); break;
             case VAL_STRING: result = strdup(constant_value.data.sval); break;
@@ -62,6 +68,7 @@ char *get_var_string(const char *name) {
     char buf[256];
     switch (v->type) {
         case VAL_INT: snprintf(buf, sizeof(buf), "%d", v->data.ival); break;
+        case VAL_UINT: snprintf(buf, sizeof(buf), "%u", v->data.uval); break;
         case VAL_FLOAT: snprintf(buf, sizeof(buf), "%g", v->data.fval); break;
         case VAL_BOOL: return strdup(v->data.bval ? "true" : "false");
         case VAL_STRING: return strdup(v->data.sval);

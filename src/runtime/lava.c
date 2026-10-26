@@ -156,7 +156,12 @@ Value *get_infernal_const(const char *name) {
  */
 static int value_to_c_int(Value v) {
     switch (v.type) {
-        case VAL_INT:    return v.data.ival;
+        case VAL_INT: case VAL_UINT: {
+            int64_t result;
+            if (!value_integer_to_i64(v, &result) || result < INT_MIN || result > INT_MAX)
+                error(0, "Lava: el entero no cabe en un int de C");
+            return (int)result;
+        }
         case VAL_FLOAT:
             if (!isfinite(v.data.fval) || v.data.fval < (double)INT_MIN ||
                 v.data.fval > (double)INT_MAX)
@@ -192,7 +197,7 @@ static int value_to_c_int(Value v) {
  */
 static double value_to_c_double(Value v) {
     switch (v.type) {
-        case VAL_INT:    return (double)v.data.ival;
+        case VAL_INT: case VAL_UINT: return bigint_to_double(value_as_bigint(v));
         case VAL_FLOAT:  return v.data.fval;
         case VAL_BOOL:   return v.data.bval ? 1.0 : 0.0;
         case VAL_STRING: {
@@ -229,7 +234,7 @@ static double value_to_c_double(Value v) {
 static int value_to_c_bool(Value v) {
     switch (v.type) {
         case VAL_BOOL:   return v.data.bval ? 1 : 0;
-        case VAL_INT:    return v.data.ival != 0;
+        case VAL_INT: case VAL_UINT: return !bigint_is_zero(value_as_bigint(v));
         case VAL_FLOAT:  return v.data.fval != 0.0;
         case VAL_STRING: return v.data.sval && v.data.sval[0];
         default:         return 0;
@@ -275,11 +280,14 @@ static const char *lava_value_temp_string(Value v) {
     if (v.type == VAL_STRING)
         return v.data.sval ? v.data.sval : "";
 
-    char buf[64];
+    char buf[160];
     switch (v.type) {
-        case VAL_INT:
-            snprintf(buf, sizeof(buf), "%d", v.data.ival);
+        case VAL_INT: case VAL_UINT: {
+            char *number = bigint_to_string(value_as_bigint(v));
+            snprintf(buf, sizeof(buf), "%s", number ? number : "0");
+            free(number);
             break;
+        }
         case VAL_FLOAT:
             snprintf(buf, sizeof(buf), "%g", v.data.fval);
             break;
@@ -325,7 +333,7 @@ void infernal_return_type(const char *type) {
     else {
         fprintf(stderr,
                 "Error Lava: tipo inválido '%s'. "
-                "Usa \"int\", \"float\", \"string\", \"bool\", \"list\" o \"map\".\n", type);
+                "Usa \"int\", \"uint\", \"float\", \"string\", \"bool\", \"list\" o \"map\".\n", type);
         abort();
     }
     g_ctx->type     = t;
@@ -356,11 +364,7 @@ void infernal_return_value(const char *fmt, ...) {
         case TOK_INT:    g_ctx->value = val_int(va_arg(ap, int));            break;
         case TOK_UINT: {
             unsigned int n = va_arg(ap, unsigned int);
-            if (n > INT_MAX) {
-                va_end(ap);
-                error(0, "Lava: uint excede el máximo admitido por Infernal");
-            }
-            g_ctx->value = val_int((int)n);
+            g_ctx->value = val_uint((uint32_t)n);
             break;
         }
         case TOK_FLOAT:  g_ctx->value = val_float(va_arg(ap, double));       break;
@@ -434,6 +438,7 @@ const char *lava_list_element_type(lava_list *l, int index) {
     switch (v->data.list.items[index - 1].type) {
         case VAL_NULL:   return "null";
         case VAL_INT:    return "int";
+        case VAL_UINT:   return "uint";
         case VAL_FLOAT:  return "float";
         case VAL_BOOL:   return "bool";
         case VAL_STRING: return "string";
@@ -450,7 +455,10 @@ int lava_list_int(lava_list *l, int index) {
     if (index < 1 || index > v->data.list.count) return 0;
     Value item = v->data.list.items[index - 1];
     switch (item.type) {
-        case VAL_INT:    return item.data.ival;
+        case VAL_INT: case VAL_UINT: {
+            int64_t number;
+            return value_integer_to_i64(item, &number) && number >= INT_MIN && number <= INT_MAX ? (int)number : 0;
+        }
         case VAL_FLOAT:
             if (!isfinite(item.data.fval) || item.data.fval < (double)INT_MIN ||
                 item.data.fval > (double)INT_MAX)
@@ -469,7 +477,7 @@ double lava_list_float(lava_list *l, int index) {
     if (index < 1 || index > v->data.list.count) return 0.0;
     Value item = v->data.list.items[index - 1];
     switch (item.type) {
-        case VAL_INT:    return (double)item.data.ival;
+        case VAL_INT: case VAL_UINT: return bigint_to_double(value_as_bigint(item));
         case VAL_FLOAT:  return item.data.fval;
         case VAL_BOOL:   return item.data.bval ? 1.0 : 0.0;
         case VAL_STRING: return item.data.sval ? atof(item.data.sval) : 0.0;
@@ -493,7 +501,7 @@ int lava_list_bool(lava_list *l, int index) {
     Value item = v->data.list.items[index - 1];
     switch (item.type) {
         case VAL_BOOL:   return item.data.bval ? 1 : 0;
-        case VAL_INT:    return item.data.ival != 0;
+        case VAL_INT: case VAL_UINT: return !bigint_is_zero(value_as_bigint(item));
         case VAL_FLOAT:  return item.data.fval != 0.0;
         case VAL_STRING: return item.data.sval && item.data.sval[0];
         default:         return 0;
@@ -638,6 +646,7 @@ const char *lava_map_element_type(lava_map *m, const char *key) {
     switch (p->value.type) {
         case VAL_NULL:   return "null";
         case VAL_INT:    return "int";
+        case VAL_UINT:   return "uint";
         case VAL_FLOAT:  return "float";
         case VAL_BOOL:   return "bool";
         case VAL_STRING: return "string";
@@ -651,7 +660,10 @@ int lava_map_get_int(lava_map *m, const char *key) {
     MapPair *p = lava_map_lookup(m, key);
     if (!p) return 0;
     switch (p->value.type) {
-        case VAL_INT:    return p->value.data.ival;
+        case VAL_INT: case VAL_UINT: {
+            int64_t number;
+            return value_integer_to_i64(p->value, &number) && number >= INT_MIN && number <= INT_MAX ? (int)number : 0;
+        }
         case VAL_FLOAT:
             if (!isfinite(p->value.data.fval) || p->value.data.fval < (double)INT_MIN ||
                 p->value.data.fval > (double)INT_MAX)
@@ -668,7 +680,7 @@ double lava_map_get_float(lava_map *m, const char *key) {
     MapPair *p = lava_map_lookup(m, key);
     if (!p) return 0.0;
     switch (p->value.type) {
-        case VAL_INT:    return (double)p->value.data.ival;
+        case VAL_INT: case VAL_UINT: return bigint_to_double(value_as_bigint(p->value));
         case VAL_FLOAT:  return p->value.data.fval;
         case VAL_BOOL:   return p->value.data.bval ? 1.0 : 0.0;
         case VAL_STRING: return p->value.data.sval
@@ -688,7 +700,7 @@ int lava_map_get_bool(lava_map *m, const char *key) {
     if (!p) return 0;
     switch (p->value.type) {
         case VAL_BOOL:   return p->value.data.bval ? 1 : 0;
-        case VAL_INT:    return p->value.data.ival != 0;
+        case VAL_INT: case VAL_UINT: return !bigint_is_zero(value_as_bigint(p->value));
         case VAL_FLOAT:  return p->value.data.fval != 0.0;
         case VAL_STRING: return p->value.data.sval && p->value.data.sval[0];
         default:         return 0;
@@ -1202,10 +1214,12 @@ static Value lava_dispatch(int slot, int argc, Value *args) {
                         /* Buffer inline tras el puntero. */
                         char *s = (char *)values[i] + sizeof(void *);
                         switch (args[i].type) {
-                            case VAL_INT:
-                                snprintf(s, LAVA_ARG_SLOT - sizeof(void *),
-                                         "%d", args[i].data.ival);
+                            case VAL_INT: case VAL_UINT: {
+                                char *number = bigint_to_string(value_as_bigint(args[i]));
+                                snprintf(s, LAVA_ARG_SLOT - sizeof(void *), "%s", number ? number : "0");
+                                free(number);
                                 break;
+                            }
                             case VAL_FLOAT:
                                 snprintf(s, LAVA_ARG_SLOT - sizeof(void *),
                                          "%g", args[i].data.fval);
@@ -1251,7 +1265,7 @@ static Value lava_dispatch(int slot, int argc, Value *args) {
         } else {
             switch (ctx->type) {
                 case TOK_INT:    result = val_int(0);         break;
-                case TOK_UINT:   result = val_int(0);         break;
+                case TOK_UINT:   result = val_uint(0);        break;
                 case TOK_FLOAT:  result = val_float(0.0);     break;
                 case TOK_BOOL:   result = val_bool(false);    break;
                 case TOK_STRING: result = val_string("");     break;
