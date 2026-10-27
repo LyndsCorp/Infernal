@@ -134,6 +134,10 @@ ASTNode *parse_flags() {
     node->data.flags.mode = -1;
 
     if (mode_expr->kind == NODE_LITERAL && mode_expr->data.lit.type == TOK_INT) {
+        if (mode_expr->data.lit.integer_wide) {
+            error(mode_expr->line,
+                  "Modo de flags demasiado grande (máximo %d)", MAX_FLAGS_MODES - 1);
+        }
         int mode = mode_expr->data.lit.ival;
         if (mode < 0) error(mode_expr->line, "El modo de flags no puede ser negativo");
         if (mode >= MAX_FLAGS_MODES) error(mode_expr->line, "Modo de flags demasiado grande (máximo %d)", MAX_FLAGS_MODES - 1);
