@@ -211,8 +211,16 @@ struct ASTNode {
                 bool integer_wide;
             } lit;
             struct { int op; ASTNode *left, *right; } binop;
-            /* Las funciones registradas no se eliminan; resolved permanece estable. */
-            struct { char *name; ASTNode **args; int argc; FuncObject *resolved; } call;
+            /* Las funciones registradas no se eliminan; resolved permanece estable.
+             * module_prefix conserva el módulo léxico de la llamada para que
+             * las funciones privadas de un Fire solo se resuelvan desde él. */
+            struct {
+                char *name;
+                ASTNode **args;
+                int argc;
+                FuncObject *resolved;
+                char *module_prefix;
+            } call;
             struct { ASTNode *list, *index; } idx;
             struct { int mode; FlagSpec *specs; int spec_count; } flags;
             struct { ASTNode **items; int count; } list_lit;

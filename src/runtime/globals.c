@@ -9,6 +9,7 @@
 #include <string.h>
 #include <strings.h>
 #include <ctype.h>
+#include <stdio.h>
 #include <unistd.h>
 #include <limits.h>
 #include "globals.h"
@@ -185,28 +186,49 @@ void show_shell_info(void) {
     free(effective);
 }
 
-void func_register(const char *name, ASTNode *def) {
+static void func_register_user_entry(const char *name, ASTNode *def,
+                                     bool in_super_table, const char *module,
+                                     bool exported) {
     FuncObject *obj = infernal_malloc(sizeof(FuncObject));
     obj->kind = FUNC_USER;
     obj->def = def;
     FuncEntry *e = infernal_malloc(sizeof(FuncEntry));
     e->name = infernal_strdup(name);
     e->obj = obj;
-    e->next = func_table;
-    func_table = e;
-    func_index_insert(func_buckets, e);
+    e->module = module ? infernal_strdup(module) : NULL;
+    e->exported = exported;
+
+    if (in_super_table) {
+        e->next = super_func_table;
+        super_func_table = e;
+        func_index_insert(super_func_buckets, e);
+    } else {
+        e->next = func_table;
+        func_table = e;
+        func_index_insert(func_buckets, e);
+    }
+}
+
+void func_register(const char *name, ASTNode *def) {
+    /* Una función normal definida en un Fire es privada del módulo. Su
+     * nombre ya llega cualificado desde el parser (alias.nombre). */
+    func_register_user_entry(name, def, false, current_import_prefix, false);
 }
 
 void func_register_global(const char *name, ASTNode *def) {
-    FuncObject *obj = infernal_malloc(sizeof(FuncObject));
-    obj->kind = FUNC_USER;
-    obj->def = def;
-    FuncEntry *e = infernal_malloc(sizeof(FuncEntry));
-    e->name = infernal_strdup(name);
-    e->obj = obj;
-    e->next = super_func_table;
-    super_func_table = e;
-    func_index_insert(super_func_buckets, e);
+    if (current_import_prefix && current_import_prefix[0] != '\0') {
+        /* En un Fire, `global` significa exportar la función a través del
+         * alias del módulo; NO registrarla en el espacio global sin prefijo. */
+        size_t size = strlen(current_import_prefix) + 1 + strlen(name) + 1;
+        char *qualified = infernal_malloc(size);
+        snprintf(qualified, size, "%s.%s", current_import_prefix, name);
+        func_register_user_entry(qualified, def, false, current_import_prefix, true);
+        free(qualified);
+        return;
+    }
+
+    /* Fuera de un Fire se conserva el comportamiento de global function. */
+    func_register_user_entry(name, def, true, NULL, true);
 }
 
 void func_register_builtin(const char *name, BuiltinFunc fn) {
@@ -216,6 +238,8 @@ void func_register_builtin(const char *name, BuiltinFunc fn) {
     FuncEntry *e = infernal_malloc(sizeof(FuncEntry));
     e->name = infernal_strdup(name);
     e->obj = obj;
+    e->module = NULL;
+    e->exported = true;
     e->next = func_table;
     func_table = e;
     func_index_insert(func_buckets, e);
@@ -229,5 +253,53 @@ FuncObject *func_lookup(const char *name) {
     for (FuncEntry *e = super_func_buckets[bucket]; e; e = e->hash_next)
         if (strcmp(e->name, name) == 0)
             return e->obj;
+    return NULL;
+}
+
+static FuncEntry *func_entry_lookup(const char *name) {
+    if (!name) return NULL;
+    size_t bucket = func_name_hash(name) % FUNC_BUCKET_COUNT;
+    for (FuncEntry *e = func_buckets[bucket]; e; e = e->hash_next)
+        if (strcmp(e->name, name) == 0)
+            return e;
+    for (FuncEntry *e = super_func_buckets[bucket]; e; e = e->hash_next)
+        if (strcmp(e->name, name) == 0)
+            return e;
+    return NULL;
+}
+
+FuncObject *func_lookup_call(const char *name, const char *caller_module) {
+    if (!name || !name[0]) return NULL;
+
+    /* Una llamada cualificada (Modulo.funcion) solo puede salir del módulo
+     * si el destino está exportado. El propio módulo sí puede usar helpers
+     * privados mediante su nombre cualificado. */
+    if (strchr(name, '.')) {
+        FuncEntry *entry = func_entry_lookup(name);
+        if (!entry) return NULL;
+        if (!entry->module) return entry->obj;
+        if (entry->exported ||
+            (caller_module && strcmp(entry->module, caller_module) == 0))
+            return entry->obj;
+        return NULL;
+    }
+
+    /* Dentro de un Fire, primero resolver nombres desnudos en el módulo
+     * actual, lo que permite que sus helpers sigan siendo privados. */
+    if (caller_module && caller_module[0]) {
+        size_t size = strlen(caller_module) + 1 + strlen(name) + 1;
+        char *qualified = infernal_malloc(size);
+        snprintf(qualified, size, "%s.%s", caller_module, name);
+        FuncEntry *entry = func_entry_lookup(qualified);
+        free(qualified);
+        if (entry && entry->module &&
+            strcmp(entry->module, caller_module) == 0)
+            return entry->obj;
+    }
+
+    /* Las funciones del script principal y los builtins no pertenecen a un
+     * módulo, así que continúan visibles con su nombre habitual. */
+    FuncEntry *entry = func_entry_lookup(name);
+    if (entry && !entry->module) return entry->obj;
     return NULL;
 }

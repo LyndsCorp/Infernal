@@ -1748,10 +1748,9 @@ NodeList parse_block(const char *terminator) {
          *         ...
          *     fi
          *
-         * Registra la función en super_func_table, de modo que queda
-         * accesible desde cualquier script (script principal, módulos .fire
-         * importados y scripts ejecutados con 'execute'). No se aplica el
-         * prefijo de importación: estas funciones son globales por diseño. */
+         * En un Fire, `global` exporta la función bajo alias.nombre; una
+         * función sin `global` sigue siendo privada del módulo. En el script
+         * principal se conserva el registro global sin prefijo. */
         if (t.type == TOK_GLOBAL &&
             ts.pos + 1 < ts.count &&
             ts.tokens[ts.pos + 1].type == TOK_FUNCTION) {
@@ -1774,8 +1773,16 @@ NodeList parse_block(const char *terminator) {
             stmt->data.func.body = (NodeList){0};
         nodelist_add(&block, stmt);
 
-            if (func_lookup(stmt->data.func.name) != NULL)
-            error(t.line, "'%s' ya existe como función y no puede ser redefinida.", stmt->data.func.name);
+            char effective_name[512];
+            if (current_import_prefix) {
+                snprintf(effective_name, sizeof(effective_name), "%s.%s",
+                         current_import_prefix, stmt->data.func.name);
+            } else {
+                snprintf(effective_name, sizeof(effective_name), "%s",
+                         stmt->data.func.name);
+            }
+            if (func_lookup(effective_name) != NULL)
+                error(t.line, "'%s' ya existe como función y no puede ser redefinida.", effective_name);
 
             if (!ts_match(TOK_LPAREN)) {
                 error_at(ts_peek().line, ts_peek().start_col > 0 ? ts_peek().start_col : 1,
@@ -1823,7 +1830,8 @@ NodeList parse_block(const char *terminator) {
             if (!ts_match(TOK_FI)) error(t.line, "Se esperaba 'fi'");
             fi_block_nesting--;
 
-            /* Registrar SOLO en la tabla superglobal, sin prefijo de importación. */
+            /* En un Fire se registra como exportación cualificada; fuera de
+             * un módulo, func_register_global conserva el espacio global. */
             func_register_global(stmt->data.func.name, stmt);
 
             DEBUG_INFO("parse_block: añadida función GLOBAL '%s' en línea %d",

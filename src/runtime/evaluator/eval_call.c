@@ -19,7 +19,8 @@
 Value eval_call(ASTNode *expr) {
     FuncObject * volatile fobj = expr->data.call.resolved;
     if (!fobj) {
-        fobj = func_lookup(expr->data.call.name);
+        fobj = func_lookup_call(expr->data.call.name,
+                                expr->data.call.module_prefix);
         if (fobj) expr->data.call.resolved = fobj;
     }
     if (!fobj) {

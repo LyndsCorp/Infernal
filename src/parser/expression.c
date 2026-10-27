@@ -532,6 +532,8 @@ ASTNode *parse_primary() {
             n->data.call.argc = 0;
             n->data.call.args = NULL;
             n->data.call.resolved = NULL;
+            n->data.call.module_prefix = current_import_prefix
+                ? strdup(current_import_prefix) : NULL;
             ts_advance(); // consume '('
 
             // Si no hay paréntesis de cierre inmediato, parseamos argumentos

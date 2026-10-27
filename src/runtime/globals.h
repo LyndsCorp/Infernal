@@ -27,6 +27,10 @@ extern Scope *current_scope;
 typedef struct FuncEntry {
     char *name;
     FuncObject *obj;
+    /* NULL para funciones del script principal y builtins. Los Fire usan
+     * el alias del import como module; exported distingue global function. */
+    char *module;
+    bool exported;
     struct FuncEntry *next;
     struct FuncEntry *hash_next;
 } FuncEntry;
@@ -38,6 +42,7 @@ void func_register(const char *name, ASTNode *def);
 void func_register_builtin(const char *name, BuiltinFunc fn);
 void func_register_global(const char *name, ASTNode *def);
 FuncObject *func_lookup(const char *name);
+FuncObject *func_lookup_call(const char *name, const char *caller_module);
 
 /* --- Import prefix y límite de iteraciones --------------- */
 extern char *current_import_prefix;

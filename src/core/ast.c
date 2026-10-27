@@ -396,6 +396,7 @@ static void ast_free_internal(ASTNode *node) {
         case NODE_BINOP: ast_free_internal(node->data.binop.left); ast_free_internal(node->data.binop.right); break;
         case NODE_CALL:
             free(node->data.call.name);
+            free(node->data.call.module_prefix);
             for (int i = 0; i < node->data.call.argc; i++) ast_free_internal(node->data.call.args[i]);
             free(node->data.call.args);
         break;
@@ -494,6 +495,8 @@ ASTNode *deep_copy_ast(ASTNode *node) {
         case NODE_CALL:
             copy->data.call.name = node->data.call.name
                 ? infernal_strdup(node->data.call.name) : NULL;
+            copy->data.call.module_prefix = node->data.call.module_prefix
+                ? infernal_strdup(node->data.call.module_prefix) : NULL;
             copy->data.call.argc = node->data.call.argc;
             if (node->data.call.argc > 0) {
                 copy->data.call.args = infernal_malloc(
