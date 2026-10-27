@@ -102,6 +102,7 @@ static void expression_expected_value(Token t, const char *context) {
 
 /* --- parse_slice_content (no static, declarada en .h) --- */
 ASTNode *parse_slice_content(int line) {
+    ts_skip_newlines();
     Token t = ts_peek();
     int mode = -1;
     int start = 0, end = 0;
@@ -195,6 +196,7 @@ ASTNode *parse_slice_content(int line) {
         error(line, "Se esperaba '*', '**' o un número en el slice");
     }
 
+    ts_skip_newlines();
     if (!ts_match(TOK_RBRACKET)) {
         error(line, "Se esperaba ']' al final del slice");
     }
@@ -369,6 +371,7 @@ static ASTNode *parse_map_literal(int line) {
  * UN índice o UN slice. Una coma dentro de `[...]` no es válida, y en vez
  * de un escueto "Se esperaba ']'" damos una explicación accionable. */
 static void expect_index_close_bracket(int line) {
+    ts_skip_newlines();
     if (ts_match(TOK_RBRACKET)) return;
 
     Token at = ts_peek();
@@ -415,6 +418,7 @@ static void expect_index_close_bracket(int line) {
  * El runtime (eval_index / eval_slice) es quien valida después que el
  * tipo del índice sea compatible con el contenedor. */
 static ASTNode *parse_bracket_on(ASTNode *base, int line) {
+    ts_skip_newlines();
     bool is_slice = false;
     if (ts.pos < ts.count) {
         TokenType first = ts.tokens[ts.pos].type;
@@ -535,10 +539,11 @@ ASTNode *parse_primary() {
             n->data.call.module_prefix = current_import_prefix
                 ? strdup(current_import_prefix) : NULL;
             ts_advance(); // consume '('
+            ts_skip_newlines();  /* llamada multilínea: '\n' tras '(' */
 
             // Si no hay paréntesis de cierre inmediato, parseamos argumentos
             if (!ts_match(TOK_RPAREN)) {
-                do {
+                while (1) {
                     Token arg_start = ts_peek();
                     if (!token_starts_expression(arg_start.type))
                         expression_expected_value(arg_start, "un argumento");
@@ -548,27 +553,35 @@ ASTNode *parse_primary() {
                                                 (n->data.call.argc + 1) * sizeof(ASTNode*));
                     n->data.call.args[n->data.call.argc++] = arg_node;
 
+                    ts_skip_newlines();  /* '\n' antes de ',' o ')' */
                     Token next = ts_peek();
-                    if (next.type != TOK_COMMA && next.type != TOK_RPAREN) {
-                        // Si el siguiente token es algo que podría ser el inicio de otra expresión,
-                        // el usuario ha omitido una coma (o una comilla de escape).
+                    if (next.type == TOK_RPAREN) break;
+                    if (next.type != TOK_COMMA) {
+                        /* Si el siguiente token es algo que podría iniciar
+                         * otra expresión, el usuario olvidó la coma (o una
+                         * comilla de escape). Cualquier otro token que no
+                         * sea ',' ni ')' también es error aquí: antes se
+                         * colaba hasta el ts_match(TOK_RPAREN) final. */
                         if (next.type == TOK_STRING_LITERAL || next.type == TOK_NUMBER ||
                             next.type == TOK_IDENT || next.type == TOK_TRUE || next.type == TOK_FALSE ||
                             next.type == TOK_LBRACKET || next.type == TOK_LPAREN || next.type == TOK_LBRACE) {
                             check_unescaped_quote(ts.pos - 1, " en la llamada a función");
                             error(t.line, "Falta una coma entre argumentos en la llamada a función '%s'", func_name);
-                            }
+                        }
+                        error_at(next.line, next.start_col,
+                                 "Se esperaba ',' o ')' después del argumento %d de la llamada a '%s'",
+                                 n->data.call.argc, func_name);
                     }
-                } while (ts_match(TOK_COMMA) && ts_peek().type != TOK_RPAREN);
-
-                if (ts_peek().type == TOK_RPAREN && n->data.call.argc > 0 &&
-                    ts.pos > 0 && ts.tokens[ts.pos - 1].type == TOK_COMMA) {
-                    error_at(ts_peek().line, ts_peek().start_col,
-                             "No puede haber una coma al final de los argumentos de '%s'", func_name);
-                    }
-                    if (!ts_match(TOK_RPAREN))
+                    ts_advance();  /* consumir ',' */
+                    ts_skip_newlines();
+                    if (ts_peek().type == TOK_RPAREN) {
                         error_at(ts_peek().line, ts_peek().start_col,
-                                 "Se esperaba ')' para cerrar la llamada a '%s'", func_name);
+                                 "No puede haber una coma al final de los argumentos de '%s'", func_name);
+                    }
+                }
+                if (!ts_match(TOK_RPAREN))
+                    error_at(ts_peek().line, ts_peek().start_col,
+                             "Se esperaba ')' para cerrar la llamada a '%s'", func_name);
             }
 
             /* --- Indexación / slice sobre el resultado de la llamada ---
@@ -755,7 +768,9 @@ ASTNode *parse_primary() {
     }
     if (t.type == TOK_LPAREN) {
         ts_advance();
+        ts_skip_newlines();  /* agrupación multilínea: '\n' tras '(' */
         ASTNode *n = parse_expression(0);
+        ts_skip_newlines();  /* '\n' antes de ')' */
         if (!ts_match(TOK_RPAREN))
             error_at(ts_peek().line, ts_peek().start_col, "Falta ')' para cerrar la expresión que empezó aquí");
         return n;
@@ -804,6 +819,7 @@ static ASTNode *parse_postfix(void) {
 static ASTNode *parse_power(void) {
     ASTNode *left = parse_postfix();
     if (ts_match(TOK_POW)) {
+        ts_skip_newlines();  /* permitir '\n' tras '**' */
         ASTNode *right = parse_unary();  // asociatividad derecha
         ASTNode *node = node_create(NODE_BINOP, left->line);
         node->data.binop.op = TOK_POW;
@@ -885,6 +901,7 @@ static ASTNode *parse_term() {
     ASTNode *left = parse_unary();
     while (ts_peek().type == TOK_STAR || ts_peek().type == TOK_SLASH || ts_peek().type == TOK_PERCENT) {
         Token op = ts_advance();
+        ts_skip_newlines();
         ASTNode *right = parse_unary();
         ASTNode *n = node_create(NODE_BINOP, op.line);
         n->data.binop.op = op.type;
@@ -900,6 +917,7 @@ static ASTNode *parse_expr() {
     ASTNode *left = parse_term();
     while (ts_peek().type == TOK_PLUS || ts_peek().type == TOK_MINUS) {
         Token op = ts_advance();
+        ts_skip_newlines();  /* permitir continuar la expresión en otra línea */
         DEBUG_INFO("parse_expr: operador '%s', siguiente token: '%s' (tipo %d)", op.lexeme, ts_peek().lexeme, ts_peek().type);
 
         if (op.type == TOK_MINUS && ts_peek().type == TOK_LBRACKET) {
@@ -968,6 +986,7 @@ static ASTNode *parse_comparison() {
     if (op == TOK_EEQ || op == TOK_NEQ || op == TOK_LT_OP || op == TOK_GT_OP ||
         op == TOK_LE || op == TOK_GE) {
         Token t = ts_advance();
+    ts_skip_newlines();
     ASTNode *right = parse_expr();
     ASTNode *n = node_create(NODE_BINOP, t.line);
     n->data.binop.op = t.type;
@@ -1008,6 +1027,7 @@ static ASTNode *parse_logic_and() {
     ASTNode *left = parse_not();
     while (ts_peek().type == TOK_AND) {
         Token op = ts_advance();
+        ts_skip_newlines();
         ASTNode *right = parse_not();
         ASTNode *n = node_create(NODE_BINOP, op.line);
         n->data.binop.op = TOK_AND;
@@ -1023,6 +1043,7 @@ static ASTNode *parse_logic_or() {
     ASTNode *left = parse_logic_and();
     while (ts_peek().type == TOK_OR) {
         Token op = ts_advance();
+        ts_skip_newlines();
         ASTNode *right = parse_logic_and();
         ASTNode *n = node_create(NODE_BINOP, op.line);
         n->data.binop.op = TOK_OR;
