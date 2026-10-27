@@ -955,9 +955,12 @@ Value eval_binop(ASTNode *expr) {
                 snprintf(lbuf, sizeof(lbuf), "%s", left.data.bval ? "true" : "false");
             else if (left.type == VAL_NULL)
                 snprintf(lbuf, sizeof(lbuf), "null");
-            else
-                error(expr->line, "No se puede concatenar un valor de tipo %s con un string",
-                      value_type_name(left.type));
+            else {
+                const char *ln = value_type_name(left.type);
+                value_free(&left);
+                value_free(&right);
+                error(expr->line, "No se puede concatenar un valor de tipo %s con un string", ln);
+            }
         }
         if (right.type != VAL_STRING) {
             if (right.type == VAL_INT || right.type == VAL_UINT) {
@@ -971,9 +974,12 @@ Value eval_binop(ASTNode *expr) {
                 snprintf(rbuf, sizeof(rbuf), "%s", right.data.bval ? "true" : "false");
             else if (right.type == VAL_NULL)
                 snprintf(rbuf, sizeof(rbuf), "null");
-            else
-                error(expr->line, "No se puede concatenar un valor de tipo %s con un string",
-                      value_type_name(right.type));
+            else {
+                const char *rn = value_type_name(right.type);
+                value_free(&left);
+                value_free(&right);
+                error(expr->line, "No se puede concatenar un valor de tipo %s con un string", rn);
+            }
         }
         size_t total = strlen(ls) + strlen(rs) + 1;
         char *buf = malloc(total);
@@ -1096,12 +1102,26 @@ Value eval_binop(ASTNode *expr) {
         case TOK_PLUS: result = val_float(lv + rv); break;
         case TOK_MINUS: result = val_float(lv - rv); break;
         case TOK_STAR: result = val_float(lv * rv); break;
-        case TOK_SLASH: if (rv == 0) error(expr->line, "División por cero"); result = val_float(lv / rv); break;
+        case TOK_SLASH:
+            if (rv == 0) {
+                value_free(&left);
+                value_free(&right);
+                error(expr->line, "División por cero");
+            }
+            result = val_float(lv / rv);
+            break;
         case TOK_PERCENT:
-            if (rv == 0.0) error(expr->line, "Módulo por cero");
+            if (rv == 0.0) {
+                value_free(&left);
+                value_free(&right);
+                error(expr->line, "Módulo por cero");
+            }
             result = val_float(fmod(lv, rv));
             break;
-        default: error(expr->line, "Operador no soportado");
+        default:
+            value_free(&left);
+            value_free(&right);
+            error(expr->line, "Operador no soportado");
     }
     value_free(&left);
     value_free(&right);
