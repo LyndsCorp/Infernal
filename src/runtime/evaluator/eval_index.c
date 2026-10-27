@@ -144,13 +144,17 @@ Value eval_index(ASTNode *expr) {
         if (!value_integer_to_i64(idx, &index_value) || index_value > INT_MAX)
             eval_index_error(&base, &idx, base_borrowed, line,
                              "El índice uint excede el tamaño máximo de una lista");
-        idx = val_int((int)index_value);
+        value_free(&idx);
+        idx.type = VAL_INT;
+        idx.data.ival = (int)index_value;
     } else if (idx.type == VAL_INT && VALUE_HAS_WIDE_INTEGER(idx)) {
         int64_t index_value;
         if (!value_integer_to_i64(idx, &index_value) || index_value < INT_MIN || index_value > INT_MAX)
             eval_index_error(&base, &idx, base_borrowed, line,
                              "El índice int excede el tamaño máximo de una lista");
-        idx = val_int((int)index_value);
+        value_free(&idx);
+        idx.type = VAL_INT;
+        idx.data.ival = (int)index_value;
     }
     Value result = val_make_null();
 
