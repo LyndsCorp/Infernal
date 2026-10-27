@@ -302,6 +302,7 @@ bool try_convert_value(Value *val, int target_tok_type) {
             number = bigint_zero();
         }
         if (!bigint_min_width(number, !want_unsigned)) return false;
+        value_free(val);
         *val = val_bigint(number, want_unsigned);
         return true;
     }
@@ -365,6 +366,7 @@ bool try_convert_value(Value *val, int target_tok_type) {
                 error(current_eval_line, "Un valor uint no puede ser negativo");
             }
             value_free(&policy);
+            value_free(val);
             *val = val_uint(0);
         }
         return true;
@@ -536,20 +538,25 @@ bool try_convert_value(Value *val, int target_tok_type) {
     }
     if (val->type == VAL_INT && target_tok_type == TOK_FLOAT) {
         double number = value_integer_to_double(*val);
+        value_free(val);
         val->type = VAL_FLOAT;
         val->data.fval = number;
         return true;
     }
     if (val->type == VAL_UINT && target_tok_type == TOK_FLOAT) {
         double number = value_integer_to_double(*val);
+        value_free(val);
         val->type = VAL_FLOAT;
         val->data.fval = number;
         return true;
     }
     if (val->type == VAL_UINT && target_tok_type == TOK_INT) {
-        if (val->data.uval > INT_MAX) return false;
+        InfernalBigInt number = value_as_bigint(*val);
+        int64_t n = 0;
+        if (!bigint_to_i64(number, &n) || n < INT_MIN || n > INT_MAX) return false;
+        value_free(val);
         val->type = VAL_INT;
-        val->data.ival = (int)val->data.uval;
+        val->data.ival = (int)n;
         return true;
     }
     if (val->type == VAL_FLOAT && target_tok_type == TOK_INT) {
