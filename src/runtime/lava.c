@@ -1372,9 +1372,23 @@ static int lava_init_handle(void *h, const char *display_path, const char *prefi
 /* Carga un módulo Lava desde una ruta en disco. */
 static int lava_load_from_path(const char *path, const char *prefix) {
     if (lava_module_loaded(path, prefix)) return 1;
-    void *h = dlopen(path, RTLD_NOW | RTLD_LOCAL);
+
+    /* dlopen() interpreta los nombres sin '/' como nombres de biblioteca
+     * (busca en LD_LIBRARY_PATH, /usr/lib, etc.), no como rutas relativas
+     * al directorio actual. Un "sqlite.lava" del cwd falla con
+     * "cannot open shared object file: No such file or directory" aunque
+     * el archivo exista y sea un .so válido. Prependemos "./" cuando el
+     * path no contiene ninguna barra. */
+    char dl_buf[PATH_MAX];
+    const char *dl_path = path;
+    if (!strchr(path, '/')) {
+        snprintf(dl_buf, sizeof(dl_buf), "./%s", path);
+        dl_path = dl_buf;
+    }
+
+    void *h = dlopen(dl_path, RTLD_NOW | RTLD_LOCAL);
     if (!h) {
-        fprintf(stderr, "Lava: dlopen('%s') falló: %s\n", path, dlerror());
+        fprintf(stderr, "Lava: dlopen('%s') falló: %s\n", dl_path, dlerror());
         return 0;
     }
     return lava_init_handle(h, path, prefix);

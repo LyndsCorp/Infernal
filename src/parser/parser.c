@@ -1447,6 +1447,29 @@ NodeList parse_block(const char *terminator) {
                     continue;
                 }
 
+                /* Si la ruta termina en .lava, es explícitamente un módulo Lava:
+                 * no intentar tratarlo como .fire. Si el archivo existe pero el
+                 * intento de carga como Lava ha fallado (no es ELF, dlopen falla,
+                 * el módulo no exporta infernal_lava_register, etc.), lo correcto
+                 * es un error claro. Antes, se caía al tokenize_file() del .so
+                 * binario y el usuario veía basura binaria como "8A0A(B ...". */
+                {
+                    size_t mn_len = strlen(module_name);
+                    if (mn_len >= 5 &&
+                        strcmp(module_name + mn_len - 5, ".lava") == 0) {
+                        free(module_name);
+                        free(module_alias);
+                        error(t.line,
+                              "No se pudo importar '%s' como módulo Lava.\n"
+                              "    El archivo existe, pero no se pudo cargar como librería Lava.\n"
+                              "    Comprueba que esté compilado como .so con -shared -fPIC y que\n"
+                              "    exporte la función infernal_lava_register().\n"
+                              "    Rutas probadas (Lava):\n%s",
+                              nt.lexeme,
+                              tried[0] ? tried : "        (ninguna)\n");
+                    }
+                }
+
                 FILE *fp = fopen(module_name, "r");
                 if (!fp) {
                     free(module_name);
