@@ -543,9 +543,10 @@ ASTNode *parse_primary() {
                     if (!token_starts_expression(arg_start.type))
                         expression_expected_value(arg_start, "un argumento");
 
+                    ASTNode *arg_node = parse_expression(0);
                     n->data.call.args = infernal_realloc(n->data.call.args,
                                                 (n->data.call.argc + 1) * sizeof(ASTNode*));
-                    n->data.call.args[n->data.call.argc++] = parse_expression(0);
+                    n->data.call.args[n->data.call.argc++] = arg_node;
 
                     Token next = ts_peek();
                     if (next.type != TOK_COMMA && next.type != TOK_RPAREN) {
@@ -694,9 +695,10 @@ ASTNode *parse_primary() {
                         }
                         if (!token_starts_expression(item_start.type))
                             expression_expected_value(item_start, "un elemento de la lista");
+                        ASTNode *item_node = parse_expression(0);
                         n->data.list_lit.items = infernal_realloc(n->data.list_lit.items,
                                                          (n->data.list_lit.count + 1) * sizeof(ASTNode*));
-                        n->data.list_lit.items[n->data.list_lit.count++] = parse_expression(0);
+                        n->data.list_lit.items[n->data.list_lit.count++] = item_node;
                         ts_skip_newlines();
                         if (ts_peek().type != TOK_COMMA && ts_peek().type != TOK_RBRACKET) {
                             Token bad = ts_peek();
