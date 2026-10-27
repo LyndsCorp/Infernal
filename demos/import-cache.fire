@@ -1,4 +1,4 @@
-print("Módulo Fire inicializado")
-function value()
+print("Módulo Fire inicializado") #no se deberia imprimir
+global function value()
     return 42
 fi
