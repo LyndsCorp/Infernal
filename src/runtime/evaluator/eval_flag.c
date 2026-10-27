@@ -128,8 +128,10 @@ static void bind_flag_value(FlagSpec *spec, const char *val_str, int line) {
     switch (spec->vtype) {
         case TOK_UINT: {
             v = val_string(cleaned);
-            if (!try_convert_value(&v, TOK_UINT))
+            if (!try_convert_value(&v, TOK_UINT)) {
+                free(cleaned);
                 error(line, "El flag '%s' espera un uint válido", spec->var_name);
+            }
             break;
         }
         case TOK_INT: {
