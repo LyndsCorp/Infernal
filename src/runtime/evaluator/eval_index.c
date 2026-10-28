@@ -109,10 +109,13 @@ Value eval_index(ASTNode *expr) {
         if (name && name[0] == '$') name++;
         if (name && name[0] != '?') {
             VarEntry *entry = scope_find(current_scope, name);
-            if (entry && entry->value.type == VAL_LIST) {
+            if (entry && (entry->value.type == VAL_LIST ||
+                          entry->value.type == VAL_MAP)) {
                 /* La expresión del índice no puede modificar el contenedor,
-                 * así que basta con tomar prestada la lista hasta terminar la
-                 * lectura. Evitamos copiarla entera en cada acceso. */
+                 * así que basta con tomar prestado el contenedor hasta
+                 * terminar la lectura. Evitamos copiarlo entero (O(n)) en
+                 * cada acceso. Para mapas es crítico: $map["k"] copiaba
+                 * el mapa completo, aunque luego usara val_map_reference. */
                 base = entry->value;
                 base_borrowed = true;
             }
