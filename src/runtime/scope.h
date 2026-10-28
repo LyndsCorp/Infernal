@@ -51,6 +51,12 @@ PortalEntry *portal_find_in_scope(Scope *scope, const char *name);
 void portal_define(Scope *scope, const char *name, int line);
 
 void scope_free(Scope *s);
+
+/* Vacía un scope (libera variables y portales) pero conserva la
+ * estructura: identity, buckets hash y function_name se mantienen.
+ * Se usa para reutilizar el mismo Scope en cada iteración de un
+ * bucle, en lugar de scope_new() + scope_free() por iteración. */
+void scope_reset(Scope *s);
 void scope_free_all(void);
 
 #endif

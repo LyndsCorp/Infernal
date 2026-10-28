@@ -317,6 +317,41 @@ void portal_define(Scope *scope, const char *name, int line) {
     scope->portals = p;
 }
 
+/* --- Vaciar un ámbito sin liberar la estructura ---
+ *
+ * Libera todas las variables y portales del scope, pero mantiene
+ * la identidad, el array de buckets hash y function_name intactos.
+ * Pensado para reutilizar el mismo Scope en bucles apretados, donde
+ * hacer scope_new() + scope_free() por iteración añade dos malloc
+ * por vuelta. */
+void scope_reset(Scope *s) {
+    if (!s) return;
+    if (s->var_count) bump_global_variable_generation();
+    VarEntry *e = s->vars;
+    while (e) {
+        VarEntry *next = e->next;
+        free(e->name);
+        value_free(&e->value);
+        free(e);
+        e = next;
+    }
+    s->vars = NULL;
+    if (s->var_buckets) {
+        memset(s->var_buckets, 0,
+               s->var_bucket_count * sizeof(*s->var_buckets));
+    }
+    s->var_count = 0;
+    s->variable_version++;
+    PortalEntry *p = s->portals;
+    while (p) {
+        PortalEntry *next = p->next;
+        free(p->name);
+        free(p);
+        p = next;
+    }
+    s->portals = NULL;
+}
+
 /* --- Liberar un ámbito (se desactiva la liberación de variables para evitar double-free) --- */
 void scope_free(Scope *s) {
     if (!s) return;
