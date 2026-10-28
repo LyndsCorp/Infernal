@@ -97,6 +97,26 @@ Value eval_call(ASTNode *expr) {
         }
     }
 
+    /* `listLatest($lista)` solo necesita el último elemento. Copiar
+     * la lista entera por la ruta genérica es O(n) cuando bastaría
+     * con O(1). */
+    if (fobj->kind == FUNC_BUILTIN &&
+        strcmp(expr->data.call.name, "listLatest") == 0 &&
+        expr->data.call.argc == 1 &&
+        expr->data.call.args[0] &&
+        expr->data.call.args[0]->kind == NODE_VAR) {
+        const char *name = expr->data.call.args[0]->data.var.name;
+        if (name && name[0] == '$') name++;
+        if (name && name[0] != '?') {
+            VarEntry *entry = scope_find(current_scope, name);
+            if (entry && entry->value.type == VAL_LIST &&
+                entry->value.data.list.count > 0) {
+                return copy_value_secure(
+                    entry->value.data.list.items[entry->value.data.list.count - 1]);
+            }
+        }
+    }
+
     if (fobj->kind == FUNC_BUILTIN) {
         volatile int argc = expr->data.call.argc;
         volatile int saved_line = current_eval_line;
