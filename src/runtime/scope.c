@@ -133,26 +133,29 @@ Scope *scope_new_func(Scope *parent, ASTNode *func_def) {
  * ================================================================ */
 VarEntry *scope_find(Scope *scope, const char *name) {
     if (!scope) return NULL;
-
-    /*
-     * Resolución léxica normal: la primera declaración encontrada gana,
-     * incluso aunque su valor sea NULL. Un NULL local debe ocultar una
-     * variable homónima del ámbito padre.
-     */
+    /* Calculamos el hash UNA VEZ y lo reutilizamos en cada nivel.
+     * scope_find_current() lo recalcularía en cada scope. Para
+     * cadenas de 3-5 scopes son 2-4 hashes menos por lookup. */
+    unsigned long hash = scope_name_hash(name);
     for (Scope *s = scope; s; s = s->parent) {
-        VarEntry *e = scope_find_current(s, name);
-        if (e) return e;
+        if (!s->var_bucket_count) continue;
+        size_t bucket = hash % s->var_bucket_count;
+        for (VarEntry *e = s->var_buckets[bucket]; e; e = e->hash_next) {
+            if (strcmp(e->name, name) == 0) return e;
+        }
     }
-
-    /* Compatibilidad con los ámbitos globales que pueden no formar parte
-     * de la cadena de padres durante la inicialización/importación. */
-    if (global_scope && global_scope != super_global_scope) {
-        VarEntry *e = scope_find_current(global_scope, name);
-        if (e) return e;
+    if (global_scope && global_scope != super_global_scope &&
+        global_scope->var_bucket_count) {
+        size_t bucket = hash % global_scope->var_bucket_count;
+        for (VarEntry *e = global_scope->var_buckets[bucket]; e; e = e->hash_next) {
+            if (strcmp(e->name, name) == 0) return e;
+        }
     }
-    if (super_global_scope) {
-        VarEntry *e = scope_find_current(super_global_scope, name);
-        if (e) return e;
+    if (super_global_scope && super_global_scope->var_bucket_count) {
+        size_t bucket = hash % super_global_scope->var_bucket_count;
+        for (VarEntry *e = super_global_scope->var_buckets[bucket]; e; e = e->hash_next) {
+            if (strcmp(e->name, name) == 0) return e;
+        }
     }
     return NULL;
 }
