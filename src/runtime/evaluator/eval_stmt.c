@@ -1460,18 +1460,22 @@ void exec_stmt(ASTNode *stmt) {
                      * contenedor no es una lista viva), caemos al número de
                      * secuencia. --- */
                     int live_index = iter_idx + 1;  /* fallback: número de secuencia */
-
-                    const char *lvname = (const char *)live_var_name;
-                    VarEntry *lv = iterable.type == VAL_LIST && lvname
-                                 ? scope_find(current_scope, lvname) : NULL;
-                    if (lv && lv->value.type == VAL_LIST &&
-                        iterable.type == VAL_LIST) {
-                        Value *live_items = lv->value.data.list.items;
-                        int live_count = lv->value.data.list.count;
-                        for (int j = 0; j < live_count; j++) {
-                            if (forin_values_equal(live_items[j], item)) {
-                                live_index = j + 1;
-                                break;
+                    /* Solo calculamos la posición viva si el bucle expone 'i'.
+                     * Sin index_var, el recorrido lineal por iteración es O(n²)
+                     * puro trabajo. */
+                    if (stmt->data.for_in.index_var) {
+                        const char *lvname = (const char *)live_var_name;
+                        VarEntry *lv = iterable.type == VAL_LIST && lvname
+                                     ? scope_find(current_scope, lvname) : NULL;
+                        if (lv && lv->value.type == VAL_LIST &&
+                            iterable.type == VAL_LIST) {
+                            Value *live_items = lv->value.data.list.items;
+                            int live_count = lv->value.data.list.count;
+                            for (int j = 0; j < live_count; j++) {
+                                if (forin_values_equal(live_items[j], item)) {
+                                    live_index = j + 1;
+                                    break;
+                                }
                             }
                         }
                     }
