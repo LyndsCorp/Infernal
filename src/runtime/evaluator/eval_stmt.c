@@ -1395,24 +1395,26 @@ void exec_stmt(ASTNode *stmt) {
                 const unsigned char * volatile string_iter =
                     iterable.type == VAL_STRING
                         ? (const unsigned char *)iterable.data.sval : NULL;
+                /* Hoist: un solo iter_scope y un solo setjmp para todo el bucle. */
+                Scope *old_scope = current_scope;
+                volatile Scope *iter_scope = scope_new(old_scope, NULL);
+
+                jmp_buf saved_env;
+                memcpy(&saved_env, &exception_env, sizeof(jmp_buf));
+                int saved_raised = exception_raised;
+                if (setjmp(exception_env) != 0) {
+                    current_scope = old_scope;
+                    scope_free((Scope *)iter_scope);
+                    value_free((Value *)&iterable);
+                    memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
+                    exception_raised = saved_raised;
+                    longjmp(exception_env, 1);
+                }
+
                 for (volatile int iter_idx = 0; iter_idx < count; iter_idx++) {
-                    Scope *old_scope = current_scope;
-                    volatile Scope *iter_scope = scope_new(old_scope, NULL);
-                    volatile Value item = val_make_null();
-
-                    jmp_buf saved_env;
-                    memcpy(&saved_env, &exception_env, sizeof(jmp_buf));
-                    int saved_raised = exception_raised;
-                    if (setjmp(exception_env) != 0) {
-                        current_scope = old_scope;
-                        scope_free((Scope *)iter_scope);
-                        value_free((Value *)&iterable);
-                        memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
-                        exception_raised = saved_raised;
-                        longjmp(exception_env, 1);
-                    }
-
+                    scope_reset((Scope *)iter_scope);
                     current_scope = (Scope *)iter_scope;
+                    volatile Value item = val_make_null();
 
                     /* --- Obtener el elemento a visitar desde el snapshot --- */
                     if (iterable.type == VAL_LIST) {
@@ -1422,7 +1424,6 @@ void exec_stmt(ASTNode *stmt) {
                             if (!source || source->value.type != VAL_LIST ||
                                 iter_idx >= source->value.data.list.count) {
                                 current_scope = old_scope;
-                                scope_free((Scope *)iter_scope);
                                 memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
                                 exception_raised = saved_raised;
                                 break;
@@ -1485,19 +1486,22 @@ void exec_stmt(ASTNode *stmt) {
                         }
 
                         exec_block_impl(&stmt->data.for_in.body);
-                        memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
-                        exception_raised = saved_raised;
                         current_scope = old_scope;
-                        scope_free((Scope *)iter_scope);
 
                         if (control_flow == CF_BREAK) { control_flow = CF_NONE; break; }
                         if (control_flow == CF_CONTINUE) { control_flow = CF_NONE; continue; }
                         if (control_flow == CF_REPEAT_LINE || control_flow == CF_RETURN) {
+                            scope_free((Scope *)iter_scope);
                             value_free((Value *)&iterable);
+                            memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
+                            exception_raised = saved_raised;
                             return;
                         }
                 }
+                scope_free((Scope *)iter_scope);
                 value_free((Value *)&iterable);
+                memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
+                exception_raised = saved_raised;
                 break;
         }
 
