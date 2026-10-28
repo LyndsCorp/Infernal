@@ -22,7 +22,7 @@ void ts_init() { ts.tokens = NULL; ts.count = ts.cap = 0; ts.pos = 0; }
 void ts_add(Token t) {
     if (ts.count >= ts.cap) {
         ts.cap = ts.cap == 0 ? 256 : ts.cap * 2;
-        ts.tokens = realloc(ts.tokens, ts.cap * sizeof(Token));
+        ts.tokens = infernal_realloc(ts.tokens, ts.cap * sizeof(Token));
     }
     ts.tokens[ts.count++] = t;
 }
@@ -58,11 +58,11 @@ void ts_skip_newlines() {
 
 char *extract_command_string(int line) {
     if (line < 1 || line > source_line_count || !source_lines || !source_lines[line - 1])
-        return strdup("");
+        return infernal_strdup("");
 
     const char *src = source_lines[line - 1];
     const char *eq = strchr(src, '=');
-    if (!eq) return strdup("");
+    if (!eq) return infernal_strdup("");
 
     const char *start = eq + 1;
     while (*start == ' ' || *start == '\t') start++;
@@ -172,85 +172,85 @@ void tokenize_file(FILE *fp) {
 
             // Operadores varios caracteres
             if (*p == '+' && *(p+1) == '=') {
-                Token t = {TOK_PLUS_EQ, strdup("+="), lineno, start_col, start_col + 2};
+                Token t = {TOK_PLUS_EQ, infernal_strdup("+="), lineno, start_col, start_col + 2};
                 ts_add(t); p += 2; continue;
             }
             if (*p == '-' && *(p+1) == '=') {
-                Token t = {TOK_MINUS_EQ, strdup("-="), lineno, start_col, start_col + 2};
+                Token t = {TOK_MINUS_EQ, infernal_strdup("-="), lineno, start_col, start_col + 2};
                 ts_add(t); p += 2; continue;
             }
             if (*p == '*' && *(p+1) == '=') {
-                Token t = {TOK_STAR_EQ, strdup("*="), lineno, start_col, start_col + 2};
+                Token t = {TOK_STAR_EQ, infernal_strdup("*="), lineno, start_col, start_col + 2};
                 ts_add(t); p += 2; continue;
             }
             if (*p == '/' && *(p+1) == '=') {
-                Token t = {TOK_SLASH_EQ, strdup("/="), lineno, start_col, start_col + 2};
+                Token t = {TOK_SLASH_EQ, infernal_strdup("/="), lineno, start_col, start_col + 2};
                 ts_add(t); p += 2; continue;
             }
             if (*p == '%' && *(p+1) == '=') {
-                Token t = {TOK_PERCENT_EQ, strdup("%="), lineno, start_col, start_col + 2};
+                Token t = {TOK_PERCENT_EQ, infernal_strdup("%="), lineno, start_col, start_col + 2};
                 ts_add(t); p += 2; continue;
             }
             if (*p == '*' && *(p+1) == '*') {
-                Token t = {TOK_POW, strdup("**"), lineno, start_col, start_col + 2};
+                Token t = {TOK_POW, infernal_strdup("**"), lineno, start_col, start_col + 2};
                 ts_add(t); p += 2; continue;
             }
             if (*p == '+' && *(p+1) == '+') {
-                Token t = {TOK_INC, strdup("++"), lineno, start_col, start_col + 2};
+                Token t = {TOK_INC, infernal_strdup("++"), lineno, start_col, start_col + 2};
                 ts_add(t); p += 2; continue;
             }
             if (*p == '-' && *(p+1) == '-') {
-                Token t = {TOK_DEC, strdup("--"), lineno, start_col, start_col + 2};
+                Token t = {TOK_DEC, infernal_strdup("--"), lineno, start_col, start_col + 2};
                 ts_add(t); p += 2; continue;
             }
 
             if (*p == '=' && *(p+1) == '=') {
-                Token t = {TOK_EEQ, strdup("=="), lineno, start_col, start_col + 2};
+                Token t = {TOK_EEQ, infernal_strdup("=="), lineno, start_col, start_col + 2};
                 ts_add(t); p += 2; continue;
             }
             if (*p == '!' && *(p+1) == '=') {
-                Token t = {TOK_NEQ, strdup("!="), lineno, start_col, start_col + 2};
+                Token t = {TOK_NEQ, infernal_strdup("!="), lineno, start_col, start_col + 2};
                 ts_add(t); p += 2; continue;
             }
 
             if (*p == '<' && *(p+1) == '=') {
-                Token t = {TOK_LE, strdup("<="), lineno, start_col, start_col + 2};
+                Token t = {TOK_LE, infernal_strdup("<="), lineno, start_col, start_col + 2};
                 ts_add(t); p += 2; continue;
             }
             if (*p == '>' && *(p+1) == '=') {
-                Token t = {TOK_GE, strdup(">="), lineno, start_col, start_col + 2};
+                Token t = {TOK_GE, infernal_strdup(">="), lineno, start_col, start_col + 2};
                 ts_add(t); p += 2; continue;
             }
             if (*p == '>' && *(p+1) == '>') {
-                Token t = {TOK_GGT, strdup(">>"), lineno, start_col, start_col + 2};
+                Token t = {TOK_GGT, infernal_strdup(">>"), lineno, start_col, start_col + 2};
                 ts_add(t); p += 2; continue;
             }
 
             // Operadores de un carácter
             if (*p == '&' && *(p+1) == '&') {
-                Token t = {TOK_AMPAMP, strdup("&&"), lineno, start_col, start_col + 2};
+                Token t = {TOK_AMPAMP, infernal_strdup("&&"), lineno, start_col, start_col + 2};
                 ts_add(t); p += 2; continue;
             }
             if (*p == '&') {
-                Token t = {TOK_AMP, strdup("&"), lineno, start_col, start_col + 1};
+                Token t = {TOK_AMP, infernal_strdup("&"), lineno, start_col, start_col + 1};
                 ts_add(t); p++; continue;
             }
-            if (*p == '|') { Token t = {TOK_PIPE, strdup("|"), lineno, start_col, start_col + 1}; ts_add(t); p++; continue; } //se usa en flags ()
-            if (*p == '>') { Token t = {TOK_GT_OP, strdup(">"), lineno, start_col, start_col + 1}; ts_add(t); p++; continue; }
-            if (*p == '<') { Token t = {TOK_LT_OP, strdup("<"), lineno, start_col, start_col + 1}; ts_add(t); p++; continue; }
-            if (*p == '(') { Token t = {TOK_LPAREN, strdup("("), lineno, start_col, start_col + 1}; ts_add(t); p++; continue; }
-            if (*p == ')') { Token t = {TOK_RPAREN, strdup(")"), lineno, start_col, start_col + 1}; ts_add(t); p++; continue; }
-            if (*p == '[') { Token t = {TOK_LBRACKET, strdup("["), lineno, start_col, start_col + 1}; ts_add(t); p++; continue; }
-            if (*p == ']') { Token t = {TOK_RBRACKET, strdup("]"), lineno, start_col, start_col + 1}; ts_add(t); p++; continue; }
-            if (*p == '{') { Token t = {TOK_LBRACE, strdup("{"), lineno, start_col, start_col + 1}; ts_add(t); p++; continue; }
-            if (*p == '}') { Token t = {TOK_RBRACE, strdup("}"), lineno, start_col, start_col + 1}; ts_add(t); p++; continue; }
-            if (*p == ';') { Token t = {TOK_NEWLINE, strdup(";"), lineno, start_col, start_col + 1}; ts_add(t); p++; continue; }
-            if (*p == ',') { Token t = {TOK_COMMA, strdup(","), lineno, start_col, start_col + 1}; ts_add(t); p++; continue; }
-            if (*p == '+') { Token t = {TOK_PLUS, strdup("+"), lineno, start_col, start_col + 1}; ts_add(t); p++; continue; }
-            if (*p == '-') { Token t = {TOK_MINUS, strdup("-"), lineno, start_col, start_col + 1}; ts_add(t); p++; continue; }
-            if (*p == '*') { Token t = {TOK_STAR, strdup("*"), lineno, start_col, start_col + 1}; ts_add(t); p++; continue; }
-            if (*p == '%') { Token t = {TOK_PERCENT, strdup("%"), lineno, start_col, start_col + 1}; ts_add(t); p++; continue; }
-            if (*p == ':') { Token t = {TOK_COLON, strdup(":"), lineno, start_col, start_col + 1}; ts_add(t); p++; continue; }
+            if (*p == '|') { Token t = {TOK_PIPE, infernal_strdup("|"), lineno, start_col, start_col + 1}; ts_add(t); p++; continue; } //se usa en flags ()
+            if (*p == '>') { Token t = {TOK_GT_OP, infernal_strdup(">"), lineno, start_col, start_col + 1}; ts_add(t); p++; continue; }
+            if (*p == '<') { Token t = {TOK_LT_OP, infernal_strdup("<"), lineno, start_col, start_col + 1}; ts_add(t); p++; continue; }
+            if (*p == '(') { Token t = {TOK_LPAREN, infernal_strdup("("), lineno, start_col, start_col + 1}; ts_add(t); p++; continue; }
+            if (*p == ')') { Token t = {TOK_RPAREN, infernal_strdup(")"), lineno, start_col, start_col + 1}; ts_add(t); p++; continue; }
+            if (*p == '[') { Token t = {TOK_LBRACKET, infernal_strdup("["), lineno, start_col, start_col + 1}; ts_add(t); p++; continue; }
+            if (*p == ']') { Token t = {TOK_RBRACKET, infernal_strdup("]"), lineno, start_col, start_col + 1}; ts_add(t); p++; continue; }
+            if (*p == '{') { Token t = {TOK_LBRACE, infernal_strdup("{"), lineno, start_col, start_col + 1}; ts_add(t); p++; continue; }
+            if (*p == '}') { Token t = {TOK_RBRACE, infernal_strdup("}"), lineno, start_col, start_col + 1}; ts_add(t); p++; continue; }
+            if (*p == ';') { Token t = {TOK_NEWLINE, infernal_strdup(";"), lineno, start_col, start_col + 1}; ts_add(t); p++; continue; }
+            if (*p == ',') { Token t = {TOK_COMMA, infernal_strdup(","), lineno, start_col, start_col + 1}; ts_add(t); p++; continue; }
+            if (*p == '+') { Token t = {TOK_PLUS, infernal_strdup("+"), lineno, start_col, start_col + 1}; ts_add(t); p++; continue; }
+            if (*p == '-') { Token t = {TOK_MINUS, infernal_strdup("-"), lineno, start_col, start_col + 1}; ts_add(t); p++; continue; }
+            if (*p == '*') { Token t = {TOK_STAR, infernal_strdup("*"), lineno, start_col, start_col + 1}; ts_add(t); p++; continue; }
+            if (*p == '%') { Token t = {TOK_PERCENT, infernal_strdup("%"), lineno, start_col, start_col + 1}; ts_add(t); p++; continue; }
+            if (*p == ':') { Token t = {TOK_COLON, infernal_strdup(":"), lineno, start_col, start_col + 1}; ts_add(t); p++; continue; }
 
             if (*p == '/') {
                 /* '/' es división cuando estamos justo después de un token
@@ -281,7 +281,7 @@ void tokenize_file(FILE *fp) {
                     while (*p && (isalnum((unsigned char)*p) || *p == '_' ||
                                   *p == '/' || *p == '.' || *p == '-' || *p == '~')) p++;
                     size_t path_len = (size_t)(p - start);
-                    char *lexeme = strndup(start, path_len);
+                    char *lexeme = infernal_strndup(start, path_len);
                     if (!lexeme) error(lineno, "Memoria insuficiente para ruta");
                     TokenType k = lookup_keyword(lexeme);
                     Token t;
@@ -294,21 +294,21 @@ void tokenize_file(FILE *fp) {
                     continue;
                 }
 
-                Token t = {TOK_SLASH, strdup("/"), lineno, start_col, start_col + 1};
+                Token t = {TOK_SLASH, infernal_strdup("/"), lineno, start_col, start_col + 1};
                 ts_add(t);
                 p++;
                 continue;
             }
 
             if (*p == '=') {
-                Token t = {TOK_EQ, strdup("="), lineno, start_col, start_col + 1};
+                Token t = {TOK_EQ, infernal_strdup("="), lineno, start_col, start_col + 1};
                 ts_add(t);
                 p++;
                 continue;
             }
 
             if (*p == '!') {
-                Token t = {TOK_BANG, strdup("!"), lineno, start_col, start_col + 1};
+                Token t = {TOK_BANG, infernal_strdup("!"), lineno, start_col, start_col + 1};
                 ts_add(t);
                 p++;
                 continue;
@@ -394,7 +394,7 @@ void tokenize_file(FILE *fp) {
                         while (isdigit((unsigned char)*p)) p++;
                     }
                     size_t len = (size_t)(p - start);
-                char *lexeme = strndup(start, len);
+                char *lexeme = infernal_strndup(start, len);
                 if (!lexeme) error(lineno, "Memoria insuficiente para número");
                 Token t = {TOK_NUMBER, lexeme, lineno, start_col, (int)(p - line)};
                 ts_add(t);
@@ -403,7 +403,7 @@ void tokenize_file(FILE *fp) {
 
             /* \? → se emite tal cual para que el shell lo reciba como '?' literal */
             if (*p == '\\' && *(p + 1) == '?') {
-                Token t = {TOK_IDENT, strdup("\\?"), lineno, start_col, start_col + 2};
+                Token t = {TOK_IDENT, infernal_strdup("\\?"), lineno, start_col, start_col + 2};
                 ts_add(t);
                 p += 2;
                 continue;
@@ -411,7 +411,7 @@ void tokenize_file(FILE *fp) {
 
             /* ?? → un solo token "??" (antes se tiraba silenciosamente) */
             if (*p == '?' && *(p + 1) == '?') {
-                Token t = {TOK_IDENT, strdup("??"), lineno, start_col, start_col + 2};
+                Token t = {TOK_IDENT, infernal_strdup("??"), lineno, start_col, start_col + 2};
                 ts_add(t);
                 p += 2;
                 continue;
@@ -419,7 +419,7 @@ void tokenize_file(FILE *fp) {
 
             /* ? suelto → token "?" (antes caía al p++ final y se perdía) */
             if (*p == '?') {
-                Token t = {TOK_IDENT, strdup("?"), lineno, start_col, start_col + 1};
+                Token t = {TOK_IDENT, infernal_strdup("?"), lineno, start_col, start_col + 1};
                 ts_add(t);
                 p++;
                 continue;
@@ -433,7 +433,7 @@ void tokenize_file(FILE *fp) {
                 while (isalnum(*p) || *p == '_' ||
                        (unsigned char)*p >= 0x80) p++;
                 size_t len = (size_t)(p - start);
-                char *lexeme = strndup(start, len);
+                char *lexeme = infernal_strndup(start, len);
                 if (!lexeme) error(lineno, "Memoria insuficiente para identificador");
                 Token t = {TOK_IDENT, lexeme, lineno, start_col, (int)(p - line)};
                 ts_add(t);
@@ -451,7 +451,7 @@ void tokenize_file(FILE *fp) {
                     p++;
                 }
                 size_t len = (size_t)(p - start);
-                char *lexeme = strndup(start, len);
+                char *lexeme = infernal_strndup(start, len);
                 if (!lexeme) error(lineno, "Memoria insuficiente para identificador");
                 TokenType k = lookup_keyword(lexeme);
                 Token t;
@@ -465,7 +465,7 @@ void tokenize_file(FILE *fp) {
             }
             p++;
         }
-        Token t = {TOK_NEWLINE, strdup("\n"), lineno, 0, 0};
+        Token t = {TOK_NEWLINE, infernal_strdup("\n"), lineno, 0, 0};
         ts_add(t);
     }
     free(line);

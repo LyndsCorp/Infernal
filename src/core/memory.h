@@ -14,6 +14,7 @@ void *infernal_malloc(size_t size);
 void *infernal_calloc(size_t count, size_t size);
 void *infernal_realloc(void *ptr, size_t size);
 char *infernal_strdup(const char *value);
+char *infernal_strndup(const char *value, size_t n);
 #define infernal_free(ptr) free(ptr)
 
 #endif

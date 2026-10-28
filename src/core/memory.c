@@ -43,3 +43,13 @@ char *infernal_strdup(const char *value) {
     memcpy(copy, source, size);
     return copy;
 }
+
+char *infernal_strndup(const char *value, size_t n) {
+    const char *source = value ? value : "";
+    size_t len = strlen(source);
+    if (len > n) len = n;
+    char *copy = infernal_malloc(len + 1);
+    memcpy(copy, source, len);
+    copy[len] = '\0';
+    return copy;
+}
