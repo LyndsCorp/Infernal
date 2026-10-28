@@ -245,7 +245,7 @@ ASTNode *parse_flags() {
             if (ts_peek().type != TOK_IDENT) {
                 error(ts_peek().line, "Se esperaba nombre de variable");
             }
-            spec->var_name = strdup(ts_advance().lexeme);
+            spec->var_name = infernal_strdup(ts_advance().lexeme);
             spec->is_global = is_global;
             if (ts_peek().type == TOK_LBRACE) {
                 ts_advance();
@@ -298,7 +298,7 @@ ASTNode *parse_flags() {
                     if (ts_peek().type != TOK_IDENT || !is_valid_flag_name(ts_peek().lexeme)) {
                         error(ts_peek().line, "Se esperaba nombre de variable");
                     }
-                    spec->var_name = strdup(ts_advance().lexeme);
+                    spec->var_name = infernal_strdup(ts_advance().lexeme);
                     spec->is_global = is_global;
                 } else {
                     error(ts_peek().line, "Se esperaba un tipo después de '='");
