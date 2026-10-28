@@ -415,7 +415,18 @@ void exec_flags(ASTNode *node) {
               arg);
     }
 
-    flags_arg_index = script_argc;
+    /* Avanzar flags_arg_index solo sobre los argumentos realmente
+     * consumidos por este bloque. Antes se forzaba a script_argc, lo
+     * que hacía que un segundo bloque flags(N, ...) no viera nunca
+     * ningún argumento. En el caso normal (un solo bloque flags) el
+     * bucle de arriba ya consumió todo, así que este avance termina
+     * igualmente en script_argc. */
+    {
+        int next_index = flags_arg_index;
+        while (next_index < script_argc && handled[next_index])
+            next_index++;
+        flags_arg_index = next_index;
+    }
 
     free(handled);
     memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
