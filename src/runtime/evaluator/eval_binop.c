@@ -710,7 +710,14 @@ Value eval_binop(ASTNode *expr) {
 
     ASTNode *right_node = expr->data.binop.right;
     Value right;
-    if (right_node->kind == NODE_LITERAL) {
+    /* Solo protegemos la evaluación de la derecha si left tiene
+     * memoria que liberar en caso de error. Para tipos sin heap
+     * (int, uint, float, bool, null, void, ptr), value_free()
+     * es un no-op y el setjmp/longjmp sería trabajo puro. */
+    bool left_needs_cleanup =
+        left.type == VAL_STRING || left.type == VAL_LIST ||
+        left.type == VAL_MAP || left.type == VAL_REFERENCE;
+    if (right_node->kind == NODE_LITERAL || !left_needs_cleanup) {
         right = eval_expr(right_node);
     } else {
         right = eval_binop_right_protected(right_node, expr->line, &left);
