@@ -147,86 +147,11 @@ static bool is_var_name_cont(unsigned char c) { return isalnum(c) || c == '_' ||
 
 static char *shell_quote(const char *text);
 
-/* Escape helpers para sustituir $var respetando el contexto de comillas
- * en el que se encuentra la sustitución dentro del comando shell.
- *
- * Los tres helpers forman un triángulo:
- *
- *   escape_inside_single_quotes   : estamos dentro de '...'  ->  '\''
- *   escape_inside_double_quotes   : estamos dentro de "..."  ->  \" \$ \` \\
- *   shell_quote                   : estamos fuera de comillas ->  '...'
- *
- * Para el caso unquoted, si el valor es "trivial" (solo alfanumericos,
- * '_', '-', '.', '/'), no hace falta envolverlo en comillas: se emite
- * tal cual, lo que produce un comando mas limpio cuando se pipea.
- */
 
-static bool shell_value_needs_quoting(const char *value) {
-    if (!value || !*value)
-        return true;
-    unsigned char first = (unsigned char)value[0];
-    if (!(isalnum(first) || first == '_'))
-        return true;
-    for (const char *p = value + 1; *p; p++) {
-        unsigned char c = (unsigned char)*p;
-        if (!(isalnum(c) || c == '_' || c == '-' || c == '.' || c == '/'))
-            return true;
-    }
-    return false;
-}
 
-static char *escape_inside_single_quotes(const char *value) {
-    if (!value)
-        return NULL;
-    size_t vlen = strlen(value);
-    if (vlen > (SIZE_MAX - 1) / 4)
-        return NULL;
-    char *out = malloc(vlen * 4 + 1);
-    if (!out)
-        return NULL;
-    size_t i = 0;
-    for (const char *p = value; *p; p++) {
-        if (*p == '\'') {
-            out[i++] = '\'';
-            out[i++] = '\\';
-            out[i++] = '\'';
-            out[i++] = '\'';
-        } else {
-            out[i++] = *p;
-        }
-    }
-    out[i] = '\0';
-    return out;
-}
-
-static char *escape_inside_double_quotes(const char *value) {
-    if (!value)
-        return NULL;
-    size_t vlen = strlen(value);
-    if (vlen > (SIZE_MAX - 1) / 2)
-        return NULL;
-    char *out = malloc(vlen * 2 + 1);
-    if (!out)
-        return NULL;
-    size_t i = 0;
-    for (const char *p = value; *p; p++) {
-        switch (*p) {
-        case '\\':
-        case '"':
-        case '`':
-        case '$':
-            out[i++] = '\\';
-            out[i++] = *p;
-            break;
-        default:
-            out[i++] = *p;
-        }
-    }
-    out[i] = '\0';
-    return out;
-}
 
 static char *expand_command_impl(const char *cmd, bool escape_for_shell) {
+    (void)escape_for_shell;
     if (!cmd)
         return NULL;
 
@@ -353,26 +278,6 @@ static char *expand_command_impl(const char *cmd, bool escape_for_shell) {
                       name, name);
             }
 
-            if (escape_for_shell) {
-                char *escaped = NULL;
-                if (in_single) {
-                    escaped = escape_inside_single_quotes(val);
-                } else if (in_double) {
-                    escaped = escape_inside_double_quotes(val);
-                } else if (shell_value_needs_quoting(val)) {
-                    escaped = shell_quote(val);
-                } else {
-                    escaped = strdup(val);
-                }
-                free(val);
-                if (!escaped) {
-                    free(result);
-                    error(current_eval_line,
-                          "Memoria insuficiente al escapar el valor de '%s' en comando shell",
-                          name);
-                }
-                val = escaped;
-            }
 
             size_t vlen = strlen(val);
             if (len > SIZE_MAX - vlen - 1) {
