@@ -43,11 +43,7 @@ static int64_t small_integer(Value value) {
     return value.type == VAL_UINT ? (int64_t)value.data.uval : (int64_t)value.data.ival;
 }
 
-bool value_integer_is_zero(Value value) {
-    if (VALUE_HAS_WIDE_INTEGER(value))
-        return bigint_is_zero_ref(&value.data.wide_integer.box->number);
-    return value.type == VAL_UINT ? value.data.uval == 0 : value.data.ival == 0;
-}
+/* value_integer_is_zero() está en value.h como static inline. */
 
 int value_integer_compare(Value left, Value right) {
     bool left_wide = VALUE_HAS_WIDE_INTEGER(left);

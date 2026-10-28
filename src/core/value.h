@@ -29,7 +29,15 @@ Value val_int(int x);
 Value val_uint(uint32_t x);
 Value val_bigint(InfernalBigInt x, bool is_unsigned);
 InfernalBigInt value_as_bigint(Value value);
-bool value_integer_is_zero(Value value);
+/* Inline en el header: se llama en el camino caliente de
+ * val_is_truthy y de las comparaciones numéricas. Requiere
+ * que struct WideInteger esté completo, lo cual se cumple
+ * porque types.h ya lo define. */
+static inline bool value_integer_is_zero(Value value) {
+    if (VALUE_HAS_WIDE_INTEGER(value))
+        return bigint_is_zero_ref(&value.data.wide_integer.box->number);
+    return value.type == VAL_UINT ? value.data.uval == 0 : value.data.ival == 0;
+}
 int value_integer_compare(Value left, Value right);
 double value_integer_to_double(Value value);
 bool value_integer_fits(Value value, size_t width, bool is_signed);
