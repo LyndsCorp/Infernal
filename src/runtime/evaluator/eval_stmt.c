@@ -1658,6 +1658,7 @@ void exec_stmt(ASTNode *stmt) {
             FILE * volatile script_fp = NULL;
 
             TokenStream saved_ts = ts;
+            size_t saved_arena_mark = ts_arena_mark();
             char **saved_source_lines = source_lines;
             int saved_source_line_count = source_line_count;
             char *saved_source_file = current_source_file;
@@ -1683,10 +1684,10 @@ void exec_stmt(ASTNode *stmt) {
 
                 if (state_switched) {
                     if (ts.tokens) {
-                        for (int i = 0; i < ts.count; i++) free(ts.tokens[i].lexeme);
                         free(ts.tokens);
                     }
                     ts = saved_ts;
+                    ts_arena_restore(saved_arena_mark);
                     if (source_lines) {
                         for (int i = 0; i < source_line_count; i++) free(source_lines[i]);
                         free(source_lines);
@@ -1824,7 +1825,6 @@ void exec_stmt(ASTNode *stmt) {
 
             if (state_switched) {
                 if (ts.tokens) {
-                    for (int i = 0; i < ts.count; i++) free(ts.tokens[i].lexeme);
                     free(ts.tokens);
                 }
                 if (source_lines) {
@@ -1832,6 +1832,7 @@ void exec_stmt(ASTNode *stmt) {
                     free(source_lines);
                 }
                 ts = saved_ts;
+                ts_arena_restore(saved_arena_mark);
                 source_lines = saved_source_lines;
                 source_line_count = saved_source_line_count;
                 current_source_file = saved_source_file;

@@ -66,11 +66,12 @@ static void cleanup_all(void) {
     cleanup_done = true;
 
     if (ts.tokens) {
-        for (int i = 0; i < ts.count; i++) free(ts.tokens[i].lexeme);
+        /* Los lexemes viven en la arena global: no se liberan uno a uno. */
         free(ts.tokens);
         ts.tokens = NULL;
         ts.count = ts.cap = ts.pos = 0;
     }
+    ts_free_arena();
     if (source_lines) {
         for (int i = 0; i < source_line_count; i++) free(source_lines[i]);
         free(source_lines);

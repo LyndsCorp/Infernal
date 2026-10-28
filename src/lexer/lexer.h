@@ -20,6 +20,9 @@ typedef struct {
 extern TokenStream ts;
 
 void ts_init(void);
+void ts_free_arena(void);
+size_t ts_arena_mark(void);
+void ts_arena_restore(size_t mark);
 void ts_add(Token t);
 Token ts_peek(void);
 Token ts_advance(void);

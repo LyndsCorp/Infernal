@@ -1429,6 +1429,7 @@ NodeList parse_block(const char *terminator) {
             }
 
             TokenStream old_ts = ts;
+            size_t old_arena_mark = ts_arena_mark();
             char ** volatile old_source_lines = source_lines;
             volatile int old_source_line_count = source_line_count;
             char * volatile old_source_file = current_source_file;
@@ -1665,10 +1666,10 @@ NodeList parse_block(const char *terminator) {
                     current_import_prefix = old_prefix;
                     fi_block_nesting = saved_fi_nesting;
                     if (ts.tokens) {
-                        for (int i = 0; i < ts.count; i++) free(ts.tokens[i].lexeme);
                         free(ts.tokens);
                     }
                     ts = old_ts;
+                    ts_arena_restore(old_arena_mark);
                     if (source_lines) {
                         for (int i = 0; i < source_line_count; i++) free(source_lines[i]);
                         free(source_lines);
@@ -1685,9 +1686,9 @@ NodeList parse_block(const char *terminator) {
                 memcpy(&exception_env, &block_saved_env, sizeof(jmp_buf));
                 exception_raised = block_saved_raised;
 
-                for (int i = 0; i < ts.count; i++) free(ts.tokens[i].lexeme);
                 free(ts.tokens);
                 ts = old_ts;
+                ts_arena_restore(old_arena_mark);
 
                 for (int i = 0; i < source_line_count; i++) free(source_lines[i]);
                 free(source_lines);
