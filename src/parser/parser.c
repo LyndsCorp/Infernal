@@ -802,6 +802,36 @@ ASTNode *parse_assignment_expr(int line) {
     return assign;
 }
 
+
+/* Devuelve true si la expresión contiene nodos que podrían tener
+ * efectos secundarios (llamadas a función, incremento/decremento
+ * post-fijo, bloques embebidos con return, etc.). Se usa para
+ * rechazar en parse-time la asignación compuesta con índice cuando
+ * el índice tiene efectos: el runtime evalúa el índice dos veces
+ * (una para leer y otra para escribir), así que x[i++] += 1
+ * incrementaría i dos veces. */
+static bool expr_has_side_effects(ASTNode *node) {
+    if (!node)
+        return false;
+    switch (node->kind) {
+    case NODE_POST_INC:
+    case NODE_POST_DEC:
+    case NODE_CALL:
+    case NODE_EMBEDDED:
+        return true;
+    case NODE_BINOP:
+        return expr_has_side_effects(node->data.binop.left) ||
+               expr_has_side_effects(node->data.binop.right);
+    case NODE_UNARY:
+        return expr_has_side_effects(node->data.unary.operand);
+    case NODE_INDEX:
+        return expr_has_side_effects(node->data.idx.list) ||
+               expr_has_side_effects(node->data.idx.index);
+    default:
+        return false;
+    }
+}
+
 NodeList parse_block(const char *terminator) {
     NodeList block = {0};
     DEBUG_INFO("=== parse_block: iniciando bloque, terminator='%s' ===",
@@ -2426,6 +2456,17 @@ NodeList parse_block(const char *terminator) {
                         break;
                     }
 
+                    if (expr_has_side_effects(idx_expr)) {
+                        free(vname);
+                        error(saved_t.line,
+                              "La asignación compuesta con índice evalúa el índice dos veces "
+                              "(una para leer y otra para escribir), lo cual es incorrecto "
+                              "cuando el índice tiene efectos secundarios (llamadas a función, "
+                              "i++, i--, etc.).\n"
+                              "    Guarda el índice en un temporal y usa ese temporal:\n"
+                              "        local tmp = <expresión del índice>\n"
+                              "        x[tmp] op= valor");
+                    }
                     ASTNode *lhs_copy = deep_copy_ast(idx_expr);
                     if (!lhs_copy) {
                         free(vname);
