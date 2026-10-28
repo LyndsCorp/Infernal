@@ -443,13 +443,22 @@ Value eval_binop(ASTNode *expr) {
                   "una función o expresión no devolvió nada.");
         }
 
-        Value new_list = val_list_empty();
-        for (int i = 0; i < left.data.list.count; i++) {
-            val_list_append(&new_list, copy_value_secure(left.data.list.items[i]));
+        /* `left` es propiedad exclusiva de este frame: nadie más
+         * tiene referencias a sus elementos. En lugar de copiarlos
+         * uno a uno a una lista nueva (O(n) copias profundas),
+         * extendemos `left` en su sitio. Esto convierte x += item en
+         * O(1) amortizado. */
+        if (left.data.list.count >= left.data.list.cap) {
+            int new_cap = left.data.list.cap == 0 ? 4 : left.data.list.cap * 2;
+            if (new_cap <= left.data.list.count) new_cap = left.data.list.count + 1;
+            Value *tmp = realloc(left.data.list.items,
+                                 (size_t)new_cap * sizeof(Value));
+            if (!tmp) error(expr->line, "Memoria insuficiente al añadir a la lista");
+            left.data.list.items = tmp;
+            left.data.list.cap = new_cap;
         }
-        val_list_append(&new_list, right);   /* transferimos la propiedad de `right` */
-        value_free(&left);
-        return new_list;
+        left.data.list.items[left.data.list.count++] = right;
+        return left;
     }
 
     if (left.type == VAL_LIST) {
