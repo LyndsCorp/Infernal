@@ -44,6 +44,14 @@ void parser_cleanup_on_error(void) {
  * pertenece a un bloque externo y al nuestro le falta el suyo. */
 static int fi_block_nesting = 0;
 
+/* Accessors usados por exec_flag_spec_impl() para salvar/restaurar
+ * el contador cuando reparsea el cuerpo de un flag. Sin esto, si
+ * el cuerpo lanza error() (longjmp) y lo captura un try/catch
+ * externo, el contador queda desbordado y todos los if/while del
+ * script fallan después con "falta el 'fi'". */
+int parser_get_fi_nesting(void) { return fi_block_nesting; }
+void parser_set_fi_nesting(int v) { fi_block_nesting = v; }
+
 static int count_remaining_fi(void) {
     int count = 0;
     for (int i = ts.pos; i < ts.count; i++) {

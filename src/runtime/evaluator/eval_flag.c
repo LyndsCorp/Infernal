@@ -44,6 +44,8 @@ static char *clean_flag_value(const char *val_str) {
 void exec_flag_spec_impl(FlagSpec *spec) {
     if (spec->body_count == 0) return;
 
+    int saved_fi_nesting = parser_get_fi_nesting();
+
     TokenStream saved_ts = ts;
     Token *saved_body_tokens = spec->body_tokens;
     int saved_body_count = spec->body_count;
@@ -74,6 +76,7 @@ void exec_flag_spec_impl(FlagSpec *spec) {
          * porque el programa sigue vivo y el spec sigue en el AST. */
         spec->body_tokens = saved_body_tokens;
         spec->body_count = saved_body_count;
+        parser_set_fi_nesting(saved_fi_nesting);
         ts = saved_ts;
         memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
         exception_raised = saved_raised;
@@ -90,6 +93,7 @@ void exec_flag_spec_impl(FlagSpec *spec) {
     memcpy(&exec_env, &exception_env, sizeof(jmp_buf));
     int exec_raised = exception_raised;
     if (setjmp(exception_env) != 0) {
+        parser_set_fi_nesting(saved_fi_nesting);
         nodelist_free(&flag_body);
         spec->body_tokens = saved_body_tokens;
         spec->body_count = saved_body_count;
@@ -104,6 +108,7 @@ void exec_flag_spec_impl(FlagSpec *spec) {
     exception_raised = exec_raised;
 
     /* Camino normal: recuperar la propiedad. */
+    parser_set_fi_nesting(saved_fi_nesting);
     spec->body_tokens = saved_body_tokens;
     spec->body_count = saved_body_count;
     ts = saved_ts;
