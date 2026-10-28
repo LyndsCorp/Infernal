@@ -1737,6 +1737,7 @@ void exec_stmt(ASTNode *stmt) {
 
     case NODE_EXECUTE: {
         bool saved_constants_definition_allowed = constants_definition_allowed();
+        int saved_fi_nesting = parser_get_fi_nesting();
         ASTNode *path_node = stmt->data.execute.path_expr;
         Value path_val = val_make_null();
         char *volatile path_owned = NULL;
@@ -1794,6 +1795,7 @@ void exec_stmt(ASTNode *stmt) {
             }
 
             constants_set_definition_allowed(saved_constants_definition_allowed);
+            parser_set_fi_nesting(saved_fi_nesting);
             script_argc = saved_argc;
             script_argv = saved_argv;
             flags_arg_index = saved_flags_arg_index;
@@ -1939,6 +1941,7 @@ void exec_stmt(ASTNode *stmt) {
         script_argc = saved_argc;
         script_argv = saved_argv;
         flags_arg_index = saved_flags_arg_index;
+        parser_set_fi_nesting(saved_fi_nesting);
         constants_set_definition_allowed(saved_constants_definition_allowed);
 
         free((void *)resolved_path);

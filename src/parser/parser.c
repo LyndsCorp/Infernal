@@ -27,9 +27,6 @@
 #include <string.h>
 #include <unistd.h>
 
-/* --- Estado de limpieza de parser ante longjmp --- */
-void parser_cleanup_on_error(void) { ast_free_all(); }
-
 /* --- Contador de bloques abiertos que esperan un 'fi' ---
  *
  * Se incrementa al entrar en un bloque que se cierra con 'fi'
@@ -41,6 +38,16 @@ void parser_cleanup_on_error(void) { ast_free_all(); }
  * archivo quedan menos 'fi' que bloques abiertos, es que este 'fi'
  * pertenece a un bloque externo y al nuestro le falta el suyo. */
 static int fi_block_nesting = 0;
+
+/* --- Estado de limpieza de parser ante longjmp --- */
+void parser_cleanup_on_error(void) {
+    /* Resetear fi_block_nesting es importante: si el error se captura
+     * en algún punto recuperable (try/catch externo) y el contador
+     * queda elevado, todos los if/while/for posteriores fallarían con
+     * "falta el 'fi'". */
+    fi_block_nesting = 0;
+    ast_free_all();
+}
 
 /* Accessors usados por exec_flag_spec_impl() para salvar/restaurar
  * el contador cuando reparsea el cuerpo de un flag. Sin esto, si
@@ -447,6 +454,7 @@ static bool validate_switch_body(const NodeList *body) {
 static ASTNode *parse_switch_statement(void) {
     Token t = ts_peek();
     int line = t.line;
+    int saved_fi_nesting = fi_block_nesting;
     ts_advance();
     fi_block_nesting++;
 
@@ -494,6 +502,7 @@ static ASTNode *parse_switch_statement(void) {
             int sw_saved_raised = exception_raised;
             NodeList body = {0};
             if (setjmp(exception_env) != 0) {
+                fi_block_nesting = saved_fi_nesting;
                 ts.tokens[boundary].type = saved_type;
                 memcpy(&exception_env, &sw_saved_env, sizeof(jmp_buf));
                 exception_raised = sw_saved_raised;
@@ -534,6 +543,7 @@ static ASTNode *parse_switch_statement(void) {
             int sw_saved_raised = exception_raised;
             NodeList body = {0};
             if (setjmp(exception_env) != 0) {
+                fi_block_nesting = saved_fi_nesting;
                 ts.tokens[boundary].type = saved_type;
                 memcpy(&exception_env, &sw_saved_env, sizeof(jmp_buf));
                 exception_raised = sw_saved_raised;
