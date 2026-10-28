@@ -203,8 +203,13 @@ Value eval_index(ASTNode *expr) {
                                      "    Los índices de list no admiten parte decimal.",
                                      f);
                 }
-                /* Float entero: lo pasamos a int para unificar la validación
-                 * de rango y el resto de la lógica. */
+                /* Antes de castear, comprobar que el float cabe en int.
+                 * Castear un double fuera del rango de int es UB en C. */
+                if (f < (double)INT_MIN || f > (double)INT_MAX) {
+                    eval_index_error(&base, &idx, base_borrowed, line,
+                                     "Índice fuera de rango. El valor %g excede el tamaño máximo de una lista.",
+                                     f);
+                }
                 idx.type = VAL_INT;
                 idx.data.ival = (int)f;
             }
