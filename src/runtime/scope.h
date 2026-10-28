@@ -35,9 +35,17 @@ typedef struct Scope {
     PortalEntry *portals;
     struct Scope *parent;
     char *function_name;  // nombre de la función si es un ámbito de función, o NULL
+    /* Si el scope es de una función de usuario, apunta a su NODE_FUNC_DEF.
+     * Vive en el AST, así que no hay que liberarlo desde scope_free. Se
+     * usa para mostrar el nombre en printAllVars() sin duplicarlo. */
+    struct ASTNode *func_def;
 } Scope;
 
 Scope *scope_new(Scope *parent, const char *function_name);
+
+/* Variante para scopes de función: guarda el puntero al NODE_FUNC_DEF
+ * en lugar de duplicar el nombre. Evita un malloc por llamada. */
+Scope *scope_new_func(Scope *parent, ASTNode *func_def);
 VarEntry *scope_find(Scope *scope, const char *name);
 VarEntry *scope_find_current(Scope *scope, const char *name); // solo en el ámbito actual
 uint64_t scope_cache_generation(void);

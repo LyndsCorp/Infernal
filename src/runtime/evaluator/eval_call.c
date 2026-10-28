@@ -201,7 +201,7 @@ Value eval_call(ASTNode *expr) {
             error(expr->line, "La función '%s' espera %d argumento(s), recibió %d",
                   expr->data.call.name, func->data.func.param_count, expr->data.call.argc);
         }
-        Scope *new_scope = scope_new(current_scope, expr->data.call.name);
+        Scope *new_scope = scope_new_func(current_scope, func);
         Scope *prev_scope = current_scope;
         jmp_buf saved_env;
         memcpy(&saved_env, &exception_env, sizeof(jmp_buf));

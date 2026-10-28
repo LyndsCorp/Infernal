@@ -141,6 +141,8 @@ static Value builtin_printAllVars(int argc, Value *args) {
         if (s->vars) {
             if (s == global_scope) printf("  Ámbito del script:\n");
             else if (s->function_name) printf("  Ámbito local de función '%s':\n", s->function_name);
+            else if (s->func_def && s->func_def->kind == NODE_FUNC_DEF)
+                printf("  Ámbito local de función '%s':\n", s->func_def->data.func.name);
             else printf("  Scope %p:\n", (void*)s);
 
             for (VarEntry *e = s->vars; e; e = e->next) {

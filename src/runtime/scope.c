@@ -110,8 +110,18 @@ Scope *scope_new(Scope *parent, const char *function_name) {
     s->variable_version = 1;
     s->portals = NULL;
     s->parent = parent;
-    s->function_name = function_name ? infernal_strdup(function_name) : NULL;
+    /* Solo duplicamos si hay nombre: si es NULL, no reservamos
+     * el byte de "" (que antes se colaba por cada scope anónimo). */
+    s->function_name = (function_name && function_name[0])
+                       ? infernal_strdup(function_name) : NULL;
+    s->func_def = NULL;
     scope_registry_add(s);
+    return s;
+}
+
+Scope *scope_new_func(Scope *parent, ASTNode *func_def) {
+    Scope *s = scope_new(parent, NULL);
+    s->func_def = func_def;
     return s;
 }
 
