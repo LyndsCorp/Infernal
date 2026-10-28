@@ -180,8 +180,15 @@ ASTNode *parse_flags() {
             ts_skip_newlines();
         }
 
-        FlagSpec spec;
-        memset(&spec, 0, sizeof(spec));
+        /* Construimos el spec directamente en el array del nodo.
+         * Así, si error() dispara un longjmp a mitad de un spec,
+         * ast_free_all() libera el parcial: no hay que mantener un
+         * cleanup manual para un FlagSpec local en la pila. */
+        node->data.flags.specs = infernal_realloc(node->data.flags.specs,
+                                         (size_t)(node->data.flags.spec_count + 1) * sizeof(FlagSpec));
+        FlagSpec *spec = &node->data.flags.specs[node->data.flags.spec_count];
+        memset(spec, 0, sizeof(FlagSpec));
+        node->data.flags.spec_count++;
 
         /* --- empty/arg --- */
         if (ts.pos < ts.count && ts_peek().type == TOK_IDENT &&
@@ -198,7 +205,7 @@ ASTNode *parse_flags() {
                       "No puede haber más de un 'empty'/'arg' (ya se declaró uno antes)");
             }
             ts_advance();
-            spec.is_empty = true;
+            spec->is_empty = true;
             if (!ts_match(TOK_EQ)) {
                 error(ts_peek().line, "Se esperaba '=' después de '%s'", kw);
             }
@@ -215,9 +222,9 @@ ASTNode *parse_flags() {
                 TokenType t = ts_peek().type;
             if (t == TOK_INT || t == TOK_UINT || t == TOK_FLOAT || t == TOK_BOOL ||
                 t == TOK_STRING || t == TOK_LIST || t == TOK_MAP) {
-                spec.vtype = ts_advance().type;
+                spec->vtype = ts_advance().type;
                 } else if (t == TOK_IDENT) {
-                    spec.vtype = TOK_STRING;   /* tipado automático: string */
+                    spec->vtype = TOK_STRING;   /* tipado automático: string */
                 } else {
                     error(ts_peek().line,
                           "Se esperaba un tipo (int, uint, float, bool, string, list, map) "
@@ -227,33 +234,33 @@ ASTNode *parse_flags() {
                 if (ts_peek().type != TOK_IDENT) {
                     error(ts_peek().line, "Se esperaba nombre de variable");
                 }
-                spec.var_name = strdup(ts_advance().lexeme);
-                spec.is_global = is_global;
+                spec->var_name = strdup(ts_advance().lexeme);
+                spec->is_global = is_global;
                 if (ts_peek().type == TOK_LBRACE) {
                     ts_advance();
-                    parse_flag_body_tokens(&spec.body_tokens, &spec.body_count, 1);
+                    parse_flag_body_tokens(&spec->body_tokens, &spec->body_count, 1);
                 }
             }
         /* --- catch-all (*) --- */
         else if (ts.pos < ts.count && ts_peek().type == TOK_STAR) {
             ts_advance();
-            spec.catch_all = true;
+            spec->catch_all = true;
             ts_skip_newlines();
             if (!ts_match(TOK_LBRACE)) {
                 error(ts_peek().line, "Se esperaba '{' después de '*'");
             }
-            parse_flag_body_tokens(&spec.body_tokens, &spec.body_count, 1);
+            parse_flag_body_tokens(&spec->body_tokens, &spec->body_count, 1);
         }
         /* --- flag normal --- */
         else {
             char *name = parse_flag_name(ts_peek().line);
-            add_flag_name(&spec, name, ts_peek().line);
+            add_flag_name(spec, name, ts_peek().line);
             free(name);
 
             while (ts.pos < ts.count && ts_peek().type == TOK_PIPE) {
                 ts_advance();
                 char *alias = parse_flag_name(ts_peek().line);
-                add_flag_name(&spec, alias, ts_peek().line);
+                add_flag_name(spec, alias, ts_peek().line);
                 free(alias);
             }
 
@@ -261,7 +268,7 @@ ASTNode *parse_flags() {
             if (ts.pos < ts.count && ts_peek().type == TOK_LBRACE) {
                 has_block = 1;
                 ts_advance();
-                parse_flag_body_tokens(&spec.body_tokens, &spec.body_count, 1);
+                parse_flag_body_tokens(&spec->body_tokens, &spec->body_count, 1);
             }
 
             if (!has_block && ts_match(TOK_EQ)) {
@@ -274,26 +281,22 @@ ASTNode *parse_flags() {
                 TokenType ttype = ts_peek().type;
                 if (ttype == TOK_INT || ttype == TOK_UINT || ttype == TOK_FLOAT || ttype == TOK_BOOL ||
                     ttype == TOK_STRING || ttype == TOK_LIST || ttype == TOK_MAP) {
-                    spec.vtype = ts_advance().type;
+                    spec->vtype = ts_advance().type;
                 if (ts_peek().type != TOK_IDENT || !is_valid_flag_name(ts_peek().lexeme)) {
                     error(ts_peek().line, "Se esperaba nombre de variable");
                 }
-                spec.var_name = strdup(ts_advance().lexeme);
-                spec.is_global = is_global;
+                spec->var_name = strdup(ts_advance().lexeme);
+                spec->is_global = is_global;
                     } else {
                         error(ts_peek().line, "Se esperaba un tipo después de '='");
                     }
 
                     if (ts_peek().type == TOK_LBRACE) {
                         ts_advance();
-                        parse_flag_body_tokens(&spec.body_tokens, &spec.body_count, 1);
+                        parse_flag_body_tokens(&spec->body_tokens, &spec->body_count, 1);
                     }
             }
         }
-
-        node->data.flags.specs = infernal_realloc(node->data.flags.specs,
-                                         (node->data.flags.spec_count + 1) * sizeof(FlagSpec));
-        node->data.flags.specs[node->data.flags.spec_count++] = spec;
 
         ts_skip_newlines();
         if (ts_peek().type == TOK_COMMA) {
