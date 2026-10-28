@@ -227,6 +227,14 @@ void tokenize_file(FILE *fp) {
             }
 
             // Operadores de un carácter
+            if (*p == '&' && *(p+1) == '&') {
+                Token t = {TOK_AMPAMP, strdup("&&"), lineno, start_col, start_col + 2};
+                ts_add(t); p += 2; continue;
+            }
+            if (*p == '&') {
+                Token t = {TOK_AMP, strdup("&"), lineno, start_col, start_col + 1};
+                ts_add(t); p++; continue;
+            }
             if (*p == '|') { Token t = {TOK_PIPE, strdup("|"), lineno, start_col, start_col + 1}; ts_add(t); p++; continue; } //se usa en flags ()
             if (*p == '>') { Token t = {TOK_GT_OP, strdup(">"), lineno, start_col, start_col + 1}; ts_add(t); p++; continue; }
             if (*p == '<') { Token t = {TOK_LT_OP, strdup("<"), lineno, start_col, start_col + 1}; ts_add(t); p++; continue; }
