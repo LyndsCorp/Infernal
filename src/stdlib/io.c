@@ -209,8 +209,10 @@ static Value builtin_printAllFunctions(int argc, Value *args) {
     int n = 0;
     for (FuncEntry *e = func_table; e; e = e->next) {
         if (!e->obj || e->obj->kind != FUNC_USER) continue;
-        if (strchr(e->name, '.') != NULL) continue;
-        if (has_dotted_sibling(e)) continue;
+        /* e->module es la fuente de verdad: lo pone el parser
+         * al registrar la función (current_import_prefix). Si es
+         * NULL, la función fue definida en el script. */
+        if (e->module != NULL) continue;
         printf("    ");
         print_function_signature(e);
         printf("\n");
@@ -223,7 +225,7 @@ static Value builtin_printAllFunctions(int argc, Value *args) {
     n = 0;
     for (FuncEntry *e = func_table; e; e = e->next) {
         if (!e->obj || e->obj->kind != FUNC_USER) continue;
-        if (strchr(e->name, '.') == NULL) continue;
+        if (e->module == NULL) continue;
         printf("    ");
         print_function_signature(e);
         printf("\n");
