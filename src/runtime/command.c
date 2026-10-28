@@ -147,6 +147,85 @@ static bool is_var_name_cont(unsigned char c) { return isalnum(c) || c == '_' ||
 
 static char *shell_quote(const char *text);
 
+/* Escape helpers para sustituir $var respetando el contexto de comillas
+ * en el que se encuentra la sustitución dentro del comando shell.
+ *
+ * Los tres helpers forman un triángulo:
+ *
+ *   escape_inside_single_quotes   : estamos dentro de '...'  ->  '\''
+ *   escape_inside_double_quotes   : estamos dentro de "..."  ->  \" \$ \` \\
+ *   shell_quote                   : estamos fuera de comillas ->  '...'
+ *
+ * Para el caso unquoted, si el valor es "trivial" (solo alfanumericos,
+ * '_', '-', '.', '/'), no hace falta envolverlo en comillas: se emite
+ * tal cual, lo que produce un comando mas limpio cuando se pipea.
+ */
+
+static bool shell_value_needs_quoting(const char *value) {
+    if (!value || !*value)
+        return true;
+    unsigned char first = (unsigned char)value[0];
+    if (!(isalnum(first) || first == '_'))
+        return true;
+    for (const char *p = value + 1; *p; p++) {
+        unsigned char c = (unsigned char)*p;
+        if (!(isalnum(c) || c == '_' || c == '-' || c == '.' || c == '/'))
+            return true;
+    }
+    return false;
+}
+
+static char *escape_inside_single_quotes(const char *value) {
+    if (!value)
+        return NULL;
+    size_t vlen = strlen(value);
+    if (vlen > (SIZE_MAX - 1) / 4)
+        return NULL;
+    char *out = malloc(vlen * 4 + 1);
+    if (!out)
+        return NULL;
+    size_t i = 0;
+    for (const char *p = value; *p; p++) {
+        if (*p == '\'') {
+            out[i++] = '\'';
+            out[i++] = '\\';
+            out[i++] = '\'';
+            out[i++] = '\'';
+        } else {
+            out[i++] = *p;
+        }
+    }
+    out[i] = '\0';
+    return out;
+}
+
+static char *escape_inside_double_quotes(const char *value) {
+    if (!value)
+        return NULL;
+    size_t vlen = strlen(value);
+    if (vlen > (SIZE_MAX - 1) / 2)
+        return NULL;
+    char *out = malloc(vlen * 2 + 1);
+    if (!out)
+        return NULL;
+    size_t i = 0;
+    for (const char *p = value; *p; p++) {
+        switch (*p) {
+        case '\\':
+        case '"':
+        case '`':
+        case '$':
+            out[i++] = '\\';
+            out[i++] = *p;
+            break;
+        default:
+            out[i++] = *p;
+        }
+    }
+    out[i] = '\0';
+    return out;
+}
+
 static char *expand_command_impl(const char *cmd, bool escape_for_shell) {
     if (!cmd)
         return NULL;
@@ -163,8 +242,18 @@ static char *expand_command_impl(const char *cmd, bool escape_for_shell) {
     size_t len = 0;
     const char *p = cmd;
 
+    /* Seguimiento del contexto de comillas dentro del comando shell.
+     * Necesario para sustituir $var con el escape adecuado:
+     *   - dentro de "..."  ->  escape_inside_double_quotes (invisible)
+     *   - dentro de '...'  ->  escape_inside_single_quotes ('\'')
+     *   - fuera de comillas ->  shell_quote (o tal cual si es trivial)
+     * Sin esto, $var dentro de comillas dobles producia comillas
+     * simples visibles en el output, que era seguro pero feo. */
+    bool in_single = false;
+    bool in_double = false;
+
     while (*p) {
-        /* '\?' -> '?' literal para el shell (sin tocar). */
+        /* '\?' -> '?' literal para el shell (comportamiento historico). */
         if (p[0] == '\\' && p[1] == '?') {
             if (len > SIZE_MAX - 2) {
                 free(result);
@@ -179,9 +268,47 @@ static char *expand_command_impl(const char *cmd, bool escape_for_shell) {
             continue;
         }
 
-        /* Cualquier '?' -> '$' LITERAL, para que lo expanda el shell
-         * con SU propio entorno. '?HOME' -> '$HOME', '??' -> '$$' (PID
-         * del shell), '?1' -> '$1' (arg posicional), etc. */
+        /* Backslash fuera de comillas simples: copia ambos caracteres
+         * sin tocar el estado de comillas. Dentro de '...' el shell no
+         * interpreta la barra invertida, asi que no aplica. */
+        if (!in_single && p[0] == '\\' && p[1]) {
+            if (len > SIZE_MAX - 3) {
+                free(result);
+                error(current_eval_line, "Comando expandido demasiado largo");
+            }
+            if (!grow_text_buffer(&result, &cap, len + 3)) {
+                free(result);
+                error(current_eval_line, "Memoria insuficiente al expandir comando");
+            }
+            result[len++] = p[0];
+            result[len++] = p[1];
+            p += 2;
+            continue;
+        }
+
+        /* Transiciones de comillas. */
+        if (!in_double && p[0] == '\'') {
+            in_single = !in_single;
+            if (!grow_text_buffer(&result, &cap, len + 2)) {
+                free(result);
+                error(current_eval_line, "Memoria insuficiente al expandir comando");
+            }
+            result[len++] = '\'';
+            p++;
+            continue;
+        }
+        if (!in_single && p[0] == '"') {
+            in_double = !in_double;
+            if (!grow_text_buffer(&result, &cap, len + 2)) {
+                free(result);
+                error(current_eval_line, "Memoria insuficiente al expandir comando");
+            }
+            result[len++] = '"';
+            p++;
+            continue;
+        }
+
+        /* '?' -> '$' LITERAL para que lo expanda el shell con SU entorno. */
         if (p[0] == '?') {
             if (len > SIZE_MAX - 2) {
                 free(result);
@@ -196,7 +323,7 @@ static char *expand_command_impl(const char *cmd, bool escape_for_shell) {
             continue;
         }
 
-        /* '$nombre' -> valor de la variable Infernal 'nombre'. */
+        /* '$nombre' -> valor, escapado segun el contexto. */
         if (p[0] == '$' && is_var_name_start((unsigned char)p[1])) {
             const char *start = p + 1;
             while (is_var_name_cont((unsigned char)*start))
@@ -216,7 +343,7 @@ static char *expand_command_impl(const char *cmd, bool escape_for_shell) {
                     error(current_eval_line,
                           "La variable '%s' es de tipo '%s' y no se puede expandir en un comando "
                           "shell.\n"
-                          "    Conviértela primero a string: \"\" + $%s",
+                          "    Conviertela primero a string: \"\" + $%s",
                           name, value_type_name(existing->value.type), name);
                 }
                 free(result);
@@ -225,22 +352,28 @@ static char *expand_command_impl(const char *cmd, bool escape_for_shell) {
                       "Para variables del shell usa '?%s'.",
                       name, name);
             }
-            /* Escapar el valor antes de inyectarlo en el comando shell.
-             * Sin esto, un valor como "foo; rm -rf $HOME" se ejecutaba
-             * como dos comandos separados por el shell. shell_quote()
-             * lo envuelve en comillas simples y escapa las comillas
-             * simples internas como '\''. */
+
             if (escape_for_shell) {
-                char *quoted = shell_quote(val);
+                char *escaped = NULL;
+                if (in_single) {
+                    escaped = escape_inside_single_quotes(val);
+                } else if (in_double) {
+                    escaped = escape_inside_double_quotes(val);
+                } else if (shell_value_needs_quoting(val)) {
+                    escaped = shell_quote(val);
+                } else {
+                    escaped = strdup(val);
+                }
                 free(val);
-                if (!quoted) {
+                if (!escaped) {
                     free(result);
                     error(current_eval_line,
                           "Memoria insuficiente al escapar el valor de '%s' en comando shell",
                           name);
                 }
-                val = quoted;
+                val = escaped;
             }
+
             size_t vlen = strlen(val);
             if (len > SIZE_MAX - vlen - 1) {
                 free(val);
