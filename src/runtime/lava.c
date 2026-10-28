@@ -62,7 +62,10 @@ typedef Value lava_map;
 #endif
 
 #define LAVA_MAX_SLOTS 256
-#define LAVA_ARG_SLOT  128   /* bytes por argumento en el storage de libffi */
+#define LAVA_ARG_SLOT  512   /* bytes por argumento en el storage de libffi.
+                              * 128 se quedaba corto para strings formateados
+                              * desde enteros de 64 bytes (hasta ~155 dígitos)
+                              * y truncaba silenciosamente el valor. */
 
 /* ==================================================================
  * Estado global
