@@ -981,12 +981,18 @@ Value eval_binop(ASTNode *expr) {
                 error(expr->line, "No se puede concatenar un valor de tipo %s con un string", rn);
             }
         }
-        size_t total = strlen(ls) + strlen(rs) + 1;
+        size_t ls_len = strlen(ls);
+        size_t rs_len = strlen(rs);
+        size_t total = ls_len + rs_len + 1;
         char *buf = malloc(total);
         if (!buf) error(expr->line, "Memoria insuficiente al concatenar cadenas");
-        snprintf(buf, total, "%s%s", ls, rs);
-        Value result = val_string(buf);
-        free(buf);
+        memcpy(buf, ls, ls_len);
+        memcpy(buf + ls_len, rs, rs_len + 1);
+        /* Construimos el Value directamente: val_string() haría un
+         * strdup() extra del buffer que acabamos de crear. */
+        Value result = {0};
+        result.type = VAL_STRING;
+        result.data.sval = buf;
         value_free(&left);
         value_free(&right);
         return result;
