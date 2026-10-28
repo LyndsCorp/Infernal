@@ -156,10 +156,15 @@ Value copy_value_secure(Value src) {
     if (src.type == VAL_STRING) {
         return val_string(src.data.sval);
     } else if (src.type == VAL_LIST) {
+        int n = src.data.list.count;
+        if (n == 0) return val_list_empty();
         Value new_list = val_list_empty();
-        for (int i = 0; i < src.data.list.count; i++) {
-            val_list_append(&new_list, copy_value_secure(src.data.list.items[i]));
+        new_list.data.list.items = infernal_malloc((size_t)n * sizeof(Value));
+        new_list.data.list.cap = n;
+        for (int i = 0; i < n; i++) {
+            new_list.data.list.items[i] = copy_value_secure(src.data.list.items[i]);
         }
+        new_list.data.list.count = n;
         return new_list;
     } else if (src.type == VAL_MAP) {
         return val_map_copy(&src);
