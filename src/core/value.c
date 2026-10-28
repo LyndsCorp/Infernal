@@ -14,10 +14,8 @@
 #include "runtime/error.h"
 #include "runtime/evaluator/helpers.h"
 
-typedef struct WideInteger {
-    uint32_t references;
-    InfernalBigInt number;
-} WideInteger;
+/* WideInteger está en types.h para que value.h pueda acceder a
+ * box->number desde value_integer_is_zero (inline). */
 
 Value val_make_null(void) {
     Value v = {0}; v.type = VAL_NULL; return v;

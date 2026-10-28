@@ -106,7 +106,12 @@ typedef struct {
 #define VALUE_FLAG_WIDE_INTEGER 0x01u
 #define VALUE_HAS_WIDE_INTEGER(v) (((v).flags & VALUE_FLAG_WIDE_INTEGER) != 0)
 
-struct WideInteger;
+/* WideInteger se define aquí (no en value.c) para que value.h
+ * pueda desreferenciar box->number desde funciones inline. */
+struct WideInteger {
+    uint32_t references;
+    InfernalBigInt number;
+};
 
 typedef struct MapData MapData;
 typedef struct Value Value;
