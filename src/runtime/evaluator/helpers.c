@@ -21,18 +21,7 @@
 #include <limits.h>
 #include <math.h>
 
-bool val_is_truthy(Value v) {
-    switch (v.type) {
-        case VAL_BOOL:   return v.data.bval;
-        case VAL_INT: case VAL_UINT: return !value_integer_is_zero(v);
-        case VAL_FLOAT:  return v.data.fval != 0.0;
-        case VAL_STRING: return v.data.sval && strlen(v.data.sval) > 0;
-        case VAL_LIST:   return v.data.list.count > 0;
-        case VAL_MAP:    return v.data.map && v.data.map->count > 0;
-        case VAL_VOID:   return false;   /* void es falsy */
-        default:         return false;
-    }
-}
+/* val_is_truthy() está en helpers.h como static inline. */
 
 const char *type_name(int tok_type) {
     switch (tok_type) {
