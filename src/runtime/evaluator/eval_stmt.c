@@ -1136,6 +1136,21 @@ void exec_stmt(ASTNode *stmt) {
                                           condition->data.lit.type == TOK_BOOL &&
                                           condition->data.lit.bval;
             volatile uint64_t iter_count = 0;
+
+            /* Hoist: un solo scope y un solo setjmp para todo el bucle. */
+            Scope *old_scope = current_scope;
+            Scope * volatile block_scope = scope_new(old_scope, NULL);
+            jmp_buf saved_env;
+            memcpy(&saved_env, &exception_env, sizeof(jmp_buf));
+            int saved_raised = exception_raised;
+            if (setjmp(exception_env) != 0) {
+                current_scope = old_scope;
+                scope_free((Scope *)block_scope);
+                memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
+                exception_raised = saved_raised;
+                longjmp(exception_env, 1);
+            }
+
             while (1) {
                 if (constant_true && iter_count >= UINT64_C(1000000000))
                     error(stmt->line,
@@ -1152,32 +1167,23 @@ void exec_stmt(ASTNode *stmt) {
                     if (!truthy) break;
                 }
 
-                Scope *block_scope = scope_new(current_scope, NULL);
-                Scope *old_scope = current_scope;
-                jmp_buf saved_env;
-                memcpy(&saved_env, &exception_env, sizeof(jmp_buf));
-                int saved_raised = exception_raised;
-
-                if (setjmp(exception_env) != 0) {
-                    current_scope = old_scope;
-                    scope_free(block_scope);
-                    memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
-                    exception_raised = saved_raised;
-                    longjmp(exception_env, 1);
-                }
-
-                current_scope = block_scope;
+                scope_reset((Scope *)block_scope);
+                current_scope = (Scope *)block_scope;
                 exec_block_impl(&stmt->data.while_stmt.body);
                 current_scope = old_scope;
-                scope_free(block_scope);
-                memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
-                exception_raised = saved_raised;
 
                 if (control_flow == CF_BREAK) { control_flow = CF_NONE; break; }
                 if (control_flow == CF_CONTINUE) { control_flow = CF_NONE; continue; }
-                if (control_flow == CF_REPEAT_LINE) return;
-                if (control_flow == CF_RETURN) return;
+                if (control_flow == CF_REPEAT_LINE || control_flow == CF_RETURN) {
+                    scope_free((Scope *)block_scope);
+                    memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
+                    exception_raised = saved_raised;
+                    return;
+                }
             }
+            scope_free((Scope *)block_scope);
+            memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
+            exception_raised = saved_raised;
             break;
         }
 
