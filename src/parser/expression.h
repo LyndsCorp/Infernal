@@ -13,7 +13,6 @@
 ASTNode *parse_expression(int dummy);
 ASTNode *parse_primary(void);
 ASTNode *parse_slice_content(int line);
-ASTNode *parse_index_or_slice(int line);
 
 /* Detecta el patrón "string literal pegado a IDENT/STRING/NUMBER" (típico
  * de comillas dobles sin escapar) y emite un mensaje específico. Si el

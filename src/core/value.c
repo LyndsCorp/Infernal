@@ -82,10 +82,6 @@ double value_integer_to_double(Value value) {
     return value.type == VAL_UINT ? (double)value.data.uval : (double)value.data.ival;
 }
 
-bool value_integer_fits(Value value, size_t width, bool is_signed) {
-    return bigint_fits_width(value_as_bigint(value), width, is_signed);
-}
-
 bool value_integer_to_i64(Value value, int64_t *out) {
     return (value.type == VAL_INT || value.type == VAL_UINT) &&
            bigint_to_i64(value_as_bigint(value), out);
@@ -237,13 +233,6 @@ Value val_map_reference(const char *map_name, const char *key) {
     v.data.ref.map_key = infernal_strdup(key);
     v.data.ref.index = 0;
     v.data.ref.is_map = true;
-    return v;
-}
-
-Value val_ptr(void *ptr) {
-    Value v = {0};
-    v.type = VAL_PTR;
-    v.data.ptr = ptr;
     return v;
 }
 

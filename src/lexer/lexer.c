@@ -373,7 +373,7 @@ void tokenize_file(FILE *fp) {
                 continue;
             }
             if (*p == '>' && *(p + 1) == '>') {
-                Token t = {TOK_GGT, arena_strdup(">>"), lineno, start_col, start_col + 2};
+                Token t = {TOK_IDENT, arena_strdup(">>"), lineno, start_col, start_col + 2};
                 ts_add(t);
                 p += 2;
                 continue;
@@ -381,13 +381,13 @@ void tokenize_file(FILE *fp) {
 
             // Operadores de un carácter
             if (*p == '&' && *(p + 1) == '&') {
-                Token t = {TOK_AMPAMP, arena_strdup("&&"), lineno, start_col, start_col + 2};
+                Token t = {TOK_IDENT, arena_strdup("&&"), lineno, start_col, start_col + 2};
                 ts_add(t);
                 p += 2;
                 continue;
             }
             if (*p == '&') {
-                Token t = {TOK_AMP, arena_strdup("&"), lineno, start_col, start_col + 1};
+                Token t = {TOK_IDENT, arena_strdup("&"), lineno, start_col, start_col + 1};
                 ts_add(t);
                 p++;
                 continue;

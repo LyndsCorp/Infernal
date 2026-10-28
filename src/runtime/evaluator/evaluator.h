@@ -13,8 +13,6 @@
 /* Funciones públicas (orquestador) */
 Value eval_expr(ASTNode *expr);
 void exec_block(NodeList *block);
-void exec_block_from(NodeList *block, int start_index);
-void exec_flag_spec(FlagSpec *spec);
 
 /* Auxiliar pública */
 bool try_convert_value(Value *val, int target_tok_type);

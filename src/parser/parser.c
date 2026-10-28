@@ -385,36 +385,6 @@ static void command_append_token(char **cmd, size_t *len, size_t *cap, Token tok
         command_append(cmd, len, cap, "\"\"");
 }
 
-char *build_command_from_tokens(int start_pos, int end_pos) {
-    if (start_pos >= end_pos)
-        return strdup("");
-    char *cmd = malloc(1);
-    cmd[0] = '\0';
-    size_t len = 0;
-
-    for (int i = start_pos; i < end_pos; i++) {
-        Token *t = &ts.tokens[i];
-        if (t->type == TOK_NEWLINE || t->type == TOK_EOF)
-            break;
-
-        if (i > start_pos) {
-            int prev_end = ts.tokens[i - 1].end_col;
-            if (t->start_col > prev_end) {
-                cmd = infernal_realloc(cmd, len + 2);
-                cmd[len++] = ' ';
-                cmd[len] = '\0';
-            }
-        }
-
-        size_t tlen = strlen(t->lexeme);
-        cmd = infernal_realloc(cmd, len + tlen + 1);
-        memcpy(cmd + len, t->lexeme, tlen);
-        len += tlen;
-        cmd[len] = '\0';
-    }
-    return cmd;
-}
-
 static int find_switch_boundary(int start_pos) {
     int depth = 0;
     for (int i = start_pos; i < ts.count; i++) {
@@ -801,7 +771,6 @@ ASTNode *parse_assignment_expr(int line) {
     assign->data.assign.value = binop;
     return assign;
 }
-
 
 /* Devuelve true si la expresión contiene nodos que podrían tener
  * efectos secundarios (llamadas a función, incremento/decremento

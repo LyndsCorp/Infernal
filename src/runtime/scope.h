@@ -50,9 +50,7 @@ VarEntry *scope_find(Scope *scope, const char *name);
 VarEntry *scope_find_current(Scope *scope, const char *name); // solo en el ámbito actual
 uint64_t scope_cache_generation(void);
 void scope_remove_var_entry(Scope *scope, VarEntry *entry);
-VarEntry *scope_find_script(Scope *scope, const char *name);
 void scope_define(Scope *scope, const char *name, int vtype, Value val);
-void scope_assign(Scope *scope, const char *name, Value val, int line);
 
 /* Igual que scope_assign() pero recibe directamente el VarEntry ya
  * localizado. Evita repetir el scope_find() cuando el llamador ya

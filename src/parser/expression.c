@@ -234,25 +234,6 @@ ASTNode *parse_slice_content(int line) {
     return node;
 }
 
-/* --- parse_index_or_slice (declarada en .h) --- */
-ASTNode *parse_index_or_slice(int line) {
-    Token t = ts_peek();
-    ASTNode *node = NULL;
-
-    if (t.type == TOK_STAR ||
-        (t.type == TOK_NUMBER && ts.pos + 1 < ts.count &&
-         (ts.tokens[ts.pos + 1].type == TOK_COLON ||
-          ts.tokens[ts.pos + 1].type == TOK_STAR))) {
-        node = parse_slice_content(line);
-    } else {
-        ASTNode *idx = parse_expression(0);
-        expect_index_close_bracket(line);
-        node = node_create(NODE_INDEX, line);
-        node->data.idx.index = idx;
-    }
-    return node;
-}
-
 /* --- Detección de comillas dobles sin escapar ---
  *
  * Si el token actual sigue pegado (sin espacio) a un string literal

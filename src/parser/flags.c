@@ -97,18 +97,11 @@ static char *parse_flag_name(int line) {
     return name;
 }
 
-void parse_flag_body_tokens(Token **body_tokens, int *body_count, int already_consumed_brace) {
+void parse_flag_body_tokens(Token **body_tokens, int *body_count) {
     int depth = 1;
     *body_tokens = NULL;
     *body_count = 0;
     int cap = 0;
-
-    if (!already_consumed_brace) {
-        if (ts.pos >= ts.count || ts_peek().type != TOK_LBRACE) {
-            error(ts_peek().line, "Se esperaba '{' para el bloque del flag");
-        }
-        ts_advance();
-    }
 
     while (depth > 0 && ts.pos < ts.count) {
         Token t = ts_advance();
@@ -249,7 +242,7 @@ ASTNode *parse_flags() {
             spec->is_global = is_global;
             if (ts_peek().type == TOK_LBRACE) {
                 ts_advance();
-                parse_flag_body_tokens(&spec->body_tokens, &spec->body_count, 1);
+                parse_flag_body_tokens(&spec->body_tokens, &spec->body_count);
             }
         }
         /* --- catch-all (*) --- */
@@ -260,7 +253,7 @@ ASTNode *parse_flags() {
             if (!ts_match(TOK_LBRACE)) {
                 error(ts_peek().line, "Se esperaba '{' después de '*'");
             }
-            parse_flag_body_tokens(&spec->body_tokens, &spec->body_count, 1);
+            parse_flag_body_tokens(&spec->body_tokens, &spec->body_count);
         }
         /* --- flag normal --- */
         else {
@@ -279,7 +272,7 @@ ASTNode *parse_flags() {
             if (ts.pos < ts.count && ts_peek().type == TOK_LBRACE) {
                 has_block = 1;
                 ts_advance();
-                parse_flag_body_tokens(&spec->body_tokens, &spec->body_count, 1);
+                parse_flag_body_tokens(&spec->body_tokens, &spec->body_count);
             }
 
             if (!has_block && ts_match(TOK_EQ)) {
@@ -306,7 +299,7 @@ ASTNode *parse_flags() {
 
                 if (ts_peek().type == TOK_LBRACE) {
                     ts_advance();
-                    parse_flag_body_tokens(&spec->body_tokens, &spec->body_count, 1);
+                    parse_flag_body_tokens(&spec->body_tokens, &spec->body_count);
                 }
             }
         }

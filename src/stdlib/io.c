@@ -181,30 +181,6 @@ static Value builtin_printAllVars(int argc, Value *args) {
 
 /* --- Helpers para printAllFunctions() ------------------------- */
 
-/*
- * Comprueba si una función de usuario tiene un "hermano" con prefijo de
- * módulo. Cuando el parser importa un .fire, registra la función DOS
- * veces: una con el nombre desnudo y otra con el prefijo del módulo
- * ("mod.func"). Aquí detectamos ese caso para no listar dos veces la
- * misma función.
- */
-static bool has_dotted_sibling(FuncEntry *e) {
-    if (!e->obj || e->obj->kind != FUNC_USER || !e->obj->def)
-        return false;
-    ASTNode *def = e->obj->def;
-    for (FuncEntry *other = func_table; other; other = other->next) {
-        if (other == e)
-            continue;
-        if (!other->obj || other->obj->kind != FUNC_USER)
-            continue;
-        if (other->obj->def != def)
-            continue;
-        if (strchr(other->name, '.') != NULL)
-            return true;
-    }
-    return false;
-}
-
 /* Imprime "nombre(tipo param, tipo param, ...)" sin salto de línea. */
 static void print_function_signature(FuncEntry *e) {
     printf("%s(", e->name);

@@ -85,13 +85,6 @@ int bigint_compare_magnitude(InfernalBigInt a, InfernalBigInt b) {
     return 0;
 }
 
-int bigint_compare(InfernalBigInt a, InfernalBigInt b) {
-    if (a.negative != b.negative)
-        return a.negative ? -1 : 1;
-    int magnitude = bigint_compare_magnitude(a, b);
-    return a.negative ? -magnitude : magnitude;
-}
-
 int bigint_compare_ref(const InfernalBigInt *a, const InfernalBigInt *b) {
     if (a->negative != b->negative)
         return a->negative ? -1 : 1;

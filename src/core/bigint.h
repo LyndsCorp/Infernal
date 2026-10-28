@@ -23,7 +23,6 @@ bool bigint_mul(InfernalBigInt a, InfernalBigInt b, InfernalBigInt *out);
 bool bigint_divmod(InfernalBigInt a, InfernalBigInt b,
                    InfernalBigInt *quotient, InfernalBigInt *remainder);
 bool bigint_pow(InfernalBigInt base, uint32_t exponent, InfernalBigInt *out);
-int bigint_compare(InfernalBigInt a, InfernalBigInt b);
 int bigint_compare_ref(const InfernalBigInt *a, const InfernalBigInt *b);
 int bigint_compare_magnitude(InfernalBigInt a, InfernalBigInt b);
 bool bigint_is_zero(InfernalBigInt value);

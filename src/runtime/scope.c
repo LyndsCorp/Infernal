@@ -174,17 +174,6 @@ VarEntry *scope_find_current(Scope *scope, const char *name) {
     return NULL;
 }
 
-/* --- Búsqueda en la cadena de ámbitos excluyendo super_global_scope --- */
-VarEntry *scope_find_script(Scope *scope, const char *name) {
-    while (scope && scope != super_global_scope) {
-        VarEntry *e = scope_find_current(scope, name);
-        if (e)
-            return e;
-        scope = scope->parent;
-    }
-    return NULL;
-}
-
 /* --- Definir una nueva variable en un ámbito dado --- */
 void scope_define(Scope *scope, const char *name, int vtype, Value val) {
     if (constants_is_reserved(name)) {
@@ -270,62 +259,6 @@ void scope_remove_var_entry(Scope *scope, VarEntry *entry) {
         scope->variable_version++;
         bump_global_variable_generation();
     }
-}
-
-/* --- Asignar un valor a una variable existente en el ámbito (o crear si no existe) --- */
-void scope_assign(Scope *scope, const char *name, Value val, int line) {
-    if (constants_is_reserved(name)) {
-        value_free(&val);
-        error(line, "La constante '%s' no se puede sobreescribir", name);
-    }
-    VarEntry *e = scope_find(scope, name);
-    if (e) {
-        if (e->value.type == VAL_REFERENCE) {
-            assign_reference(&e->value, val, line);
-            return;
-        }
-        // Si el tipo fijo es 0 o inválido (>= TOK_EOF), permitir cualquier valor
-        if (e->vtype == 0) {
-            Value copied = copy_value_secure(val);
-            value_free(&e->value);
-            e->value = copied;
-            /* Las variables dinámicas adquieren el tipo de su valor actual.
-             * Esto permite que printAllVars() muestre el tipo real después de
-             * una asignación, incluso cuando la variable fue registrada
-             * previamente por el compilador con vtype=0. */
-            e->vtype = valtype_to_tokentype(val.type);
-            return;
-        }
-        // Conversión si el destino es string y el valor es lista
-        if (e->vtype == TOK_STRING && val.type == VAL_LIST) {
-            if (!try_convert_value(&val, TOK_STRING)) {
-                value_free(&val);
-                error(line, "No se pudo convertir lista a string en la asignación a '%s'", name);
-            }
-        }
-        int expected = e->vtype;
-        int new_type = valtype_to_tokentype(val.type);
-        if (expected == TOK_UINT && new_type != TOK_UINT) {
-            if (!try_convert_value(&val, TOK_UINT)) {
-                value_free(&val);
-                error(line, "La variable uint '%s' requiere un entero válido", name);
-            }
-            new_type = valtype_to_tokentype(val.type);
-        }
-        if (expected != 0 && new_type != expected) {
-            value_free(&val);
-            error(line,
-                  "Tipado fijo: la variable '%s' es de tipo %s, no se puede asignar un valor de "
-                  "tipo %s",
-                  name, type_name(expected), type_name(new_type));
-        }
-        Value copied = copy_value_secure(val);
-        value_free(&e->value);
-        e->value = copied;
-        return;
-    }
-    // Si no existe, definir en el ámbito actual
-    scope_define(scope, name, 0, val);
 }
 
 /* Variante de scope_assign() que recibe el VarEntry ya localizado.
