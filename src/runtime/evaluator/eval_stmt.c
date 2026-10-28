@@ -535,7 +535,7 @@ void exec_stmt(ASTNode *stmt) {
     }
 
     case NODE_CMD_STMT: {
-        char *expanded = expand_command(stmt->data.cmd_stmt.cmd);
+        char *expanded = expand_command_for_shell(stmt->data.cmd_stmt.cmd);
         int ret = execute_embedded(expanded);
         if (ret != 0 && command_fail_error) {
             free(expanded);
@@ -547,7 +547,7 @@ void exec_stmt(ASTNode *stmt) {
     }
 
     case NODE_SHELL_CMD: {
-        char *expanded = expand_command(stmt->data.shell_cmd.cmd);
+        char *expanded = expand_command_for_shell(stmt->data.shell_cmd.cmd);
         int ret = run_shell_command(expanded);
         if (ret != 0 && command_fail_error) {
             char msg[1024];
@@ -600,7 +600,7 @@ void exec_stmt(ASTNode *stmt) {
             char *cmd = stmt->data.assign.cmd_str;
             int exit_code = 0;
 
-            char *expanded_cmd = expand_command(cmd);
+            char *expanded_cmd = expand_command_for_shell(cmd);
             if (!expanded_cmd) {
                 error(stmt->line, "Error al expandir comando: %s", cmd);
             }
@@ -741,7 +741,7 @@ void exec_stmt(ASTNode *stmt) {
                      * cambiado (el shell corrió como subproceso). Si
                      * por algún motivo la reexpansión falla (no debería),
                      * caemos al texto fuente original `cmd`. */
-                    char *display_cmd = expand_command(cmd);
+                    char *display_cmd = expand_command_for_shell(cmd);
                     if (!display_cmd)
                         display_cmd = (char *)cmd;
 

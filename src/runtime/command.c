@@ -145,7 +145,9 @@ static bool is_var_name_start(unsigned char c) { return isalpha(c) || c == '_' |
 
 static bool is_var_name_cont(unsigned char c) { return isalnum(c) || c == '_' || c >= 0x80; }
 
-char *expand_command(const char *cmd) {
+static char *shell_quote(const char *text);
+
+static char *expand_command_impl(const char *cmd, bool escape_for_shell) {
     if (!cmd)
         return NULL;
 
@@ -223,6 +225,22 @@ char *expand_command(const char *cmd) {
                       "Para variables del shell usa '?%s'.",
                       name, name);
             }
+            /* Escapar el valor antes de inyectarlo en el comando shell.
+             * Sin esto, un valor como "foo; rm -rf $HOME" se ejecutaba
+             * como dos comandos separados por el shell. shell_quote()
+             * lo envuelve en comillas simples y escapa las comillas
+             * simples internas como '\''. */
+            if (escape_for_shell) {
+                char *quoted = shell_quote(val);
+                free(val);
+                if (!quoted) {
+                    free(result);
+                    error(current_eval_line,
+                          "Memoria insuficiente al escapar el valor de '%s' en comando shell",
+                          name);
+                }
+                val = quoted;
+            }
             size_t vlen = strlen(val);
             if (len > SIZE_MAX - vlen - 1) {
                 free(val);
@@ -256,6 +274,10 @@ char *expand_command(const char *cmd) {
     char *tmp = realloc(result, len + 1);
     return tmp ? tmp : result;
 }
+
+char *expand_command(const char *cmd) { return expand_command_impl(cmd, false); }
+
+char *expand_command_for_shell(const char *cmd) { return expand_command_impl(cmd, true); }
 
 /* --- Descompresión usando libz cargada dinámicamente --- */
 static unsigned char *gunzip_data(const unsigned char *compressed, size_t compressed_len,
@@ -726,7 +748,7 @@ int run_shell_command(const char *cmd) {
 int run_command_get_exit_code(const char *cmd) {
     if (!cmd)
         return -1;
-    char *expanded = expand_command(cmd);
+    char *expanded = expand_command_for_shell(cmd);
     if (!expanded)
         return -1;
 

@@ -12,6 +12,7 @@
 #include "core/value.h"
 
 char *expand_command(const char *cmd);
+char *expand_command_for_shell(const char *cmd);
 char *get_var_string(const char *name);
 int execute_embedded(const char *full_cmd);
 FILE *popen_embedded_with_path(const char *full_cmd, const char *mode, char **temp_path);
