@@ -17,14 +17,29 @@
 
 TokenStream ts;
 
-/* Arena de lexemes. Los lexemes de ts.tokens[] viven aquí (excepto
- * extract_command_string, que devuelve un buffer con malloc porque
- * su llamador lo libera). Se libera en bloque al terminar, y se
- * trunca a un 'mark' cuando terminan los scripts anidados
- * (execute / import) para no acumularlos. */
-static char *g_token_arena_data = NULL;
-static size_t g_token_arena_cap = 0;
-static size_t g_token_arena_used = 0;
+/* Arena de lexemes en chunks. Cada chunk es un bloque de memoria
+ * independiente que no se mueve, así que los punteros devueltos por
+ * arena_strndup() (que acaban en ts.tokens[*].lexeme y en
+ * source_lines[*]) siguen siendo válidos aunque la arena crezca
+ * después.
+ *
+ * La versión anterior usaba realloc() sobre un único buffer: cada
+ * crecimiento podía mover el bloque e invalidar los lexemes de TODOS
+ * los tokens anteriores, provocando use-after-free en cualquier
+ * script con más de 64 KB de tokens o de líneas fuente. */
+typedef struct ArenaChunk {
+    struct ArenaChunk *next;
+    size_t cap;
+    size_t used;
+    char *data;
+} ArenaChunk;
+
+static ArenaChunk *g_arena_head = NULL;
+static ArenaChunk *g_arena_current = NULL;
+static size_t g_arena_current_seq = 0;
+
+#define ARENA_FIRST_CHUNK_SIZE (64u * 1024u)
+#define ARENA_GROW_CHUNK_SIZE (4u * 1024u * 1024u)
 
 void ts_init() {
     ts.tokens = NULL;
@@ -32,37 +47,83 @@ void ts_init() {
     ts.pos = 0;
 }
 
-void ts_free_arena(void) {
-    free(g_token_arena_data);
-    g_token_arena_data = NULL;
-    g_token_arena_cap = 0;
-    g_token_arena_used = 0;
+static ArenaChunk *arena_new_chunk(size_t cap) {
+    ArenaChunk *c = infernal_malloc(sizeof(ArenaChunk));
+    c->next = NULL;
+    c->cap = cap;
+    c->used = 0;
+    c->data = infernal_malloc(cap);
+    return c;
 }
 
-size_t ts_arena_mark(void) { return g_token_arena_used; }
+void ts_free_arena(void) {
+    ArenaChunk *c = g_arena_head;
+    while (c) {
+        ArenaChunk *next = c->next;
+        free(c->data);
+        free(c);
+        c = next;
+    }
+    g_arena_head = NULL;
+    g_arena_current = NULL;
+    g_arena_current_seq = 0;
+}
+
+size_t ts_arena_mark(void) {
+    if (!g_arena_current)
+        return 0;
+    if (g_arena_current_seq > 0xFFFFFFFFu || g_arena_current->used > 0xFFFFFFFFu)
+        return SIZE_MAX;
+    return (g_arena_current_seq << 32) | (size_t)g_arena_current->used;
+}
+
 void ts_arena_restore(size_t mark) {
-    if (mark <= g_token_arena_used)
-        g_token_arena_used = mark;
+    if (mark == SIZE_MAX)
+        return;
+    size_t seq = mark >> 32;
+    size_t offset = mark & 0xFFFFFFFFu;
+    ArenaChunk *c = g_arena_head;
+    for (size_t i = 0; i < seq && c; i++)
+        c = c->next;
+    if (!c)
+        return;
+    if (offset > c->cap)
+        offset = c->cap;
+    c->used = offset;
+    g_arena_current = c;
+    g_arena_current_seq = seq;
 }
 
 static char *arena_strndup(const char *src, size_t n) {
-    if (g_token_arena_used + n + 1 > g_token_arena_cap) {
-        size_t new_cap = g_token_arena_cap == 0 ? 65536 : g_token_arena_cap * 2;
-        while (new_cap < g_token_arena_used + n + 1) {
-            if (new_cap > SIZE_MAX / 2) {
-                new_cap = g_token_arena_used + n + 1;
-                break;
-            }
-            new_cap *= 2;
-        }
-        g_token_arena_data = infernal_realloc(g_token_arena_data, new_cap);
-        g_token_arena_cap = new_cap;
+    size_t needed = n + 1;
+    if (!g_arena_current) {
+        size_t cap = ARENA_FIRST_CHUNK_SIZE;
+        if (cap < needed)
+            cap = needed;
+        g_arena_head = arena_new_chunk(cap);
+        g_arena_current = g_arena_head;
+        g_arena_current_seq = 0;
     }
-    char *out = g_token_arena_data + g_token_arena_used;
+    while (g_arena_current->used + needed > g_arena_current->cap) {
+        if (g_arena_current->next) {
+            g_arena_current = g_arena_current->next;
+            g_arena_current->used = 0;
+            g_arena_current_seq++;
+        } else {
+            size_t cap = ARENA_GROW_CHUNK_SIZE;
+            if (cap < needed)
+                cap = needed;
+            ArenaChunk *new_chunk = arena_new_chunk(cap);
+            g_arena_current->next = new_chunk;
+            g_arena_current = new_chunk;
+            g_arena_current_seq++;
+        }
+    }
+    char *out = g_arena_current->data + g_arena_current->used;
     if (n)
         memcpy(out, src, n);
     out[n] = '\0';
-    g_token_arena_used += n + 1;
+    g_arena_current->used += needed;
     return out;
 }
 
