@@ -152,29 +152,19 @@ static Value convert_string_to_type(const char *s, int tok_type) {
 }
 
 static Scope *find_scope_owner(Scope *start, const char *name, VarEntry **out_entry) {
+    /* Usamos scope_find_current() (hash O(1) promedio) en lugar de
+     * recorrer la lista enlazada de variables. */
     for (Scope *s = start; s; s = s->parent) {
-        for (VarEntry *e = s->vars; e; e = e->next) {
-            if (strcmp(e->name, name) == 0) {
-                if (out_entry) *out_entry = e;
-                return s;
-            }
-        }
+        VarEntry *e = scope_find_current(s, name);
+        if (e) { if (out_entry) *out_entry = e; return s; }
     }
     if (global_scope && global_scope != super_global_scope) {
-        for (VarEntry *e = global_scope->vars; e; e = e->next) {
-            if (strcmp(e->name, name) == 0) {
-                if (out_entry) *out_entry = e;
-                return global_scope;
-            }
-        }
+        VarEntry *e = scope_find_current(global_scope, name);
+        if (e) { if (out_entry) *out_entry = e; return global_scope; }
     }
     if (super_global_scope) {
-        for (VarEntry *e = super_global_scope->vars; e; e = e->next) {
-            if (strcmp(e->name, name) == 0) {
-                if (out_entry) *out_entry = e;
-                return super_global_scope;
-            }
-        }
+        VarEntry *e = scope_find_current(super_global_scope, name);
+        if (e) { if (out_entry) *out_entry = e; return super_global_scope; }
     }
     if (out_entry) *out_entry = NULL;
     return NULL;
