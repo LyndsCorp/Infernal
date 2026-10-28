@@ -1232,11 +1232,16 @@ void exec_stmt(ASTNode *stmt) {
                        is_global_for ? "variable en super_global_scope"
                                      : "variable en for_scope");
 
+            /* Hoist: un solo body_scope y un solo setjmp para todo el bucle. */
+            Scope * volatile body_scope = scope_new(for_scope, NULL);
             jmp_buf saved_env;
             memcpy(&saved_env, &exception_env, sizeof(jmp_buf));
             int saved_raised = exception_raised;
+            Value volatile cond_v = val_make_null();
             if (setjmp(exception_env) != 0) {
                 current_scope = old_scope;
+                value_free((Value *)&cond_v);
+                scope_free((Scope *)body_scope);
                 scope_free(for_scope);
                 memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
                 exception_raised = saved_raised;
@@ -1281,36 +1286,18 @@ void exec_stmt(ASTNode *stmt) {
 
                 current_scope = for_scope;
 
-                Value cond = eval_expr(stmt->data.for_stmt.cond);
+                cond_v = eval_expr(stmt->data.for_stmt.cond);
 
-                if (!val_is_truthy(cond)) {
-                    value_free(&cond);
+                if (!val_is_truthy((Value)cond_v)) {
+                    value_free((Value *)&cond_v);
                     break;
                 }
 
-                Scope *body_scope = scope_new(for_scope, NULL);
-                Scope *old_body = current_scope;
-                jmp_buf body_saved_env;
-                memcpy(&body_saved_env, &exception_env, sizeof(jmp_buf));
-                int body_saved_raised = exception_raised;
-
-                if (setjmp(exception_env) != 0) {
-                    current_scope = old_body;
-                    scope_free(body_scope);
-                    value_free(&cond);
-                    memcpy(&exception_env, &body_saved_env, sizeof(jmp_buf));
-                    exception_raised = body_saved_raised;
-                    longjmp(exception_env, 1);
-                }
-
-                current_scope = body_scope;
+                scope_reset((Scope *)body_scope);
+                current_scope = (Scope *)body_scope;
                 exec_block_impl(&stmt->data.for_stmt.body);
-
-                current_scope = old_body;
-                scope_free(body_scope);
-                memcpy(&exception_env, &body_saved_env, sizeof(jmp_buf));
-                exception_raised = body_saved_raised;
-                value_free(&cond);
+                current_scope = for_scope;
+                value_free((Value *)&cond_v);
 
                 if (control_flow == CF_BREAK) {
                     control_flow = CF_NONE;
@@ -1325,6 +1312,7 @@ void exec_stmt(ASTNode *stmt) {
                     control_flow == CF_RETURN) {
 
                     current_scope = old_scope;
+                    scope_free((Scope *)body_scope);
                     scope_free(for_scope);
                     memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
                     exception_raised = saved_raised;
@@ -1339,6 +1327,7 @@ void exec_stmt(ASTNode *stmt) {
             }
 
             current_scope = old_scope;
+            scope_free((Scope *)body_scope);
             scope_free(for_scope);
             memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
             exception_raised = saved_raised;
