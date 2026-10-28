@@ -47,7 +47,7 @@ static char *parse_flag_name(int line) {
         error(line, "Se esperaba un flag pero no hay más tokens");
     }
 
-    char *name = strdup("");
+    char *name = infernal_strdup("");
     size_t len = 0;
     size_t cap = 1;
 
@@ -64,12 +64,14 @@ static char *parse_flag_name(int line) {
             pieces[piece_count++] = ts_advance().lexeme;
         }
         if (ts.pos >= ts.count || ts_peek().type != TOK_IDENT) {
+            free(name);
             error(line, "Se esperaba nombre del flag después de '-'/'--'");
         }
         pieces[piece_count++] = ts_advance().lexeme;
     } else if (t.type == TOK_IDENT && is_valid_flag_name(t.lexeme)) {
         pieces[piece_count++] = ts_advance().lexeme;
     } else {
+        free(name);
         error(line, "Se esperaba un flag (--nombre, -n o nombre)");
     }
 
