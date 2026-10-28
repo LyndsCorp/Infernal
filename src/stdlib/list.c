@@ -3,17 +3,16 @@
  * Copyright (C) 2026, David Baña Szymaniak
  * Este software se distribuye bajo la licencia Apache 2.0
  * Código fuente de Infernal: stdlib/list.c
-*/
+ */
 
-#include <stdio.h>
-#include <string.h>
 #include "list.h"
 #include "core/value.h"
-#include "runtime/scope.h"
-#include "runtime/globals.h"
 #include "runtime/error.h"
+#include "runtime/globals.h"
+#include "runtime/scope.h"
 #include "stdlib/output.h"
-
+#include <stdio.h>
+#include <string.h>
 
 /* ================================================
  *  Funciones de la biblioteca
@@ -32,11 +31,8 @@ static Value builtin_listLatest(int argc, Value *args) {
     return copy_value_secure(last);
 }
 
-
 /* ================================================
  *  Registro de funciones
  * ================================================ */
 
-void register_list_builtins(void) {
-    func_register_builtin("listLatest", builtin_listLatest);
-}
+void register_list_builtins(void) { func_register_builtin("listLatest", builtin_listLatest); }

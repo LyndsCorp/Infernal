@@ -3,29 +3,29 @@
  * Copyright (C) 2026, David Baña Szymaniak
  * Este software se distribuye bajo la licencia Apache 2.0
  * Código fuente de Infernal: runtime/evaluator/eval_call.c
-*/
+ */
 
 #include "eval_call.h"
+#include "core/value.h"
 #include "evaluator.h"
 #include "helpers.h"
-#include "core/value.h"
-#include "runtime/scope.h"
-#include "runtime/globals.h"
 #include "runtime/error.h"
+#include "runtime/globals.h"
+#include "runtime/scope.h"
+#include <setjmp.h>
 #include <stdlib.h>
 #include <string.h>
-#include <setjmp.h>
 
 Value eval_call(ASTNode *expr) {
-    FuncObject * volatile fobj = expr->data.call.resolved;
+    FuncObject *volatile fobj = expr->data.call.resolved;
     if (!fobj) {
-        fobj = func_lookup_call(expr->data.call.name,
-                                expr->data.call.module_prefix);
-        if (fobj) expr->data.call.resolved = fobj;
+        fobj = func_lookup_call(expr->data.call.name, expr->data.call.module_prefix);
+        if (fobj)
+            expr->data.call.resolved = fobj;
     }
     if (!fobj) {
         const char *name = expr->data.call.name;
-        const char *dot  = strrchr(name, '.');
+        const char *dot = strrchr(name, '.');
 
         /* Un nombre con forma 'modulo.funcion' NO es una función suelta
          * que el usuario olvidó definir: es una llamada a una función de
@@ -36,11 +36,12 @@ Value eval_call(ASTNode *expr) {
         if (dot && dot != name && dot[1] != '\0') {
             char module[256];
             size_t module_len = (size_t)(dot - name);
-            if (module_len >= sizeof(module)) module_len = sizeof(module) - 1;
+            if (module_len >= sizeof(module))
+                module_len = sizeof(module) - 1;
             memcpy(module, name, module_len);
             module[module_len] = '\0';
             const char *func = dot + 1;
-            size_t prefix_len = module_len + 1;   /* incluye el '.' */
+            size_t prefix_len = module_len + 1; /* incluye el '.' */
 
             bool module_loaded = false;
             for (FuncEntry *e = func_table; e; e = e->next) {
@@ -61,16 +62,21 @@ Value eval_call(ASTNode *expr) {
             if (module_loaded) {
                 error(expr->line,
                       "El módulo '%s' no expone ninguna función llamada '%s'.\n"
-                      "    '%s' se interpreta como una función del módulo '%s' porque contiene un punto.\n"
-                      "    Revisa el nombre: puede estar mal escrito, o el módulo no exporta esa función.\n"
-                      "    Si querías llamar a una función propia del script, no uses puntos en el nombre.",
+                      "    '%s' se interpreta como una función del módulo '%s' porque contiene un "
+                      "punto.\n"
+                      "    Revisa el nombre: puede estar mal escrito, o el módulo no exporta esa "
+                      "función.\n"
+                      "    Si querías llamar a una función propia del script, no uses puntos en el "
+                      "nombre.",
                       module, func, name, module);
             } else {
                 error(expr->line,
                       "El módulo '%s' no está importado, así que '%s' no existe.\n"
-                      "    '%s' se interpreta como una función del módulo '%s' porque contiene un punto.\n"
+                      "    '%s' se interpreta como una función del módulo '%s' porque contiene un "
+                      "punto.\n"
                       "    Añade 'import %s' (o 'import %s as <alias>') antes de esta llamada.\n"
-                      "    Si querías llamar a una función propia del script, no uses puntos en el nombre.",
+                      "    Si querías llamar a una función propia del script, no uses puntos en el "
+                      "nombre.",
                       module, name, name, module, module, module);
             }
         }
@@ -81,13 +87,12 @@ Value eval_call(ASTNode *expr) {
     /* `size($lista)` solo necesita el contador. Evaluar el argumento por la
      * ruta genérica copiaba recursivamente toda la lista antes de devolverlo.
      * Para una variable directa sin referencia, leemos el tamaño prestado. */
-    if (fobj->kind == FUNC_BUILTIN &&
-        strcmp(expr->data.call.name, "size") == 0 &&
-        expr->data.call.argc == 1 &&
-        expr->data.call.args[0] &&
+    if (fobj->kind == FUNC_BUILTIN && strcmp(expr->data.call.name, "size") == 0 &&
+        expr->data.call.argc == 1 && expr->data.call.args[0] &&
         expr->data.call.args[0]->kind == NODE_VAR) {
         const char *name = expr->data.call.args[0]->data.var.name;
-        if (name && name[0] == '$') name++;
+        if (name && name[0] == '$')
+            name++;
         if (name && name[0] != '?') {
             VarEntry *entry = scope_find(current_scope, name);
             if (entry && entry->value.type == VAL_LIST)
@@ -100,17 +105,15 @@ Value eval_call(ASTNode *expr) {
     /* `listLatest($lista)` solo necesita el último elemento. Copiar
      * la lista entera por la ruta genérica es O(n) cuando bastaría
      * con O(1). */
-    if (fobj->kind == FUNC_BUILTIN &&
-        strcmp(expr->data.call.name, "listLatest") == 0 &&
-        expr->data.call.argc == 1 &&
-        expr->data.call.args[0] &&
+    if (fobj->kind == FUNC_BUILTIN && strcmp(expr->data.call.name, "listLatest") == 0 &&
+        expr->data.call.argc == 1 && expr->data.call.args[0] &&
         expr->data.call.args[0]->kind == NODE_VAR) {
         const char *name = expr->data.call.args[0]->data.var.name;
-        if (name && name[0] == '$') name++;
+        if (name && name[0] == '$')
+            name++;
         if (name && name[0] != '?') {
             VarEntry *entry = scope_find(current_scope, name);
-            if (entry && entry->value.type == VAL_LIST &&
-                entry->value.data.list.count > 0) {
+            if (entry && entry->value.type == VAL_LIST && entry->value.data.list.count > 0) {
                 return copy_value_secure(
                     entry->value.data.list.items[entry->value.data.list.count - 1]);
             }
@@ -120,15 +123,18 @@ Value eval_call(ASTNode *expr) {
     if (fobj->kind == FUNC_BUILTIN) {
         volatile int argc = expr->data.call.argc;
         volatile int saved_line = current_eval_line;
-        Value * volatile args = argc > 0 ? malloc(sizeof(Value) * (size_t)argc) : NULL;
-        if (argc > 0 && !args) error(expr->line, "Memoria insuficiente para argumentos");
-        for (int i = 0; i < argc; i++) args[i] = val_make_null();
+        Value *volatile args = argc > 0 ? malloc(sizeof(Value) * (size_t)argc) : NULL;
+        if (argc > 0 && !args)
+            error(expr->line, "Memoria insuficiente para argumentos");
+        for (int i = 0; i < argc; i++)
+            args[i] = val_make_null();
 
         jmp_buf saved_env;
         memcpy(&saved_env, &exception_env, sizeof(jmp_buf));
         int saved_raised = exception_raised;
         if (setjmp(exception_env) != 0) {
-            for (int i = 0; i < argc; i++) value_free(&args[i]);
+            for (int i = 0; i < argc; i++)
+                value_free(&args[i]);
             free(args);
             current_eval_line = saved_line;
             memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
@@ -148,15 +154,14 @@ Value eval_call(ASTNode *expr) {
          *   varexists($NOMBRE)   -> comprueba si existe la variable cuyo
          *                           nombre está guardado en $NOMBRE */
         const char *fname = expr->data.call.name;
-        bool arg_is_name = (strcmp(fname, "varexists") == 0 ||
-                            strcmp(fname, "delvar") == 0);
+        bool arg_is_name = (strcmp(fname, "varexists") == 0 || strcmp(fname, "delvar") == 0);
 
         for (int i = 0; i < argc; i++) {
             ASTNode *arg_node = expr->data.call.args[i];
-            if (arg_is_name && arg_node->kind == NODE_VAR &&
-                !arg_node->data.var.clone) {
+            if (arg_is_name && arg_node->kind == NODE_VAR && !arg_node->data.var.clone) {
                 const char *vname = arg_node->data.var.name;
-                if (vname[0] == '$') vname++;
+                if (vname[0] == '$')
+                    vname++;
                 args[i] = val_string(vname);
                 continue;
             }
@@ -187,9 +192,10 @@ Value eval_call(ASTNode *expr) {
 
         Value ret = fobj->builtin(expr->data.call.argc, args);
 
-        current_eval_line = saved_line;   /* restaurar */
+        current_eval_line = saved_line; /* restaurar */
 
-        for (int i = 0; i < argc; i++) value_free(&args[i]);
+        for (int i = 0; i < argc; i++)
+            value_free(&args[i]);
         free(args);
         memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
         exception_raised = saved_raised;
@@ -245,7 +251,8 @@ Value eval_call(ASTNode *expr) {
                           "'[]' es ambiguo: el parámetro %d de '%s' no tiene un tipo declarado,\n"
                           "    así que no se puede saber si debería ser list o map.\n"
                           "    Declara el parámetro como 'list' o 'map' en la definición de '%s',\n"
-                          "    o pasa explícitamente una colección (variable por ejemplo) vacía del tipo deseado.",
+                          "    o pasa explícitamente una colección (variable por ejemplo) vacía "
+                          "del tipo deseado.",
                           i + 1, expr->data.call.name, expr->data.call.name);
                 }
             } else {

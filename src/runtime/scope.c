@@ -3,25 +3,23 @@
  * Copyright (C) 2026, David Baña Szymaniak
  * Este software se distribuye bajo la licencia Apache 2.0
  * Código fuente de Infernal: runtime/scope.c
-*/
+ */
 
-#include <stdlib.h>
-#include <string.h>
 #include "scope.h"
-#include "core/value.h"
-#include "runtime/error.h"
 #include "core/memory.h"
-#include "runtime/evaluator/evaluator.h"
-#include "runtime/evaluator/helpers.h"
+#include "core/value.h"
 #include "developer/debug.h"
 #include "runtime/constants.h"
-
+#include "runtime/error.h"
+#include "runtime/evaluator/evaluator.h"
+#include "runtime/evaluator/helpers.h"
+#include <stdlib.h>
+#include <string.h>
 
 /* --- Declaraciones de ámbitos globales (definidos en globals.c) --- */
 extern Scope *global_scope;
 extern Scope *super_global_scope;
 extern int current_eval_line;
-
 
 typedef struct ScopeRegistryEntry {
     Scope *scope;
@@ -33,12 +31,11 @@ static uint64_t next_scope_identity = 1;
 static uint64_t global_variable_generation = 1;
 
 static void bump_global_variable_generation(void) {
-    if (++global_variable_generation == 0) global_variable_generation = 1;
+    if (++global_variable_generation == 0)
+        global_variable_generation = 1;
 }
 
-uint64_t scope_cache_generation(void) {
-    return global_variable_generation;
-}
+uint64_t scope_cache_generation(void) { return global_variable_generation; }
 
 static unsigned long scope_name_hash(const char *name) {
     unsigned long hash = 1469598103934665603UL;
@@ -106,14 +103,14 @@ Scope *scope_new(Scope *parent, const char *function_name) {
     s->var_bucket_count = 0;
     s->var_count = 0;
     s->identity = next_scope_identity++;
-    if (next_scope_identity == 0) next_scope_identity = 1;
+    if (next_scope_identity == 0)
+        next_scope_identity = 1;
     s->variable_version = 1;
     s->portals = NULL;
     s->parent = parent;
     /* Solo duplicamos si hay nombre: si es NULL, no reservamos
      * el byte de "" (que antes se colaba por cada scope anónimo). */
-    s->function_name = (function_name && function_name[0])
-                       ? infernal_strdup(function_name) : NULL;
+    s->function_name = (function_name && function_name[0]) ? infernal_strdup(function_name) : NULL;
     s->func_def = NULL;
     scope_registry_add(s);
     return s;
@@ -128,33 +125,38 @@ Scope *scope_new_func(Scope *parent, ASTNode *func_def) {
 /* ================================================================
  * BÚSQUEDA DE VARIABLE:
  * - Recorre la cadena de ámbitos (desde el actual hacia arriba).
- * - Si no encuentra REAL en la cadena, busca en global_scope (script) y luego en super_global_scope.
+ * - Si no encuentra REAL en la cadena, busca en global_scope (script) y luego en
+ * super_global_scope.
  * - Devuelve la primera variable declarada más cercana o NULL si no existe.
  * ================================================================ */
 VarEntry *scope_find(Scope *scope, const char *name) {
-    if (!scope) return NULL;
+    if (!scope)
+        return NULL;
     /* Calculamos el hash UNA VEZ y lo reutilizamos en cada nivel.
      * scope_find_current() lo recalcularía en cada scope. Para
      * cadenas de 3-5 scopes son 2-4 hashes menos por lookup. */
     unsigned long hash = scope_name_hash(name);
     for (Scope *s = scope; s; s = s->parent) {
-        if (!s->var_bucket_count) continue;
+        if (!s->var_bucket_count)
+            continue;
         size_t bucket = hash % s->var_bucket_count;
         for (VarEntry *e = s->var_buckets[bucket]; e; e = e->hash_next) {
-            if (strcmp(e->name, name) == 0) return e;
+            if (strcmp(e->name, name) == 0)
+                return e;
         }
     }
-    if (global_scope && global_scope != super_global_scope &&
-        global_scope->var_bucket_count) {
+    if (global_scope && global_scope != super_global_scope && global_scope->var_bucket_count) {
         size_t bucket = hash % global_scope->var_bucket_count;
         for (VarEntry *e = global_scope->var_buckets[bucket]; e; e = e->hash_next) {
-            if (strcmp(e->name, name) == 0) return e;
+            if (strcmp(e->name, name) == 0)
+                return e;
         }
     }
     if (super_global_scope && super_global_scope->var_bucket_count) {
         size_t bucket = hash % super_global_scope->var_bucket_count;
         for (VarEntry *e = super_global_scope->var_buckets[bucket]; e; e = e->hash_next) {
-            if (strcmp(e->name, name) == 0) return e;
+            if (strcmp(e->name, name) == 0)
+                return e;
         }
     }
     return NULL;
@@ -162,10 +164,12 @@ VarEntry *scope_find(Scope *scope, const char *name) {
 
 /* --- Búsqueda solo en el ámbito actual (no sube por la cadena) --- */
 VarEntry *scope_find_current(Scope *scope, const char *name) {
-    if (!scope || !scope->var_bucket_count) return NULL;
+    if (!scope || !scope->var_bucket_count)
+        return NULL;
     size_t bucket = scope_name_hash(name) % scope->var_bucket_count;
     for (VarEntry *e = scope->var_buckets[bucket]; e; e = e->hash_next) {
-        if (strcmp(e->name, name) == 0) return e;
+        if (strcmp(e->name, name) == 0)
+            return e;
     }
     return NULL;
 }
@@ -174,7 +178,8 @@ VarEntry *scope_find_current(Scope *scope, const char *name) {
 VarEntry *scope_find_script(Scope *scope, const char *name) {
     while (scope && scope != super_global_scope) {
         VarEntry *e = scope_find_current(scope, name);
-        if (e) return e;
+        if (e)
+            return e;
         scope = scope->parent;
     }
     return NULL;
@@ -184,7 +189,9 @@ VarEntry *scope_find_script(Scope *scope, const char *name) {
 void scope_define(Scope *scope, const char *name, int vtype, Value val) {
     if (constants_is_reserved(name)) {
         value_free(&val);
-        error(current_eval_line, "El nombre '%s' está reservado por una constante y no se puede usar como variable", name);
+        error(current_eval_line,
+              "El nombre '%s' está reservado por una constante y no se puede usar como variable",
+              name);
     }
     /* Si el valor es NULL pero el llamador declaró un tipo explícito,
      * sustituimos por el valor por defecto de ese tipo. Antes se
@@ -192,21 +199,36 @@ void scope_define(Scope *scope, const char *name, int vtype, Value val) {
      * chequeo de tipos en asignaciones posteriores. */
     if (val.type == VAL_NULL && vtype != 0) {
         switch (vtype) {
-            case TOK_INT:    val = val_int(0); break;
-            case TOK_UINT:   val = val_uint(0); break;
-            case TOK_FLOAT:  val = val_float(0.0); break;
-            case TOK_BOOL:   val = val_bool(false); break;
-            case TOK_STRING: val = val_string(""); break;
-            case TOK_LIST:   val = val_list_empty(); break;
-            case TOK_MAP:    val = val_map_empty(); break;
-            default: break;
+        case TOK_INT:
+            val = val_int(0);
+            break;
+        case TOK_UINT:
+            val = val_uint(0);
+            break;
+        case TOK_FLOAT:
+            val = val_float(0.0);
+            break;
+        case TOK_BOOL:
+            val = val_bool(false);
+            break;
+        case TOK_STRING:
+            val = val_string("");
+            break;
+        case TOK_LIST:
+            val = val_list_empty();
+            break;
+        case TOK_MAP:
+            val = val_map_empty();
+            break;
+        default:
+            break;
         }
     }
     if (vtype == TOK_UINT && !try_convert_value(&val, TOK_UINT)) {
         value_free(&val);
         error(current_eval_line, "Una variable uint requiere un entero válido");
     }
-    DEBUG_INFO("scope_define: definiendo '%s' en scope %p (vtype=%d)", name, (void*)scope, vtype);
+    DEBUG_INFO("scope_define: definiendo '%s' en scope %p (vtype=%d)", name, (void *)scope, vtype);
     if (vtype == TOK_STRING && val.type == VAL_LIST) {
         if (!try_convert_value(&val, TOK_STRING)) {
             // Si falla la conversión, se mantiene el valor original
@@ -221,7 +243,7 @@ void scope_define(Scope *scope, const char *name, int vtype, Value val) {
         value_free(&existing->value);
         existing->value = val;
         existing->vtype = vtype ? vtype : valtype_to_tokentype(val.type);
-        DEBUG_INFO("scope_define: '%s' actualizada en scope %p", name, (void*)scope);
+        DEBUG_INFO("scope_define: '%s' actualizada en scope %p", name, (void *)scope);
         return;
     }
 
@@ -232,14 +254,16 @@ void scope_define(Scope *scope, const char *name, int vtype, Value val) {
     e->next = scope->vars;
     scope->vars = e;
     scope_index_insert(scope, e);
-    DEBUG_INFO("scope_define: '%s' definida en scope %p", name, (void*)scope);
+    DEBUG_INFO("scope_define: '%s' definida en scope %p", name, (void *)scope);
 }
 
 void scope_remove_var_entry(Scope *scope, VarEntry *entry) {
-    if (!scope || !entry || !scope->var_bucket_count) return;
+    if (!scope || !entry || !scope->var_bucket_count)
+        return;
     size_t bucket = scope_name_hash(entry->name) % scope->var_bucket_count;
     VarEntry **hash_link = &scope->var_buckets[bucket];
-    while (*hash_link && *hash_link != entry) hash_link = &(*hash_link)->hash_next;
+    while (*hash_link && *hash_link != entry)
+        hash_link = &(*hash_link)->hash_next;
     if (*hash_link) {
         *hash_link = entry->hash_next;
         scope->var_count--;
@@ -290,7 +314,9 @@ void scope_assign(Scope *scope, const char *name, Value val, int line) {
         }
         if (expected != 0 && new_type != expected) {
             value_free(&val);
-            error(line, "Tipado fijo: la variable '%s' es de tipo %s, no se puede asignar un valor de tipo %s",
+            error(line,
+                  "Tipado fijo: la variable '%s' es de tipo %s, no se puede asignar un valor de "
+                  "tipo %s",
                   name, type_name(expected), type_name(new_type));
         }
         Value copied = copy_value_secure(val);
@@ -306,7 +332,8 @@ void scope_assign(Scope *scope, const char *name, Value val, int line) {
  * Hace exactamente lo mismo que la rama `if (e)` de scope_assign(),
  * pero sin repetir el scope_find(). */
 void scope_assign_direct(VarEntry *e, Value val, int line) {
-    if (!e) return;
+    if (!e)
+        return;
     if (constants_is_reserved(e->name)) {
         value_free(&val);
         error(line, "La constante '%s' no se puede sobreescribir", e->name);
@@ -339,8 +366,10 @@ void scope_assign_direct(VarEntry *e, Value val, int line) {
     }
     if (expected != 0 && new_type != expected) {
         value_free(&val);
-        error(line, "Tipado fijo: la variable '%s' es de tipo %s, no se puede asignar un valor de tipo %s",
-              e->name, type_name(expected), type_name(new_type));
+        error(
+            line,
+            "Tipado fijo: la variable '%s' es de tipo %s, no se puede asignar un valor de tipo %s",
+            e->name, type_name(expected), type_name(new_type));
     }
     Value copied = copy_value_secure(val);
     value_free(&e->value);
@@ -351,7 +380,8 @@ void scope_assign_direct(VarEntry *e, Value val, int line) {
 PortalEntry *portal_find(Scope *scope, const char *name) {
     while (scope) {
         for (PortalEntry *p = scope->portals; p; p = p->next) {
-            if (strcmp(p->name, name) == 0) return p;
+            if (strcmp(p->name, name) == 0)
+                return p;
         }
         scope = scope->parent;
     }
@@ -361,7 +391,8 @@ PortalEntry *portal_find(Scope *scope, const char *name) {
 /* --- Búsqueda de portal solo en el ámbito actual --- */
 PortalEntry *portal_find_in_scope(Scope *scope, const char *name) {
     for (PortalEntry *p = scope->portals; p; p = p->next) {
-        if (strcmp(p->name, name) == 0) return p;
+        if (strcmp(p->name, name) == 0)
+            return p;
     }
     return NULL;
 }
@@ -383,8 +414,10 @@ void portal_define(Scope *scope, const char *name, int line) {
  * hacer scope_new() + scope_free() por iteración añade dos malloc
  * por vuelta. */
 void scope_reset(Scope *s) {
-    if (!s) return;
-    if (s->var_count) bump_global_variable_generation();
+    if (!s)
+        return;
+    if (s->var_count)
+        bump_global_variable_generation();
     VarEntry *e = s->vars;
     while (e) {
         VarEntry *next = e->next;
@@ -395,8 +428,7 @@ void scope_reset(Scope *s) {
     }
     s->vars = NULL;
     if (s->var_buckets) {
-        memset(s->var_buckets, 0,
-               s->var_bucket_count * sizeof(*s->var_buckets));
+        memset(s->var_buckets, 0, s->var_bucket_count * sizeof(*s->var_buckets));
     }
     s->var_count = 0;
     s->variable_version++;
@@ -412,8 +444,10 @@ void scope_reset(Scope *s) {
 
 /* --- Liberar un ámbito (se desactiva la liberación de variables para evitar double-free) --- */
 void scope_free(Scope *s) {
-    if (!s) return;
-    if (s->var_count) bump_global_variable_generation();
+    if (!s)
+        return;
+    if (s->var_count)
+        bump_global_variable_generation();
     scope_registry_remove(s);
     VarEntry *e = s->vars;
     while (e) {

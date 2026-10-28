@@ -3,36 +3,44 @@
  * Copyright (C) 2026, David Baña Szymaniak
  * Este software se distribuye bajo la licencia Apache 2.0
  * Código fuente de Infernal: runtime/evaluator/helpers.c
-*/
+ */
 
 #include "helpers.h"
-#include "evaluator.h"
 #include "core/value.h"
-#include "runtime/scope.h"
-#include "runtime/globals.h"
-#include "runtime/error.h"
+#include "evaluator.h"
 #include "runtime/constants.h"
-#include <stdio.h>
-#include <string.h>
-#include <stdlib.h>
+#include "runtime/error.h"
+#include "runtime/globals.h"
+#include "runtime/scope.h"
 #include <ctype.h>
-#include <strings.h>
 #include <errno.h>
 #include <limits.h>
 #include <math.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <strings.h>
 
 /* val_is_truthy() está en helpers.h como static inline. */
 
 const char *type_name(int tok_type) {
     switch (tok_type) {
-        case TOK_INT:    return "int";
-        case TOK_UINT:   return "uint";
-        case TOK_FLOAT:  return "float";
-        case TOK_BOOL:   return "bool";
-        case TOK_STRING: return "string";
-        case TOK_LIST:   return "list";
-        case TOK_MAP:    return "map";
-        default:         return "desconocido";
+    case TOK_INT:
+        return "int";
+    case TOK_UINT:
+        return "uint";
+    case TOK_FLOAT:
+        return "float";
+    case TOK_BOOL:
+        return "bool";
+    case TOK_STRING:
+        return "string";
+    case TOK_LIST:
+        return "list";
+    case TOK_MAP:
+        return "map";
+    default:
+        return "desconocido";
     }
 }
 
@@ -40,91 +48,116 @@ const char *type_name(int tok_type) {
  * Se usa en mensajes de error para no mostrar números crudos al usuario. */
 const char *value_type_name(int val_type) {
     switch (val_type) {
-        case VAL_NULL:      return "null";
-        case VAL_INT:       return "int";
-        case VAL_UINT:      return "uint";
-        case VAL_FLOAT:     return "float";
-        case VAL_BOOL:      return "bool";
-        case VAL_STRING:    return "string";
-        case VAL_LIST:      return "list";
-        case VAL_MAP:       return "map";
-        case VAL_REFERENCE: return "reference";
-        case VAL_PTR:       return "ptr";
-        case VAL_VOID:      return "void";
-        default:            return "desconocido";
+    case VAL_NULL:
+        return "null";
+    case VAL_INT:
+        return "int";
+    case VAL_UINT:
+        return "uint";
+    case VAL_FLOAT:
+        return "float";
+    case VAL_BOOL:
+        return "bool";
+    case VAL_STRING:
+        return "string";
+    case VAL_LIST:
+        return "list";
+    case VAL_MAP:
+        return "map";
+    case VAL_REFERENCE:
+        return "reference";
+    case VAL_PTR:
+        return "ptr";
+    case VAL_VOID:
+        return "void";
+    default:
+        return "desconocido";
     }
 }
 
 int get_node_line(ASTNode *node) {
-    if (!node) return 0;
-    if (node->line != 0) return node->line;
+    if (!node)
+        return 0;
+    if (node->line != 0)
+        return node->line;
 
     switch (node->kind) {
-        case NODE_INDEX:
-            if (node->data.idx.list) {
-                int l = get_node_line(node->data.idx.list);
-                if (l) return l;
-            }
-            if (node->data.idx.index) {
-                int l = get_node_line(node->data.idx.index);
-                if (l) return l;
-            }
-            break;
-        case NODE_SLICE:
-            if (node->data.slice.list) {
-                int l = get_node_line(node->data.slice.list);
-                if (l) return l;
-            }
-            break;
-        case NODE_BINOP:
-            if (node->data.binop.left) {
-                int l = get_node_line(node->data.binop.left);
-                if (l) return l;
-            }
-            if (node->data.binop.right) {
-                int l = get_node_line(node->data.binop.right);
-                if (l) return l;
-            }
-            break;
-        case NODE_CALL:
-            for (int i = 0; i < node->data.call.argc; i++) {
-                int l = get_node_line(node->data.call.args[i]);
-                if (l) return l;
-            }
-            break;
-        case NODE_LIST:
-            for (int i = 0; i < node->data.list_lit.count; i++) {
-                int l = get_node_line(node->data.list_lit.items[i]);
-                if (l) return l;
-            }
-            break;
-        case NODE_MAP:
-            for (int i = 0; i < node->data.map.pair_count; i++) {
-                int l = get_node_line(node->data.map.pairs[i].value);
-                if (l) return l;
-            }
-            break;
-        case NODE_UNARY:
-            if (node->data.unary.operand) {
-                int l = get_node_line(node->data.unary.operand);
-                if (l) return l;
-            }
-            break;
-        case NODE_POST_INC:
-        case NODE_POST_DEC:
-            if (node->data.post_op.var) {
-                int l = get_node_line(node->data.post_op.var);
-                if (l) return l;
-            }
-            break;
-        default:
-            break;
+    case NODE_INDEX:
+        if (node->data.idx.list) {
+            int l = get_node_line(node->data.idx.list);
+            if (l)
+                return l;
+        }
+        if (node->data.idx.index) {
+            int l = get_node_line(node->data.idx.index);
+            if (l)
+                return l;
+        }
+        break;
+    case NODE_SLICE:
+        if (node->data.slice.list) {
+            int l = get_node_line(node->data.slice.list);
+            if (l)
+                return l;
+        }
+        break;
+    case NODE_BINOP:
+        if (node->data.binop.left) {
+            int l = get_node_line(node->data.binop.left);
+            if (l)
+                return l;
+        }
+        if (node->data.binop.right) {
+            int l = get_node_line(node->data.binop.right);
+            if (l)
+                return l;
+        }
+        break;
+    case NODE_CALL:
+        for (int i = 0; i < node->data.call.argc; i++) {
+            int l = get_node_line(node->data.call.args[i]);
+            if (l)
+                return l;
+        }
+        break;
+    case NODE_LIST:
+        for (int i = 0; i < node->data.list_lit.count; i++) {
+            int l = get_node_line(node->data.list_lit.items[i]);
+            if (l)
+                return l;
+        }
+        break;
+    case NODE_MAP:
+        for (int i = 0; i < node->data.map.pair_count; i++) {
+            int l = get_node_line(node->data.map.pairs[i].value);
+            if (l)
+                return l;
+        }
+        break;
+    case NODE_UNARY:
+        if (node->data.unary.operand) {
+            int l = get_node_line(node->data.unary.operand);
+            if (l)
+                return l;
+        }
+        break;
+    case NODE_POST_INC:
+    case NODE_POST_DEC:
+        if (node->data.post_op.var) {
+            int l = get_node_line(node->data.post_op.var);
+            if (l)
+                return l;
+        }
+        break;
+    default:
+        break;
     }
     return 0;
 }
 
 Value resolve_reference(Value v, int line) {
-    if (v.type != VAL_REFERENCE) return v;
+    if (v.type != VAL_REFERENCE)
+        return v;
 
     const char *container = v.data.ref.container_name ? v.data.ref.container_name : "";
     VarEntry *entry = scope_find(current_scope, container);
@@ -158,7 +191,8 @@ Value resolve_reference(Value v, int line) {
         int idx = v.data.ref.index;
         if (idx < 1 || idx > entry->value.data.list.count) {
             value_free(&v);
-            error(line, "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
+            error(line, "Índice fuera de rango. No se admiten índices de números negativos ni "
+                        "números decimales.");
         }
         result = copy_value_secure(entry->value.data.list.items[idx - 1]);
     }
@@ -185,8 +219,8 @@ void assign_reference(Value *reference, Value value, int line) {
     if (!reference || reference->type != VAL_REFERENCE)
         error(line, "Referencia inválida");
 
-    const char *container = reference->data.ref.container_name ?
-                            reference->data.ref.container_name : "";
+    const char *container =
+        reference->data.ref.container_name ? reference->data.ref.container_name : "";
     VarEntry *entry = scope_find(current_scope, container);
     if (!entry)
         error(line, "La referencia apunta a una variable inexistente '%s'", container);
@@ -203,7 +237,8 @@ void assign_reference(Value *reference, Value value, int line) {
 
         int idx = reference->data.ref.index;
         if (idx < 1 || idx > entry->value.data.list.count)
-            error(line, "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
+            error(line, "Índice fuera de rango. No se admiten índices de números negativos ni "
+                        "números decimales.");
 
         Value copied = copy_value_secure(value);
         value_free(&entry->value.data.list.items[idx - 1]);
@@ -215,12 +250,15 @@ void assign_reference(Value *reference, Value value, int line) {
 }
 
 int extract_integer_index(ASTNode *node, int line) {
-    if (!node) error(line, "Nodo nulo al extraer índice");
+    if (!node)
+        error(line, "Nodo nulo al extraer índice");
 
     if (node->kind == NODE_LITERAL && node->data.lit.type == TOK_INT) {
-        if (!node->data.lit.integer_wide) return node->data.lit.ival;
+        if (!node->data.lit.integer_wide)
+            return node->data.lit.ival;
         int64_t wide;
-        if (!bigint_to_i64(*node->data.lit.payload.integer_cache, &wide) || wide < INT_MIN || wide > INT_MAX)
+        if (!bigint_to_i64(*node->data.lit.payload.integer_cache, &wide) || wide < INT_MIN ||
+            wide > INT_MAX)
             error(line, "El índice int excede el tamaño máximo de una lista");
         return (int)wide;
     }
@@ -239,7 +277,8 @@ int extract_integer_index(ASTNode *node, int line) {
         }
         if (idx_val.type != VAL_INT) {
             value_free(&idx_val);
-            error(line, "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
+            error(line, "Índice fuera de rango. No se admiten índices de números negativos ni "
+                        "números decimales.");
         }
         if (VALUE_HAS_WIDE_INTEGER(idx_val)) {
             value_free(&idx_val);
@@ -262,8 +301,8 @@ int extract_integer_index(ASTNode *node, int line) {
     }
     if (v.type == VAL_LIST && v.data.list.count == 1) {
         Value item = v.data.list.items[0];
-        if ((item.type == VAL_INT || item.type == VAL_UINT) &&
-            value_integer_to_i64(item, &wide) && wide >= INT_MIN && wide <= INT_MAX) {
+        if ((item.type == VAL_INT || item.type == VAL_UINT) && value_integer_to_i64(item, &wide) &&
+            wide >= INT_MIN && wide <= INT_MAX) {
             int result = (int)wide;
             value_free(&v);
             return result;
@@ -282,15 +321,16 @@ bool try_convert_value(Value *val, int target_tok_type) {
         bool want_unsigned = target_tok_type == TOK_UINT;
         if (want_unsigned && number.negative) {
             Value policy = val_make_null();
-            if (!constants_lookup("_UINT_NEGATIVE_ERROR", &policy) ||
-                policy.type != VAL_BOOL || policy.data.bval) {
+            if (!constants_lookup("_UINT_NEGATIVE_ERROR", &policy) || policy.type != VAL_BOOL ||
+                policy.data.bval) {
                 value_free(&policy);
                 error(current_eval_line, "Un valor uint no puede ser negativo");
             }
             value_free(&policy);
             number = bigint_zero();
         }
-        if (!bigint_min_width(number, !want_unsigned)) return false;
+        if (!bigint_min_width(number, !want_unsigned))
+            return false;
         value_free(val);
         *val = val_bigint(number, want_unsigned);
         return true;
@@ -301,24 +341,28 @@ bool try_convert_value(Value *val, int target_tok_type) {
         char float_text[512];
         const char *text = val->data.sval;
         if (val->type == VAL_FLOAT) {
-            if (!isfinite(val->data.fval)) return false;
+            if (!isfinite(val->data.fval))
+                return false;
             snprintf(float_text, sizeof(float_text), "%.0f", val->data.fval);
             text = float_text;
         }
-        if (!bigint_parse(text, &number)) return false;
+        if (!bigint_parse(text, &number))
+            return false;
         bool want_unsigned = target_tok_type == TOK_UINT;
         if (want_unsigned && number.negative) {
             Value policy = val_make_null();
-            if (!constants_lookup("_UINT_NEGATIVE_ERROR", &policy) ||
-                policy.type != VAL_BOOL || policy.data.bval) {
+            if (!constants_lookup("_UINT_NEGATIVE_ERROR", &policy) || policy.type != VAL_BOOL ||
+                policy.data.bval) {
                 value_free(&policy);
                 error(current_eval_line, "Un valor uint no puede ser negativo");
             }
             value_free(&policy);
             number = bigint_zero();
         }
-        if (!bigint_min_width(number, !want_unsigned)) return false;
-        if (val->type == VAL_STRING) free(val->data.sval);
+        if (!bigint_min_width(number, !want_unsigned))
+            return false;
+        if (val->type == VAL_STRING)
+            free(val->data.sval);
         *val = val_bigint(number, want_unsigned);
         return true;
     }
@@ -338,19 +382,23 @@ bool try_convert_value(Value *val, int target_tok_type) {
             double f = val->data.fval;
             if (!isfinite(f) || f > (double)UINT32_MAX)
                 return false;
-            if (f < 0.0) *val = val_int(-1);
-            else *val = val_uint((uint32_t)f);
+            if (f < 0.0)
+                *val = val_int(-1);
+            else
+                *val = val_uint((uint32_t)f);
         }
-        if (val->type == VAL_UINT) return true;
+        if (val->type == VAL_UINT)
+            return true;
         if (val->type == VAL_INT && val->data.ival >= 0) {
             *val = val_uint((uint32_t)val->data.ival);
             return true;
         }
-        if (val->type != VAL_INT) return false;
+        if (val->type != VAL_INT)
+            return false;
         {
             Value policy = val_make_null();
-            if (!constants_lookup("_UINT_NEGATIVE_ERROR", &policy) ||
-                policy.type != VAL_BOOL || policy.data.bval) {
+            if (!constants_lookup("_UINT_NEGATIVE_ERROR", &policy) || policy.type != VAL_BOOL ||
+                policy.data.bval) {
                 value_free(&policy);
                 error(current_eval_line, "Un valor uint no puede ser negativo");
             }
@@ -376,8 +424,11 @@ bool try_convert_value(Value *val, int target_tok_type) {
         }
         if (target_tok_type == TOK_FLOAT) {
             char *normalized = strdup(s);
-            if (!normalized) return false;
-            for (char *p = normalized; *p; p++) if (*p == ',') *p = '.';
+            if (!normalized)
+                return false;
+            for (char *p = normalized; *p; p++)
+                if (*p == ',')
+                    *p = '.';
             char *end = NULL;
             errno = 0;
             double f = strtod(normalized, &end);
@@ -429,11 +480,9 @@ bool try_convert_value(Value *val, int target_tok_type) {
                     const char *eol = strchr(p, '\n');
                     const char *line_end = eol ? eol : p + strlen(p);
                     const char *line_start = p;
-                    while (line_start < line_end &&
-                           isspace((unsigned char)*line_start))
+                    while (line_start < line_end && isspace((unsigned char)*line_start))
                         line_start++;
-                    while (line_end > line_start &&
-                           isspace((unsigned char)*(line_end - 1)))
+                    while (line_end > line_start && isspace((unsigned char)*(line_end - 1)))
                         line_end--;
                     if (line_end > line_start) {
                         size_t len = (size_t)(line_end - line_start);
@@ -447,16 +496,20 @@ bool try_convert_value(Value *val, int target_tok_type) {
                         val_list_append(&list, val_string(copy));
                         free(copy);
                     }
-                    if (!eol) break;
+                    if (!eol)
+                        break;
                     p = eol + 1;
                 }
             } else {
                 /* Modo palabras. */
                 while (*p) {
-                    while (*p && isspace((unsigned char)*p)) p++;
-                    if (!*p) break;
+                    while (*p && isspace((unsigned char)*p))
+                        p++;
+                    if (!*p)
+                        break;
                     const char *word_start = p;
-                    while (*p && !isspace((unsigned char)*p)) p++;
+                    while (*p && !isspace((unsigned char)*p))
+                        p++;
                     size_t len = (size_t)(p - word_start);
                     char *copy = malloc(len + 1);
                     if (!copy) {
@@ -485,30 +538,63 @@ bool try_convert_value(Value *val, int target_tok_type) {
             char buf[160];
             const char *str;
             switch (item.type) {
-                case VAL_INT: case VAL_UINT: { char *s = bigint_to_string(value_as_bigint(item)); snprintf(buf, sizeof(buf), "%s", s ? s : "0"); free(s); str = buf; break; }
-                case VAL_FLOAT:  snprintf(buf, sizeof(buf), "%g", item.data.fval); str = buf; break;
-                case VAL_BOOL:   str = item.data.bval ? "true" : "false"; break;
-                case VAL_STRING: str = item.data.sval ? item.data.sval : ""; break;
-                default:         str = "null";
+            case VAL_INT:
+            case VAL_UINT: {
+                char *s = bigint_to_string(value_as_bigint(item));
+                snprintf(buf, sizeof(buf), "%s", s ? s : "0");
+                free(s);
+                str = buf;
+                break;
+            }
+            case VAL_FLOAT:
+                snprintf(buf, sizeof(buf), "%g", item.data.fval);
+                str = buf;
+                break;
+            case VAL_BOOL:
+                str = item.data.bval ? "true" : "false";
+                break;
+            case VAL_STRING:
+                str = item.data.sval ? item.data.sval : "";
+                break;
+            default:
+                str = "null";
             }
             total_len += strlen(str);
-            if (i > 0) total_len++; // espacio
+            if (i > 0)
+                total_len++; // espacio
         }
         char *out = malloc(total_len + 1);
-        if (!out) return false;
+        if (!out)
+            return false;
         char *p = out;
         for (int i = 0; i < val->data.list.count; i++) {
             Value item = val->data.list.items[i];
             char buf[160];
             const char *str;
             switch (item.type) {
-                case VAL_INT: case VAL_UINT: { char *s = bigint_to_string(value_as_bigint(item)); snprintf(buf, sizeof(buf), "%s", s ? s : "0"); free(s); str = buf; break; }
-                case VAL_FLOAT:  snprintf(buf, sizeof(buf), "%g", item.data.fval); str = buf; break;
-                case VAL_BOOL:   str = item.data.bval ? "true" : "false"; break;
-                case VAL_STRING: str = item.data.sval ? item.data.sval : ""; break;
-                default:         str = "null";
+            case VAL_INT:
+            case VAL_UINT: {
+                char *s = bigint_to_string(value_as_bigint(item));
+                snprintf(buf, sizeof(buf), "%s", s ? s : "0");
+                free(s);
+                str = buf;
+                break;
             }
-            if (i > 0) *p++ = ' ';
+            case VAL_FLOAT:
+                snprintf(buf, sizeof(buf), "%g", item.data.fval);
+                str = buf;
+                break;
+            case VAL_BOOL:
+                str = item.data.bval ? "true" : "false";
+                break;
+            case VAL_STRING:
+                str = item.data.sval ? item.data.sval : "";
+                break;
+            default:
+                str = "null";
+            }
+            if (i > 0)
+                *p++ = ' ';
             size_t len = strlen(str);
             memcpy(p, str, len);
             p += len;
@@ -542,7 +628,8 @@ bool try_convert_value(Value *val, int target_tok_type) {
     if (val->type == VAL_UINT && target_tok_type == TOK_INT) {
         InfernalBigInt number = value_as_bigint(*val);
         int64_t n = 0;
-        if (!bigint_to_i64(number, &n) || n < INT_MIN || n > INT_MAX) return false;
+        if (!bigint_to_i64(number, &n) || n < INT_MIN || n > INT_MAX)
+            return false;
         value_free(val);
         val->type = VAL_INT;
         val->data.ival = (int)n;
@@ -576,54 +663,56 @@ bool try_convert_value(Value *val, int target_tok_type) {
      * tiene contenido y el tipo no coincide, sigue siendo un error de
      * tipado, porque ahí sí hay información que se perdería.
      * ---------------------------------------------------------------------- */
-    if (val->type == VAL_LIST && val->data.list.count == 0 &&
-        target_tok_type == TOK_MAP) {
-        free(val->data.list.items);       /* puede ser NULL; free(NULL) es válido */
+    if (val->type == VAL_LIST && val->data.list.count == 0 && target_tok_type == TOK_MAP) {
+        free(val->data.list.items); /* puede ser NULL; free(NULL) es válido */
         *val = val_map_empty();
-    return true;
-        }
-        if (val->type == VAL_MAP && target_tok_type == TOK_LIST) {
-            MapData *md = val->data.map;
-            if (!md || md->count == 0) {
-                if (md) {
-                    free(md->pairs);
-                    free(md);
-                }
-                *val = val_list_empty();
-                return true;
+        return true;
+    }
+    if (val->type == VAL_MAP && target_tok_type == TOK_LIST) {
+        MapData *md = val->data.map;
+        if (!md || md->count == 0) {
+            if (md) {
+                free(md->pairs);
+                free(md);
             }
+            *val = val_list_empty();
+            return true;
         }
+    }
 
-        return false;
+    return false;
 }
 
 /* Busca recursivamente la primera NODE_CALL del árbol. Se usa para
  * nombrar la función sospechosa en el mensaje de error cuando el valor
  * resultante es null. */
 static ASTNode *find_first_call(ASTNode *node) {
-    if (!node) return NULL;
+    if (!node)
+        return NULL;
     switch (node->kind) {
-        case NODE_CALL:
-            return node;
-        case NODE_BINOP: {
-            ASTNode *l = find_first_call(node->data.binop.left);
-            if (l) return l;
-            return find_first_call(node->data.binop.right);
-        }
-        case NODE_UNARY:
-            return find_first_call(node->data.unary.operand);
-        case NODE_INDEX:
-            return find_first_call(node->data.idx.list);
-        case NODE_SLICE:
-            return find_first_call(node->data.slice.list);
-        default:
-            return NULL;
+    case NODE_CALL:
+        return node;
+    case NODE_BINOP: {
+        ASTNode *l = find_first_call(node->data.binop.left);
+        if (l)
+            return l;
+        return find_first_call(node->data.binop.right);
+    }
+    case NODE_UNARY:
+        return find_first_call(node->data.unary.operand);
+    case NODE_INDEX:
+        return find_first_call(node->data.idx.list);
+    case NODE_SLICE:
+        return find_first_call(node->data.slice.list);
+    default:
+        return NULL;
     }
 }
 
 void report_null_from_missing_return(ASTNode *expr, int expected_vtype, int line) {
     ASTNode *call = find_first_call(expr);
-    if (!call) return;
+    if (!call)
+        return;
     error(line,
           "La función '%s' no devolvió ningún valor.\n"
           "    Se está usando en un contexto que espera un valor de tipo %s.\n"
@@ -632,8 +721,6 @@ void report_null_from_missing_return(ASTNode *expr, int expected_vtype, int line
           "    donde 'valor' sea de tipo %s.\n"
           "    Si la función no debe devolver nada, no la uses en una asignación\n"
           "    ni en ninguna expresión que espere un valor.",
-          call->data.call.name,
-          type_name(expected_vtype),
-          type_name(expected_vtype));
+          call->data.call.name, type_name(expected_vtype), type_name(expected_vtype));
     /* error() hace longjmp: nunca llegamos aquí. */
 }

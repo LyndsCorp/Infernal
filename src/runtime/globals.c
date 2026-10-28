@@ -3,18 +3,18 @@
  * Copyright (C) 2026, David Baña Szymaniak
  * Este software se distribuye bajo la licencia Apache 2.0
  * Código fuente de Infernal: runtime/globals.c
-*/
+ */
 
+#include "globals.h"
+#include "core/memory.h"
+#include "developer/debug.h"
+#include <ctype.h>
+#include <limits.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
-#include <ctype.h>
-#include <stdio.h>
 #include <unistd.h>
-#include <limits.h>
-#include "globals.h"
-#include "developer/debug.h"
-#include "core/memory.h"
 
 Scope *global_scope = NULL;
 Scope *super_global_scope = NULL;
@@ -47,7 +47,7 @@ char *script_dir = NULL;
 char *current_source_file = NULL;
 
 int current_eval_line = 0;
-int flags_arg_index = 2;   /* primer argumento después del script */
+int flags_arg_index = 2; /* primer argumento después del script */
 
 static unsigned long func_name_hash(const char *name) {
     unsigned long hash = 1469598103934665603UL;
@@ -73,27 +73,35 @@ char *infernal_shell = NULL;
 /* --- Función auxiliar para parsear archivo de configuración -- */
 static int parse_config_file(const char *path, char **shell_ptr) {
     FILE *fp = fopen(path, "r");
-    if (!fp) return 0;
+    if (!fp)
+        return 0;
     char line[512];
     while (fgets(line, sizeof(line), fp)) {
         char *comment = strchr(line, '#');
-        if (comment) *comment = '\0';
+        if (comment)
+            *comment = '\0';
 
         char *p = line;
-        while (*p && isspace(*p)) p++;
-        if (!*p) continue;
+        while (*p && isspace(*p))
+            p++;
+        if (!*p)
+            continue;
 
         if (strncasecmp(p, "SHELL", 5) == 0) {
             p += 5;
-            while (*p && isspace(*p)) p++;
+            while (*p && isspace(*p))
+                p++;
             if (*p == '=') {
                 p++;
-                while (*p && isspace(*p)) p++;
+                while (*p && isspace(*p))
+                    p++;
                 char *end = p + strlen(p);
-                while (end > p && isspace(*(end - 1))) end--;
+                while (end > p && isspace(*(end - 1)))
+                    end--;
                 *end = '\0';
                 if (*p) {
-                    if (*shell_ptr) free(*shell_ptr);
+                    if (*shell_ptr)
+                        free(*shell_ptr);
                     *shell_ptr = infernal_strdup(p);
                     fclose(fp);
                     return 1;
@@ -180,15 +188,15 @@ void show_shell_info(void) {
     if (!effective && access("/etc/infernalrc", R_OK) == 0) {
         parse_config_file("/etc/infernalrc", &effective);
     }
-    if (!effective) effective = strdup("/bin/sh");
+    if (!effective)
+        effective = strdup("/bin/sh");
 
     printf("Shell efectivo (prioridad): %s\n", effective);
     free(effective);
 }
 
-static void func_register_user_entry(const char *name, ASTNode *def,
-                                     bool in_super_table, const char *module,
-                                     bool exported) {
+static void func_register_user_entry(const char *name, ASTNode *def, bool in_super_table,
+                                     const char *module, bool exported) {
     FuncObject *obj = infernal_malloc(sizeof(FuncObject));
     obj->kind = FUNC_USER;
     obj->def = def;
@@ -257,7 +265,8 @@ FuncObject *func_lookup(const char *name) {
 }
 
 static FuncEntry *func_entry_lookup(const char *name) {
-    if (!name) return NULL;
+    if (!name)
+        return NULL;
     size_t bucket = func_name_hash(name) % FUNC_BUCKET_COUNT;
     for (FuncEntry *e = func_buckets[bucket]; e; e = e->hash_next)
         if (strcmp(e->name, name) == 0)
@@ -269,17 +278,19 @@ static FuncEntry *func_entry_lookup(const char *name) {
 }
 
 FuncObject *func_lookup_call(const char *name, const char *caller_module) {
-    if (!name || !name[0]) return NULL;
+    if (!name || !name[0])
+        return NULL;
 
     /* Una llamada cualificada (Modulo.funcion) solo puede salir del módulo
      * si el destino está exportado. El propio módulo sí puede usar helpers
      * privados mediante su nombre cualificado. */
     if (strchr(name, '.')) {
         FuncEntry *entry = func_entry_lookup(name);
-        if (!entry) return NULL;
-        if (!entry->module) return entry->obj;
-        if (entry->exported ||
-            (caller_module && strcmp(entry->module, caller_module) == 0))
+        if (!entry)
+            return NULL;
+        if (!entry->module)
+            return entry->obj;
+        if (entry->exported || (caller_module && strcmp(entry->module, caller_module) == 0))
             return entry->obj;
         return NULL;
     }
@@ -292,14 +303,14 @@ FuncObject *func_lookup_call(const char *name, const char *caller_module) {
         snprintf(qualified, size, "%s.%s", caller_module, name);
         FuncEntry *entry = func_entry_lookup(qualified);
         free(qualified);
-        if (entry && entry->module &&
-            strcmp(entry->module, caller_module) == 0)
+        if (entry && entry->module && strcmp(entry->module, caller_module) == 0)
             return entry->obj;
     }
 
     /* Las funciones del script principal y los builtins no pertenecen a un
      * módulo, así que continúan visibles con su nombre habitual. */
     FuncEntry *entry = func_entry_lookup(name);
-    if (entry && !entry->module) return entry->obj;
+    if (entry && !entry->module)
+        return entry->obj;
     return NULL;
 }

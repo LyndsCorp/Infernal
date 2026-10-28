@@ -5,36 +5,47 @@
  * Código fuente de Infernal: core/value.c
  */
 
-#include <stdlib.h>
-#include <string.h>
-#include <limits.h>
-#include <stdint.h>
 #include "value.h"
 #include "memory.h"
 #include "runtime/error.h"
 #include "runtime/evaluator/helpers.h"
+#include <limits.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
 
 /* WideInteger está en types.h para que value.h pueda acceder a
  * box->number desde value_integer_is_zero (inline). */
 
 Value val_make_null(void) {
-    Value v = {0}; v.type = VAL_NULL; return v;
+    Value v = {0};
+    v.type = VAL_NULL;
+    return v;
 }
 
 Value val_void(void) {
-    Value v = {0}; v.type = VAL_VOID; return v;
+    Value v = {0};
+    v.type = VAL_VOID;
+    return v;
 }
 
 Value val_int(int x) {
-    Value v = {0}; v.type = VAL_INT; v.data.ival = x; return v;
+    Value v = {0};
+    v.type = VAL_INT;
+    v.data.ival = x;
+    return v;
 }
 
 Value val_uint(uint32_t x) {
-    Value v = {0}; v.type = VAL_UINT; v.data.uval = x; return v;
+    Value v = {0};
+    v.type = VAL_UINT;
+    v.data.uval = x;
+    return v;
 }
 
 InfernalBigInt value_as_bigint(Value value) {
-    if (VALUE_HAS_WIDE_INTEGER(value)) return value.data.wide_integer.box->number;
+    if (VALUE_HAS_WIDE_INTEGER(value))
+        return value.data.wide_integer.box->number;
     return value.type == VAL_UINT ? bigint_from_u64(value.data.uval)
                                   : bigint_from_i64(value.data.ival);
 }
@@ -56,12 +67,12 @@ int value_integer_compare(Value left, Value right) {
         return bigint_compare_ref(&left.data.wide_integer.box->number,
                                   &right.data.wide_integer.box->number);
     if (left_wide) {
-        InfernalBigInt small = right.type == VAL_UINT
-            ? bigint_from_u64(right.data.uval) : bigint_from_i64(right.data.ival);
+        InfernalBigInt small = right.type == VAL_UINT ? bigint_from_u64(right.data.uval)
+                                                      : bigint_from_i64(right.data.ival);
         return bigint_compare_ref(&left.data.wide_integer.box->number, &small);
     }
-    InfernalBigInt small = left.type == VAL_UINT
-        ? bigint_from_u64(left.data.uval) : bigint_from_i64(left.data.ival);
+    InfernalBigInt small =
+        left.type == VAL_UINT ? bigint_from_u64(left.data.uval) : bigint_from_i64(left.data.ival);
     return -bigint_compare_ref(&right.data.wide_integer.box->number, &small);
 }
 
@@ -82,12 +93,14 @@ bool value_integer_to_i64(Value value, int64_t *out) {
 
 Value val_bigint(InfernalBigInt x, bool is_unsigned) {
     size_t width = bigint_min_width(x, !is_unsigned);
-    if (!width) error(0, "Entero fuera del rango máximo de 64 bytes");
+    if (!width)
+        error(0, "Entero fuera del rango máximo de 64 bytes");
     Value v = {0};
     if (width == 4) {
         uint64_t magnitude = 0;
         (void)bigint_to_u64(x, &magnitude);
-        if (is_unsigned) return val_uint((uint32_t)magnitude);
+        if (is_unsigned)
+            return val_uint((uint32_t)magnitude);
         int64_t signed_value = 0;
         (void)bigint_to_i64(x, &signed_value);
         return val_int((int)signed_value);
@@ -101,11 +114,17 @@ Value val_bigint(InfernalBigInt x, bool is_unsigned) {
 }
 
 Value val_float(double x) {
-    Value v = {0}; v.type = VAL_FLOAT; v.data.fval = x; return v;
+    Value v = {0};
+    v.type = VAL_FLOAT;
+    v.data.fval = x;
+    return v;
 }
 
 Value val_bool(bool x) {
-    Value v = {0}; v.type = VAL_BOOL; v.data.bval = x; return v;
+    Value v = {0};
+    v.type = VAL_BOOL;
+    v.data.bval = x;
+    return v;
 }
 
 Value val_string(const char *s) {
@@ -116,7 +135,8 @@ Value val_string(const char *s) {
 }
 
 Value val_list_empty(void) {
-    Value v = {0}; v.type = VAL_LIST;
+    Value v = {0};
+    v.type = VAL_LIST;
     v.data.list.items = NULL;
     v.data.list.count = v.data.list.cap = 0;
     return v;
@@ -135,8 +155,8 @@ void val_list_append(Value *list, Value item) {
         if ((size_t)new_cap > SIZE_MAX / sizeof(Value))
             error(0, "La lista es demasiado grande para reservar memoria");
         list->data.list.cap = new_cap;
-        list->data.list.items = infernal_realloc(list->data.list.items,
-                                                 (size_t)new_cap * sizeof(Value));
+        list->data.list.items =
+            infernal_realloc(list->data.list.items, (size_t)new_cap * sizeof(Value));
     }
     list->data.list.items[list->data.list.count++] = item;
 }
@@ -151,7 +171,8 @@ Value copy_value_secure(Value src) {
         return val_string(src.data.sval);
     } else if (src.type == VAL_LIST) {
         int n = src.data.list.count;
-        if (n == 0) return val_list_empty();
+        if (n == 0)
+            return val_list_empty();
         Value new_list = val_list_empty();
         new_list.data.list.items = infernal_malloc((size_t)n * sizeof(Value));
         new_list.data.list.cap = n;
@@ -175,21 +196,27 @@ Value copy_value_secure(Value src) {
     }
 }
 
-Value val_list_copy(Value *src) {
-    return copy_value_secure(*src);
-}
+Value val_list_copy(Value *src) { return copy_value_secure(*src); }
 
 /* --- CORREGIDO: incluye VAL_MAP --- */
 int valtype_to_tokentype(int vtype) {
     switch (vtype) {
-        case VAL_INT:    return TOK_INT;
-        case VAL_UINT:   return TOK_UINT;
-        case VAL_FLOAT:  return TOK_FLOAT;
-        case VAL_BOOL:   return TOK_BOOL;
-        case VAL_STRING: return TOK_STRING;
-        case VAL_LIST:   return TOK_LIST;
-        case VAL_MAP:    return TOK_MAP;
-        default:         return 0;
+    case VAL_INT:
+        return TOK_INT;
+    case VAL_UINT:
+        return TOK_UINT;
+    case VAL_FLOAT:
+        return TOK_FLOAT;
+    case VAL_BOOL:
+        return TOK_BOOL;
+    case VAL_STRING:
+        return TOK_STRING;
+    case VAL_LIST:
+        return TOK_LIST;
+    case VAL_MAP:
+        return TOK_MAP;
+    default:
+        return 0;
     }
 }
 
@@ -224,14 +251,22 @@ Value val_ptr(void *ptr) {
 
 static const char *map_type_name(int tok_type) {
     switch (tok_type) {
-        case TOK_INT: return "int";
-        case TOK_UINT: return "uint";
-        case TOK_FLOAT: return "float";
-        case TOK_BOOL: return "bool";
-        case TOK_STRING: return "string";
-        case TOK_LIST: return "list";
-        case TOK_MAP: return "map";
-        default: return "desconocido";
+    case TOK_INT:
+        return "int";
+    case TOK_UINT:
+        return "uint";
+    case TOK_FLOAT:
+        return "float";
+    case TOK_BOOL:
+        return "bool";
+    case TOK_STRING:
+        return "string";
+    case TOK_LIST:
+        return "list";
+    case TOK_MAP:
+        return "map";
+    default:
+        return "desconocido";
     }
 }
 
@@ -246,12 +281,11 @@ Value val_map_typed(int value_type) {
     return v;
 }
 
-Value val_map_empty(void) {
-    return val_map_typed(0);
-}
+Value val_map_empty(void) { return val_map_typed(0); }
 
 static void validate_map_value_type(const char *key, Value value, int expected) {
-    if (expected == 0) return;
+    if (expected == 0)
+        return;
     int actual = valtype_to_tokentype(value.type);
     if (actual != expected) {
         error(0, "Error de tipado del mapa: la clave '%s' requiere un valor %s pero se obtuvo %s",
@@ -290,8 +324,8 @@ void val_map_set_typed(Value *map, const char *key, Value value, int value_type)
             int expected = md->pairs[i].value_type;
             if (value_type != 0) {
                 if (expected != 0 && expected != value_type) {
-                    error(0, "La clave '%s' ya tiene el tipo %s y no puede declararse como %s",
-                          key, map_type_name(expected), map_type_name(value_type));
+                    error(0, "La clave '%s' ya tiene el tipo %s y no puede declararse como %s", key,
+                          map_type_name(expected), map_type_name(value_type));
                 }
                 expected = value_type;
             }
@@ -301,7 +335,8 @@ void val_map_set_typed(Value *map, const char *key, Value value, int value_type)
             value_free(&md->pairs[i].value);
             md->pairs[i].value = copy_value_secure(value);
             md->pairs[i].value_type = expected;
-            if (owns_normalized) value_free(&normalized);
+            if (owns_normalized)
+                value_free(&normalized);
             return;
         }
     }
@@ -322,7 +357,8 @@ void val_map_set_typed(Value *map, const char *key, Value value, int value_type)
     md->pairs[md->count].value = copy_value_secure(value);
     md->pairs[md->count].value_type = expected;
     md->count++;
-    if (owns_normalized) value_free(&normalized);
+    if (owns_normalized)
+        value_free(&normalized);
 }
 
 void val_map_set(Value *map, const char *key, Value value) {
@@ -343,7 +379,8 @@ Value val_map_get(Value map, const char *key) {
 }
 
 int val_map_has(Value map, const char *key) {
-    if (map.type != VAL_MAP) return 0;
+    if (map.type != VAL_MAP)
+        return 0;
     MapData *md = map.data.map;
     for (int i = 0; i < md->count; i++) {
         if (strcmp(md->pairs[i].key, key) == 0)
@@ -353,7 +390,8 @@ int val_map_has(Value map, const char *key) {
 }
 
 void val_map_delete(Value *map, const char *key) {
-    if (map->type != VAL_MAP) return;
+    if (map->type != VAL_MAP)
+        return;
     MapData *md = map->data.map;
     for (int i = 0; i < md->count; i++) {
         if (strcmp(md->pairs[i].key, key) == 0) {
@@ -369,11 +407,13 @@ void val_map_delete(Value *map, const char *key) {
 }
 
 Value val_map_copy(Value *src) {
-    if (src->type != VAL_MAP) return val_make_null();
+    if (src->type != VAL_MAP)
+        return val_make_null();
     Value dst = val_map_empty();
     MapData *md_src = src->data.map;
     int n = md_src->count;
-    if (n == 0) return dst;
+    if (n == 0)
+        return dst;
     /* Pre-dimensionamos al tamaño exacto: val_map_set_typed
      * crecería por duplicación. */
     dst.data.map->pairs = infernal_malloc((size_t)n * sizeof(MapPair));
@@ -387,39 +427,39 @@ Value val_map_copy(Value *src) {
     return dst;
 }
 
-
 void value_free(Value *value) {
-    if (!value) return;
+    if (!value)
+        return;
     switch (value->type) {
-        case VAL_INT: case VAL_UINT:
-            if (VALUE_HAS_WIDE_INTEGER(*value) &&
-                --value->data.wide_integer.box->references == 0)
-                free(value->data.wide_integer.box);
-            break;
-        case VAL_STRING:
-            free(value->data.sval);
-            break;
-        case VAL_LIST:
-            for (int i = 0; i < value->data.list.count; i++)
-                value_free(&value->data.list.items[i]);
-            free(value->data.list.items);
-            break;
-        case VAL_MAP:
-            if (value->data.map) {
-                for (int i = 0; i < value->data.map->count; i++) {
-                    free(value->data.map->pairs[i].key);
-                    value_free(&value->data.map->pairs[i].value);
-                }
-                free(value->data.map->pairs);
-                free(value->data.map);
+    case VAL_INT:
+    case VAL_UINT:
+        if (VALUE_HAS_WIDE_INTEGER(*value) && --value->data.wide_integer.box->references == 0)
+            free(value->data.wide_integer.box);
+        break;
+    case VAL_STRING:
+        free(value->data.sval);
+        break;
+    case VAL_LIST:
+        for (int i = 0; i < value->data.list.count; i++)
+            value_free(&value->data.list.items[i]);
+        free(value->data.list.items);
+        break;
+    case VAL_MAP:
+        if (value->data.map) {
+            for (int i = 0; i < value->data.map->count; i++) {
+                free(value->data.map->pairs[i].key);
+                value_free(&value->data.map->pairs[i].value);
             }
-            break;
-        case VAL_REFERENCE:
-            free(value->data.ref.container_name);
-            free(value->data.ref.map_key);
-            break;
-        default:
-            break;
+            free(value->data.map->pairs);
+            free(value->data.map);
+        }
+        break;
+    case VAL_REFERENCE:
+        free(value->data.ref.container_name);
+        free(value->data.ref.map_key);
+        break;
+    default:
+        break;
     }
     *value = val_make_null();
 }

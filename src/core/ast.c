@@ -3,14 +3,14 @@
  * Copyright (C) 2026, David Baña Szymaniak
  * Este software se distribuye bajo la licencia Apache 2.0
  * Código fuente de Infernal: core/ast.c
-*/
+ */
 
-#include <stdlib.h>
-#include <stdint.h>
-#include <string.h>
 #include "ast.h"
 #include "memory.h"
 #include "runtime/error.h"
+#include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
 
 typedef struct ASTRegistryEntry {
     ASTNode *node;
@@ -22,7 +22,8 @@ static ImportModule *import_modules = NULL;
 static void nodelist_free_internal(NodeList *list);
 
 ImportModule *import_module_find(const char *path, const char *alias) {
-    if (!path || !alias) return NULL;
+    if (!path || !alias)
+        return NULL;
     for (ImportModule *module = import_modules; module; module = module->next) {
         if (strcmp(module->path, path) == 0 && strcmp(module->alias, alias) == 0)
             return module;
@@ -41,15 +42,19 @@ ImportModule *import_module_create(const char *path, const char *alias, NodeList
 }
 
 ImportModule *import_module_ref(ImportModule *module) {
-    if (module) module->references++;
+    if (module)
+        module->references++;
     return module;
 }
 
 void import_module_release(ImportModule *module) {
-    if (!module || --module->references != 0) return;
+    if (!module || --module->references != 0)
+        return;
     ImportModule **link = &import_modules;
-    while (*link && *link != module) link = &(*link)->next;
-    if (*link) *link = module->next;
+    while (*link && *link != module)
+        link = &(*link)->next;
+    if (*link)
+        *link = module->next;
     nodelist_free_internal(&module->block);
     free(module->path);
     free(module->alias);
@@ -94,9 +99,11 @@ static void ast_ptr_set_rehash(size_t new_cap) {
     if (ast_ptr_set) {
         for (size_t i = 0; i < ast_ptr_cap; i++) {
             ASTNode *node = ast_ptr_set[i];
-            if (!node) continue;
+            if (!node)
+                continue;
             size_t pos = ast_ptr_hash(node) & (new_cap - 1);
-            while (new_set[pos]) pos = (pos + 1) & (new_cap - 1);
+            while (new_set[pos])
+                pos = (pos + 1) & (new_cap - 1);
             new_set[pos] = node;
         }
         free(ast_ptr_set);
@@ -107,14 +114,17 @@ static void ast_ptr_set_rehash(size_t new_cap) {
 }
 
 static void ast_ptr_set_add(ASTNode *node) {
-    if (!node) return;
-    if (ast_ptr_cap == 0) ast_ptr_set_rehash(64);
+    if (!node)
+        return;
+    if (ast_ptr_cap == 0)
+        ast_ptr_set_rehash(64);
     if ((ast_ptr_count + 1) * 10 >= ast_ptr_cap * 7)
         ast_ptr_set_rehash(ast_ptr_cap * 2);
 
     size_t pos = ast_ptr_hash(node) & (ast_ptr_cap - 1);
     while (ast_ptr_set[pos]) {
-        if (ast_ptr_set[pos] == node) return;
+        if (ast_ptr_set[pos] == node)
+            return;
         pos = (pos + 1) & (ast_ptr_cap - 1);
     }
     ast_ptr_set[pos] = node;
@@ -122,17 +132,20 @@ static void ast_ptr_set_add(ASTNode *node) {
 }
 
 static bool ast_ptr_set_contains(const ASTNode *node) {
-    if (!node || !ast_ptr_set || ast_ptr_cap == 0) return false;
+    if (!node || !ast_ptr_set || ast_ptr_cap == 0)
+        return false;
     size_t pos = ast_ptr_hash(node) & (ast_ptr_cap - 1);
     while (ast_ptr_set[pos]) {
-        if (ast_ptr_set[pos] == node) return true;
+        if (ast_ptr_set[pos] == node)
+            return true;
         pos = (pos + 1) & (ast_ptr_cap - 1);
     }
     return false;
 }
 
 static void ast_ptr_set_remove(const ASTNode *node) {
-    if (!node || !ast_ptr_set || ast_ptr_cap == 0) return;
+    if (!node || !ast_ptr_set || ast_ptr_cap == 0)
+        return;
     size_t pos = ast_ptr_hash(node) & (ast_ptr_cap - 1);
     while (ast_ptr_set[pos]) {
         if (ast_ptr_set[pos] != node) {
@@ -151,7 +164,8 @@ static void ast_ptr_set_remove(const ASTNode *node) {
             ast_ptr_count--;
 
             size_t dst = ast_ptr_hash(moved) & (ast_ptr_cap - 1);
-            while (ast_ptr_set[dst]) dst = (dst + 1) & (ast_ptr_cap - 1);
+            while (ast_ptr_set[dst])
+                dst = (dst + 1) & (ast_ptr_cap - 1);
             ast_ptr_set[dst] = moved;
             ast_ptr_count++;
             next = (next + 1) & (ast_ptr_cap - 1);
@@ -175,20 +189,24 @@ typedef struct NodeListAllocEntry {
 static NodeListAllocEntry *nodelist_alloc_registry = NULL;
 
 static void nodelist_alloc_add(ASTNode **ptr) {
-    if (!ptr) return;
+    if (!ptr)
+        return;
     /* Evitar entradas duplicadas que provocan dobles free */
     for (NodeListAllocEntry *entry = nodelist_alloc_registry; entry; entry = entry->next) {
-        if (entry->ptr == ptr) return;
+        if (entry->ptr == ptr)
+            return;
     }
     NodeListAllocEntry *entry = infernal_malloc(sizeof(*entry));
-    if (!entry) return;
+    if (!entry)
+        return;
     entry->ptr = ptr;
     entry->next = nodelist_alloc_registry;
     nodelist_alloc_registry = entry;
 }
 
 static void nodelist_alloc_update(ASTNode **old_ptr, ASTNode **new_ptr) {
-    if (old_ptr == new_ptr) return;
+    if (old_ptr == new_ptr)
+        return;
     for (NodeListAllocEntry *entry = nodelist_alloc_registry; entry; entry = entry->next) {
         if (entry->ptr == old_ptr) {
             entry->ptr = new_ptr;
@@ -216,7 +234,8 @@ static void nodelist_alloc_update(ASTNode **old_ptr, ASTNode **new_ptr) {
 }
 
 static void nodelist_alloc_remove(ASTNode **ptr) {
-    if (!ptr) return;
+    if (!ptr)
+        return;
     NodeListAllocEntry **link = &nodelist_alloc_registry;
     while (*link) {
         if ((*link)->ptr == ptr) {
@@ -243,7 +262,8 @@ static void nodelist_alloc_free_orphans(void) {
 }
 
 static void ast_registry_add(ASTNode *node) {
-    if (!node) return;
+    if (!node)
+        return;
     ASTRegistryEntry *entry = infernal_malloc(sizeof(*entry));
     entry->node = node;
     ast_ptr_set_add(node);
@@ -277,15 +297,15 @@ void nodelist_add(NodeList *list, ASTNode *node) {
     if (list->count >= list->cap) {
         list->cap = list->cap == 0 ? 8 : list->cap * 2;
         ASTNode **old_stmts = list->stmts;
-        list->stmts = infernal_realloc(list->stmts, list->cap * sizeof(ASTNode*));
+        list->stmts = infernal_realloc(list->stmts, list->cap * sizeof(ASTNode *));
         nodelist_alloc_update(old_stmts, list->stmts);
     }
     list->stmts[list->count++] = node;
 }
 
-
 static void free_flag_spec(FlagSpec *spec) {
-    if (!spec) return;
+    if (!spec)
+        return;
     for (int i = 0; i < spec->name_count; i++) {
         free(spec->names[i]);
         spec->names[i] = NULL;
@@ -310,7 +330,8 @@ static void free_flag_spec(FlagSpec *spec) {
 
 static void ast_free_internal(ASTNode *node);
 static void nodelist_free_internal(NodeList *list) {
-    if (!list) return;
+    if (!list)
+        return;
 
     if (list->repeat_line_index) {
         free(list->repeat_line_index->lines);
@@ -331,7 +352,7 @@ static void nodelist_free_internal(NodeList *list) {
     for (int i = 0; i < list->count; i++) {
         if (list->stmts[i] != NULL) {
             ast_free_internal(list->stmts[i]);
-            list->stmts[i] = NULL;  // evitar doble liberación
+            list->stmts[i] = NULL; // evitar doble liberación
         }
     }
     nodelist_alloc_remove(stmts);
@@ -341,220 +362,268 @@ static void nodelist_free_internal(NodeList *list) {
     list->cap = 0;
 }
 
-static bool ast_is_registered(const ASTNode *node) {
-    return ast_ptr_set_contains(node);
-}
+static bool ast_is_registered(const ASTNode *node) { return ast_ptr_set_contains(node); }
 
 static void ast_free_internal(ASTNode *node) {
-    if (!node || !ast_is_registered(node)) return;
+    if (!node || !ast_is_registered(node))
+        return;
     ast_registry_remove(node);
     switch (node->kind) {
-        case NODE_PROGRAM: nodelist_free_internal(&node->data.prog.stmts); break;
-        case NODE_EXPR_STMT: ast_free_internal(node->data.expr_stmt.expr); break;
-        case NODE_CMD_STMT: free(node->data.cmd_stmt.cmd); break;
-        case NODE_SHELL_CMD: free(node->data.shell_cmd.cmd); break;
-        case NODE_ASSIGN:
-            free(node->data.assign.name); free(node->data.assign.cmd_str);
-            ast_free_internal(node->data.assign.value); ast_free_internal(node->data.assign.lhs_index);
-            break;
-        case NODE_IF: ast_free_internal(node->data.if_stmt.cond); nodelist_free_internal(&node->data.if_stmt.then_block); nodelist_free_internal(&node->data.if_stmt.else_block); break;
-        case NODE_WHILE: ast_free_internal(node->data.while_stmt.cond); nodelist_free_internal(&node->data.while_stmt.body); break;
-        case NODE_SWITCH:
-            ast_free_internal(node->data.switch_stmt.expr);
-            for (int i = 0; i < node->data.switch_stmt.case_count; i++) {
-                ast_free_internal(node->data.switch_stmt.cases[i].value);
-                nodelist_free_internal(&node->data.switch_stmt.cases[i].body);
-            }
-            free(node->data.switch_stmt.cases);
-            nodelist_free_internal(&node->data.switch_stmt.default_block);
-            break;
-        case NODE_FOR: free(node->data.for_stmt.var); ast_free_internal(node->data.for_stmt.init); ast_free_internal(node->data.for_stmt.cond); ast_free_internal(node->data.for_stmt.incr); nodelist_free_internal(&node->data.for_stmt.body); break;
-        case NODE_FUNC_DEF:
-            free(node->data.func.name);
-            for (int i = 0; i < node->data.func.param_count; i++) free(node->data.func.params[i]);
-            free(node->data.func.params); free(node->data.func.ptypes);
+    case NODE_PROGRAM:
+        nodelist_free_internal(&node->data.prog.stmts);
+        break;
+    case NODE_EXPR_STMT:
+        ast_free_internal(node->data.expr_stmt.expr);
+        break;
+    case NODE_CMD_STMT:
+        free(node->data.cmd_stmt.cmd);
+        break;
+    case NODE_SHELL_CMD:
+        free(node->data.shell_cmd.cmd);
+        break;
+    case NODE_ASSIGN:
+        free(node->data.assign.name);
+        free(node->data.assign.cmd_str);
+        ast_free_internal(node->data.assign.value);
+        ast_free_internal(node->data.assign.lhs_index);
+        break;
+    case NODE_IF:
+        ast_free_internal(node->data.if_stmt.cond);
+        nodelist_free_internal(&node->data.if_stmt.then_block);
+        nodelist_free_internal(&node->data.if_stmt.else_block);
+        break;
+    case NODE_WHILE:
+        ast_free_internal(node->data.while_stmt.cond);
+        nodelist_free_internal(&node->data.while_stmt.body);
+        break;
+    case NODE_SWITCH:
+        ast_free_internal(node->data.switch_stmt.expr);
+        for (int i = 0; i < node->data.switch_stmt.case_count; i++) {
+            ast_free_internal(node->data.switch_stmt.cases[i].value);
+            nodelist_free_internal(&node->data.switch_stmt.cases[i].body);
+        }
+        free(node->data.switch_stmt.cases);
+        nodelist_free_internal(&node->data.switch_stmt.default_block);
+        break;
+    case NODE_FOR:
+        free(node->data.for_stmt.var);
+        ast_free_internal(node->data.for_stmt.init);
+        ast_free_internal(node->data.for_stmt.cond);
+        ast_free_internal(node->data.for_stmt.incr);
+        nodelist_free_internal(&node->data.for_stmt.body);
+        break;
+    case NODE_FUNC_DEF:
+        free(node->data.func.name);
+        for (int i = 0; i < node->data.func.param_count; i++)
+            free(node->data.func.params[i]);
+        free(node->data.func.params);
+        free(node->data.func.ptypes);
         nodelist_free_internal(&node->data.func.body);
         break;
-        case NODE_RETURN: ast_free_internal(node->data.ret.expr); break;
-        case NODE_IMPORT:
-            free(node->data.import.path);
-            free(node->data.import.alias);
-            if (node->data.import.cache)
-                import_module_release(node->data.import.cache);
-            else
-                nodelist_free_internal(&node->data.import.module_block);
-            break;
-        case NODE_TRY: nodelist_free_internal(&node->data.try_stmt.try_block); nodelist_free_internal(&node->data.try_stmt.catch_block); break;
-        case NODE_VAR: free(node->data.var.name); break;
-        case NODE_LITERAL:
-            if (node->data.lit.integer_wide &&
-                (node->data.lit.type == TOK_INT || node->data.lit.type == TOK_UINT))
-                free(node->data.lit.payload.integer_cache);
-            else
-                free(node->data.lit.payload.sval);
-            break;
-        case NODE_BINOP: ast_free_internal(node->data.binop.left); ast_free_internal(node->data.binop.right); break;
-        case NODE_CALL:
-            free(node->data.call.name);
-            free(node->data.call.module_prefix);
-            for (int i = 0; i < node->data.call.argc; i++) ast_free_internal(node->data.call.args[i]);
-            free(node->data.call.args);
+    case NODE_RETURN:
+        ast_free_internal(node->data.ret.expr);
         break;
-        case NODE_INDEX: ast_free_internal(node->data.idx.list); ast_free_internal(node->data.idx.index); break;
-        case NODE_FLAGS:
-            for (int i = 0; i < node->data.flags.spec_count; i++) free_flag_spec(&node->data.flags.specs[i]);
-            free(node->data.flags.specs);
+    case NODE_IMPORT:
+        free(node->data.import.path);
+        free(node->data.import.alias);
+        if (node->data.import.cache)
+            import_module_release(node->data.import.cache);
+        else
+            nodelist_free_internal(&node->data.import.module_block);
         break;
-        case NODE_LIST:
-            for (int i = 0; i < node->data.list_lit.count; i++) ast_free_internal(node->data.list_lit.items[i]);
-            free(node->data.list_lit.items);
+    case NODE_TRY:
+        nodelist_free_internal(&node->data.try_stmt.try_block);
+        nodelist_free_internal(&node->data.try_stmt.catch_block);
         break;
-        case NODE_FOR_IN:
-            free(node->data.for_in.var);
-            free(node->data.for_in.index_var);
-            ast_free_internal(node->data.for_in.list_expr);
-            nodelist_free_internal(&node->data.for_in.body);
-            break;
-        case NODE_PORTAL: free(node->data.portal.name); break;
-        case NODE_REPEAT: ast_free_internal(node->data.repeat.line_expr); free(node->data.repeat.portal_name); break;
-        case NODE_SLICE: ast_free_internal(node->data.slice.list); break;
-        case NODE_EXECUTE:
-            ast_free_internal(node->data.execute.path_expr);
-            for (int i = 0; i < node->data.execute.argc; i++) free(node->data.execute.args[i]);
-            free(node->data.execute.args);
+    case NODE_VAR:
+        free(node->data.var.name);
         break;
-        case NODE_MAP:
-            for (int i = 0; i < node->data.map.pair_count; i++) {
-                free(node->data.map.pairs[i].key);
-                ast_free_internal(node->data.map.pairs[i].value);
-            }
-            free(node->data.map.pairs);
-            break;
-        case NODE_UNARY: ast_free_internal(node->data.unary.operand); break;
-        case NODE_POST_INC: case NODE_POST_DEC: ast_free_internal(node->data.post_op.var); break;
-        case NODE_DEFINE:
-            free(node->data.define.name);
-            ast_free_internal(node->data.define.value);
-            break;
-        case NODE_EMBEDDED:
-            nodelist_free_internal(&node->data.embedded.body);
-            break;
-        case NODE_EMPTY_AMBIGUOUS: break;
-        case NODE_BREAK: case NODE_CONTINUE: break;
+    case NODE_LITERAL:
+        if (node->data.lit.integer_wide &&
+            (node->data.lit.type == TOK_INT || node->data.lit.type == TOK_UINT))
+            free(node->data.lit.payload.integer_cache);
+        else
+            free(node->data.lit.payload.sval);
+        break;
+    case NODE_BINOP:
+        ast_free_internal(node->data.binop.left);
+        ast_free_internal(node->data.binop.right);
+        break;
+    case NODE_CALL:
+        free(node->data.call.name);
+        free(node->data.call.module_prefix);
+        for (int i = 0; i < node->data.call.argc; i++)
+            ast_free_internal(node->data.call.args[i]);
+        free(node->data.call.args);
+        break;
+    case NODE_INDEX:
+        ast_free_internal(node->data.idx.list);
+        ast_free_internal(node->data.idx.index);
+        break;
+    case NODE_FLAGS:
+        for (int i = 0; i < node->data.flags.spec_count; i++)
+            free_flag_spec(&node->data.flags.specs[i]);
+        free(node->data.flags.specs);
+        break;
+    case NODE_LIST:
+        for (int i = 0; i < node->data.list_lit.count; i++)
+            ast_free_internal(node->data.list_lit.items[i]);
+        free(node->data.list_lit.items);
+        break;
+    case NODE_FOR_IN:
+        free(node->data.for_in.var);
+        free(node->data.for_in.index_var);
+        ast_free_internal(node->data.for_in.list_expr);
+        nodelist_free_internal(&node->data.for_in.body);
+        break;
+    case NODE_PORTAL:
+        free(node->data.portal.name);
+        break;
+    case NODE_REPEAT:
+        ast_free_internal(node->data.repeat.line_expr);
+        free(node->data.repeat.portal_name);
+        break;
+    case NODE_SLICE:
+        ast_free_internal(node->data.slice.list);
+        break;
+    case NODE_EXECUTE:
+        ast_free_internal(node->data.execute.path_expr);
+        for (int i = 0; i < node->data.execute.argc; i++)
+            free(node->data.execute.args[i]);
+        free(node->data.execute.args);
+        break;
+    case NODE_MAP:
+        for (int i = 0; i < node->data.map.pair_count; i++) {
+            free(node->data.map.pairs[i].key);
+            ast_free_internal(node->data.map.pairs[i].value);
+        }
+        free(node->data.map.pairs);
+        break;
+    case NODE_UNARY:
+        ast_free_internal(node->data.unary.operand);
+        break;
+    case NODE_POST_INC:
+    case NODE_POST_DEC:
+        ast_free_internal(node->data.post_op.var);
+        break;
+    case NODE_DEFINE:
+        free(node->data.define.name);
+        ast_free_internal(node->data.define.value);
+        break;
+    case NODE_EMBEDDED:
+        nodelist_free_internal(&node->data.embedded.body);
+        break;
+    case NODE_EMPTY_AMBIGUOUS:
+        break;
+    case NODE_BREAK:
+    case NODE_CONTINUE:
+        break;
     }
     free(node);
 }
 
 void nodelist_free(NodeList *list) {
-    if (!list) return;
+    if (!list)
+        return;
     nodelist_free_internal(list);
 }
 
-void ast_free(ASTNode *node) {
-    ast_free_internal(node);
-}
+void ast_free(ASTNode *node) { ast_free_internal(node); }
 
 ASTNode *deep_copy_ast(ASTNode *node) {
-    if (!node) return NULL;
+    if (!node)
+        return NULL;
     ASTNode *copy = node_create(node->kind, node->line);
     switch (node->kind) {
-        case NODE_VAR:
-            copy->data.var.name = node->data.var.name
-                ? infernal_strdup(node->data.var.name) : NULL;
-            copy->data.var.clone = node->data.var.clone;
-            break;
-        case NODE_LITERAL:
-            copy->data.lit.type = node->data.lit.type;
-            copy->data.lit.ival = node->data.lit.ival;
-            copy->data.lit.uval = node->data.lit.uval;
-            copy->data.lit.fval = node->data.lit.fval;
-            copy->data.lit.bval = node->data.lit.bval;
-            copy->data.lit.integer_wide = node->data.lit.integer_wide;
-            if (node->data.lit.integer_wide &&
-                (node->data.lit.type == TOK_INT || node->data.lit.type == TOK_UINT)) {
-                copy->data.lit.payload.integer_cache = infernal_malloc(sizeof(InfernalBigInt));
-                *copy->data.lit.payload.integer_cache = *node->data.lit.payload.integer_cache;
-            } else {
-                copy->data.lit.payload.sval = node->data.lit.payload.sval
-                    ? infernal_strdup(node->data.lit.payload.sval) : NULL;
+    case NODE_VAR:
+        copy->data.var.name = node->data.var.name ? infernal_strdup(node->data.var.name) : NULL;
+        copy->data.var.clone = node->data.var.clone;
+        break;
+    case NODE_LITERAL:
+        copy->data.lit.type = node->data.lit.type;
+        copy->data.lit.ival = node->data.lit.ival;
+        copy->data.lit.uval = node->data.lit.uval;
+        copy->data.lit.fval = node->data.lit.fval;
+        copy->data.lit.bval = node->data.lit.bval;
+        copy->data.lit.integer_wide = node->data.lit.integer_wide;
+        if (node->data.lit.integer_wide &&
+            (node->data.lit.type == TOK_INT || node->data.lit.type == TOK_UINT)) {
+            copy->data.lit.payload.integer_cache = infernal_malloc(sizeof(InfernalBigInt));
+            *copy->data.lit.payload.integer_cache = *node->data.lit.payload.integer_cache;
+        } else {
+            copy->data.lit.payload.sval =
+                node->data.lit.payload.sval ? infernal_strdup(node->data.lit.payload.sval) : NULL;
+        }
+        break;
+    case NODE_INDEX:
+        copy->data.idx.list = deep_copy_ast(node->data.idx.list);
+        copy->data.idx.index = deep_copy_ast(node->data.idx.index);
+        break;
+    case NODE_BINOP:
+        copy->data.binop.op = node->data.binop.op;
+        copy->data.binop.left = deep_copy_ast(node->data.binop.left);
+        copy->data.binop.right = deep_copy_ast(node->data.binop.right);
+        break;
+    case NODE_UNARY:
+        copy->data.unary.op = node->data.unary.op;
+        copy->data.unary.operand = deep_copy_ast(node->data.unary.operand);
+        break;
+    case NODE_CALL:
+        copy->data.call.name = node->data.call.name ? infernal_strdup(node->data.call.name) : NULL;
+        copy->data.call.module_prefix =
+            node->data.call.module_prefix ? infernal_strdup(node->data.call.module_prefix) : NULL;
+        copy->data.call.argc = node->data.call.argc;
+        if (node->data.call.argc > 0) {
+            copy->data.call.args =
+                infernal_malloc((size_t)node->data.call.argc * sizeof(ASTNode *));
+            for (int i = 0; i < node->data.call.argc; i++)
+                copy->data.call.args[i] = deep_copy_ast(node->data.call.args[i]);
+        } else {
+            copy->data.call.args = NULL;
+        }
+        break;
+    case NODE_LIST:
+        copy->data.list_lit.count = node->data.list_lit.count;
+        if (node->data.list_lit.count > 0) {
+            copy->data.list_lit.items =
+                infernal_malloc((size_t)node->data.list_lit.count * sizeof(ASTNode *));
+            for (int i = 0; i < node->data.list_lit.count; i++)
+                copy->data.list_lit.items[i] = deep_copy_ast(node->data.list_lit.items[i]);
+        } else {
+            copy->data.list_lit.items = NULL;
+        }
+        break;
+    case NODE_SLICE:
+        copy->data.slice.mode = node->data.slice.mode;
+        copy->data.slice.start = node->data.slice.start;
+        copy->data.slice.end = node->data.slice.end;
+        copy->data.slice.list = deep_copy_ast(node->data.slice.list);
+        break;
+    case NODE_MAP:
+        copy->data.map.pair_count = node->data.map.pair_count;
+        if (node->data.map.pair_count > 0) {
+            copy->data.map.pairs =
+                infernal_malloc((size_t)node->data.map.pair_count * sizeof(*node->data.map.pairs));
+            for (int i = 0; i < node->data.map.pair_count; i++) {
+                copy->data.map.pairs[i].key = node->data.map.pairs[i].key
+                                                  ? infernal_strdup(node->data.map.pairs[i].key)
+                                                  : NULL;
+                copy->data.map.pairs[i].value_type = node->data.map.pairs[i].value_type;
+                copy->data.map.pairs[i].value = deep_copy_ast(node->data.map.pairs[i].value);
             }
-            break;
-        case NODE_INDEX:
-            copy->data.idx.list = deep_copy_ast(node->data.idx.list);
-            copy->data.idx.index = deep_copy_ast(node->data.idx.index);
-            break;
-        case NODE_BINOP:
-            copy->data.binop.op = node->data.binop.op;
-            copy->data.binop.left = deep_copy_ast(node->data.binop.left);
-            copy->data.binop.right = deep_copy_ast(node->data.binop.right);
-            break;
-        case NODE_UNARY:
-            copy->data.unary.op = node->data.unary.op;
-            copy->data.unary.operand = deep_copy_ast(node->data.unary.operand);
-            break;
-        case NODE_CALL:
-            copy->data.call.name = node->data.call.name
-                ? infernal_strdup(node->data.call.name) : NULL;
-            copy->data.call.module_prefix = node->data.call.module_prefix
-                ? infernal_strdup(node->data.call.module_prefix) : NULL;
-            copy->data.call.argc = node->data.call.argc;
-            if (node->data.call.argc > 0) {
-                copy->data.call.args = infernal_malloc(
-                    (size_t)node->data.call.argc * sizeof(ASTNode *));
-                for (int i = 0; i < node->data.call.argc; i++)
-                    copy->data.call.args[i] = deep_copy_ast(node->data.call.args[i]);
-            } else {
-                copy->data.call.args = NULL;
-            }
-            break;
-        case NODE_LIST:
-            copy->data.list_lit.count = node->data.list_lit.count;
-            if (node->data.list_lit.count > 0) {
-                copy->data.list_lit.items = infernal_malloc(
-                    (size_t)node->data.list_lit.count * sizeof(ASTNode *));
-                for (int i = 0; i < node->data.list_lit.count; i++)
-                    copy->data.list_lit.items[i] =
-                        deep_copy_ast(node->data.list_lit.items[i]);
-            } else {
-                copy->data.list_lit.items = NULL;
-            }
-            break;
-        case NODE_SLICE:
-            copy->data.slice.mode = node->data.slice.mode;
-            copy->data.slice.start = node->data.slice.start;
-            copy->data.slice.end = node->data.slice.end;
-            copy->data.slice.list = deep_copy_ast(node->data.slice.list);
-            break;
-        case NODE_MAP:
-            copy->data.map.pair_count = node->data.map.pair_count;
-            if (node->data.map.pair_count > 0) {
-                copy->data.map.pairs = infernal_malloc(
-                    (size_t)node->data.map.pair_count *
-                    sizeof(*node->data.map.pairs));
-                for (int i = 0; i < node->data.map.pair_count; i++) {
-                    copy->data.map.pairs[i].key = node->data.map.pairs[i].key
-                        ? infernal_strdup(node->data.map.pairs[i].key) : NULL;
-                    copy->data.map.pairs[i].value_type =
-                        node->data.map.pairs[i].value_type;
-                    copy->data.map.pairs[i].value =
-                        deep_copy_ast(node->data.map.pairs[i].value);
-                }
-            } else {
-                copy->data.map.pairs = NULL;
-            }
-            break;
-        case NODE_POST_INC:
-        case NODE_POST_DEC:
-            copy->data.post_op.var = deep_copy_ast(node->data.post_op.var);
-            copy->data.post_op.statement_context =
-                node->data.post_op.statement_context;
-            break;
-        case NODE_EMPTY_AMBIGUOUS:
-            break;
-        default:
-            error(node->line,
-                  "deep_copy_ast: tipo de nodo no soportado (%d)",
-                  node->kind);
+        } else {
+            copy->data.map.pairs = NULL;
+        }
+        break;
+    case NODE_POST_INC:
+    case NODE_POST_DEC:
+        copy->data.post_op.var = deep_copy_ast(node->data.post_op.var);
+        copy->data.post_op.statement_context = node->data.post_op.statement_context;
+        break;
+    case NODE_EMPTY_AMBIGUOUS:
+        break;
+    default:
+        error(node->line, "deep_copy_ast: tipo de nodo no soportado (%d)", node->kind);
     }
     return copy;
 }

@@ -3,17 +3,17 @@
  * Copyright (C) 2026, David Baña Szymaniak
  * Este software se distribuye bajo la licencia Apache 2.0
  * Código fuente de Infernal: lexer/lexer.c
-*/
+ */
 
-#include <stdlib.h>
-#include <string.h>
+#include "lexer.h"
+#include "core/memory.h"
+#include "keywords.h"
+#include "runtime/error.h"
+#include "runtime/globals.h"
 #include <ctype.h>
 #include <stdio.h>
-#include "lexer.h"
-#include "keywords.h"
-#include "runtime/globals.h"
-#include "runtime/error.h"
-#include "core/memory.h"
+#include <stdlib.h>
+#include <string.h>
 
 TokenStream ts;
 
@@ -27,7 +27,9 @@ static size_t g_token_arena_cap = 0;
 static size_t g_token_arena_used = 0;
 
 void ts_init() {
-    ts.tokens = NULL; ts.count = ts.cap = 0; ts.pos = 0;
+    ts.tokens = NULL;
+    ts.count = ts.cap = 0;
+    ts.pos = 0;
 }
 
 void ts_free_arena(void) {
@@ -39,21 +41,26 @@ void ts_free_arena(void) {
 
 size_t ts_arena_mark(void) { return g_token_arena_used; }
 void ts_arena_restore(size_t mark) {
-    if (mark <= g_token_arena_used) g_token_arena_used = mark;
+    if (mark <= g_token_arena_used)
+        g_token_arena_used = mark;
 }
 
 static char *arena_strndup(const char *src, size_t n) {
     if (g_token_arena_used + n + 1 > g_token_arena_cap) {
         size_t new_cap = g_token_arena_cap == 0 ? 65536 : g_token_arena_cap * 2;
         while (new_cap < g_token_arena_used + n + 1) {
-            if (new_cap > SIZE_MAX / 2) { new_cap = g_token_arena_used + n + 1; break; }
+            if (new_cap > SIZE_MAX / 2) {
+                new_cap = g_token_arena_used + n + 1;
+                break;
+            }
             new_cap *= 2;
         }
         g_token_arena_data = infernal_realloc(g_token_arena_data, new_cap);
         g_token_arena_cap = new_cap;
     }
     char *out = g_token_arena_data + g_token_arena_used;
-    if (n) memcpy(out, src, n);
+    if (n)
+        memcpy(out, src, n);
     out[n] = '\0';
     g_token_arena_used += n + 1;
     return out;
@@ -82,22 +89,28 @@ static Token eof_token(void) {
 }
 
 Token ts_peek() {
-    if (ts.pos < ts.count) return ts.tokens[ts.pos];
+    if (ts.pos < ts.count)
+        return ts.tokens[ts.pos];
     return eof_token();
 }
 
 Token ts_advance() {
-    if (ts.pos < ts.count) return ts.tokens[ts.pos++];
+    if (ts.pos < ts.count)
+        return ts.tokens[ts.pos++];
     return eof_token();
 }
 
 bool ts_match(TokenType t) {
-    if (ts_peek().type == t) { ts_advance(); return true; }
+    if (ts_peek().type == t) {
+        ts_advance();
+        return true;
+    }
     return false;
 }
 
 void ts_skip_newlines() {
-    while (ts_peek().type == TOK_NEWLINE) ts_advance();
+    while (ts_peek().type == TOK_NEWLINE)
+        ts_advance();
 }
 
 char *extract_command_string(int line) {
@@ -106,10 +119,12 @@ char *extract_command_string(int line) {
 
     const char *src = source_lines[line - 1];
     const char *eq = strchr(src, '=');
-    if (!eq) return arena_strdup("");
+    if (!eq)
+        return arena_strdup("");
 
     const char *start = eq + 1;
-    while (*start == ' ' || *start == '\t') start++;
+    while (*start == ' ' || *start == '\t')
+        start++;
 
     /* Encuentra un comentario solo cuando '#' está fuera de comillas.
      * No modificamos source_lines: esas líneas se reutilizan para los
@@ -146,15 +161,17 @@ char *extract_command_string(int line) {
 
     size_t len = (size_t)(end_ptr - start);
     char *result = malloc(len + 1);
-    if (!result) error(line, "Memoria insuficiente para extraer comando");
+    if (!result)
+        error(line, "Memoria insuficiente para extraer comando");
     memcpy(result, start, len);
     result[len] = '\0';
     return result;
 }
 
 void tokenize_buffer(const char *data, size_t len) {
-    FILE *fp = fmemopen((void*)data, len, "r");
-    if (!fp) return;
+    FILE *fp = fmemopen((void *)data, len, "r");
+    if (!fp)
+        return;
     tokenize_file(fp);
     fclose(fp);
 }
@@ -165,7 +182,8 @@ void tokenize_file(FILE *fp) {
     int lineno = 0;
     bool in_block_comment = false;
     if (source_lines) {
-        for (int i = 0; i < source_line_count; i++) free(source_lines[i]);
+        for (int i = 0; i < source_line_count; i++)
+            free(source_lines[i]);
         free(source_lines);
         source_lines = NULL;
         source_line_count = 0;
@@ -173,7 +191,7 @@ void tokenize_file(FILE *fp) {
 
     while (getline(&line, &len, fp) != -1) {
         lineno++;
-        source_lines = infernal_realloc(source_lines, (source_line_count + 1) * sizeof(char*));
+        source_lines = infernal_realloc(source_lines, (source_line_count + 1) * sizeof(char *));
         source_lines[source_line_count] = arena_strdup(line);
         size_t line_len = strlen(source_lines[source_line_count]);
         if (line_len > 0 && source_lines[source_line_count][line_len - 1] == '\n')
@@ -192,7 +210,7 @@ void tokenize_file(FILE *fp) {
         }
 
         while (*p) {
-            if (*p == '#' && *(p+1) == '#' && *(p+2) == '#') {
+            if (*p == '#' && *(p + 1) == '#' && *(p + 2) == '#') {
                 if (!in_block_comment) {
                     char *close = strstr(p + 3, "###");
                     if (close) {
@@ -209,92 +227,206 @@ void tokenize_file(FILE *fp) {
                 }
             }
 
-            if (*p == '#') break;
-            if (isspace(*p)) { p++; continue; }
+            if (*p == '#')
+                break;
+            if (isspace(*p)) {
+                p++;
+                continue;
+            }
 
             int start_col = (int)(p - line);
 
             // Operadores varios caracteres
-            if (*p == '+' && *(p+1) == '=') {
+            if (*p == '+' && *(p + 1) == '=') {
                 Token t = {TOK_PLUS_EQ, arena_strdup("+="), lineno, start_col, start_col + 2};
-                ts_add(t); p += 2; continue;
+                ts_add(t);
+                p += 2;
+                continue;
             }
-            if (*p == '-' && *(p+1) == '=') {
+            if (*p == '-' && *(p + 1) == '=') {
                 Token t = {TOK_MINUS_EQ, arena_strdup("-="), lineno, start_col, start_col + 2};
-                ts_add(t); p += 2; continue;
+                ts_add(t);
+                p += 2;
+                continue;
             }
-            if (*p == '*' && *(p+1) == '=') {
+            if (*p == '*' && *(p + 1) == '=') {
                 Token t = {TOK_STAR_EQ, arena_strdup("*="), lineno, start_col, start_col + 2};
-                ts_add(t); p += 2; continue;
+                ts_add(t);
+                p += 2;
+                continue;
             }
-            if (*p == '/' && *(p+1) == '=') {
+            if (*p == '/' && *(p + 1) == '=') {
                 Token t = {TOK_SLASH_EQ, arena_strdup("/="), lineno, start_col, start_col + 2};
-                ts_add(t); p += 2; continue;
+                ts_add(t);
+                p += 2;
+                continue;
             }
-            if (*p == '%' && *(p+1) == '=') {
+            if (*p == '%' && *(p + 1) == '=') {
                 Token t = {TOK_PERCENT_EQ, arena_strdup("%="), lineno, start_col, start_col + 2};
-                ts_add(t); p += 2; continue;
+                ts_add(t);
+                p += 2;
+                continue;
             }
-            if (*p == '*' && *(p+1) == '*') {
+            if (*p == '*' && *(p + 1) == '*') {
                 Token t = {TOK_POW, arena_strdup("**"), lineno, start_col, start_col + 2};
-                ts_add(t); p += 2; continue;
+                ts_add(t);
+                p += 2;
+                continue;
             }
-            if (*p == '+' && *(p+1) == '+') {
+            if (*p == '+' && *(p + 1) == '+') {
                 Token t = {TOK_INC, arena_strdup("++"), lineno, start_col, start_col + 2};
-                ts_add(t); p += 2; continue;
+                ts_add(t);
+                p += 2;
+                continue;
             }
-            if (*p == '-' && *(p+1) == '-') {
+            if (*p == '-' && *(p + 1) == '-') {
                 Token t = {TOK_DEC, arena_strdup("--"), lineno, start_col, start_col + 2};
-                ts_add(t); p += 2; continue;
+                ts_add(t);
+                p += 2;
+                continue;
             }
 
-            if (*p == '=' && *(p+1) == '=') {
+            if (*p == '=' && *(p + 1) == '=') {
                 Token t = {TOK_EEQ, arena_strdup("=="), lineno, start_col, start_col + 2};
-                ts_add(t); p += 2; continue;
+                ts_add(t);
+                p += 2;
+                continue;
             }
-            if (*p == '!' && *(p+1) == '=') {
+            if (*p == '!' && *(p + 1) == '=') {
                 Token t = {TOK_NEQ, arena_strdup("!="), lineno, start_col, start_col + 2};
-                ts_add(t); p += 2; continue;
+                ts_add(t);
+                p += 2;
+                continue;
             }
 
-            if (*p == '<' && *(p+1) == '=') {
+            if (*p == '<' && *(p + 1) == '=') {
                 Token t = {TOK_LE, arena_strdup("<="), lineno, start_col, start_col + 2};
-                ts_add(t); p += 2; continue;
+                ts_add(t);
+                p += 2;
+                continue;
             }
-            if (*p == '>' && *(p+1) == '=') {
+            if (*p == '>' && *(p + 1) == '=') {
                 Token t = {TOK_GE, arena_strdup(">="), lineno, start_col, start_col + 2};
-                ts_add(t); p += 2; continue;
+                ts_add(t);
+                p += 2;
+                continue;
             }
-            if (*p == '>' && *(p+1) == '>') {
+            if (*p == '>' && *(p + 1) == '>') {
                 Token t = {TOK_GGT, arena_strdup(">>"), lineno, start_col, start_col + 2};
-                ts_add(t); p += 2; continue;
+                ts_add(t);
+                p += 2;
+                continue;
             }
 
             // Operadores de un carácter
-            if (*p == '&' && *(p+1) == '&') {
+            if (*p == '&' && *(p + 1) == '&') {
                 Token t = {TOK_AMPAMP, arena_strdup("&&"), lineno, start_col, start_col + 2};
-                ts_add(t); p += 2; continue;
+                ts_add(t);
+                p += 2;
+                continue;
             }
             if (*p == '&') {
                 Token t = {TOK_AMP, arena_strdup("&"), lineno, start_col, start_col + 1};
-                ts_add(t); p++; continue;
+                ts_add(t);
+                p++;
+                continue;
             }
-            if (*p == '|') { Token t = {TOK_PIPE, arena_strdup("|"), lineno, start_col, start_col + 1}; ts_add(t); p++; continue; } //se usa en flags ()
-            if (*p == '>') { Token t = {TOK_GT_OP, arena_strdup(">"), lineno, start_col, start_col + 1}; ts_add(t); p++; continue; }
-            if (*p == '<') { Token t = {TOK_LT_OP, arena_strdup("<"), lineno, start_col, start_col + 1}; ts_add(t); p++; continue; }
-            if (*p == '(') { Token t = {TOK_LPAREN, arena_strdup("("), lineno, start_col, start_col + 1}; ts_add(t); p++; continue; }
-            if (*p == ')') { Token t = {TOK_RPAREN, arena_strdup(")"), lineno, start_col, start_col + 1}; ts_add(t); p++; continue; }
-            if (*p == '[') { Token t = {TOK_LBRACKET, arena_strdup("["), lineno, start_col, start_col + 1}; ts_add(t); p++; continue; }
-            if (*p == ']') { Token t = {TOK_RBRACKET, arena_strdup("]"), lineno, start_col, start_col + 1}; ts_add(t); p++; continue; }
-            if (*p == '{') { Token t = {TOK_LBRACE, arena_strdup("{"), lineno, start_col, start_col + 1}; ts_add(t); p++; continue; }
-            if (*p == '}') { Token t = {TOK_RBRACE, arena_strdup("}"), lineno, start_col, start_col + 1}; ts_add(t); p++; continue; }
-            if (*p == ';') { Token t = {TOK_NEWLINE, arena_strdup(";"), lineno, start_col, start_col + 1}; ts_add(t); p++; continue; }
-            if (*p == ',') { Token t = {TOK_COMMA, arena_strdup(","), lineno, start_col, start_col + 1}; ts_add(t); p++; continue; }
-            if (*p == '+') { Token t = {TOK_PLUS, arena_strdup("+"), lineno, start_col, start_col + 1}; ts_add(t); p++; continue; }
-            if (*p == '-') { Token t = {TOK_MINUS, arena_strdup("-"), lineno, start_col, start_col + 1}; ts_add(t); p++; continue; }
-            if (*p == '*') { Token t = {TOK_STAR, arena_strdup("*"), lineno, start_col, start_col + 1}; ts_add(t); p++; continue; }
-            if (*p == '%') { Token t = {TOK_PERCENT, arena_strdup("%"), lineno, start_col, start_col + 1}; ts_add(t); p++; continue; }
-            if (*p == ':') { Token t = {TOK_COLON, arena_strdup(":"), lineno, start_col, start_col + 1}; ts_add(t); p++; continue; }
+            if (*p == '|') {
+                Token t = {TOK_PIPE, arena_strdup("|"), lineno, start_col, start_col + 1};
+                ts_add(t);
+                p++;
+                continue;
+            } // se usa en flags ()
+            if (*p == '>') {
+                Token t = {TOK_GT_OP, arena_strdup(">"), lineno, start_col, start_col + 1};
+                ts_add(t);
+                p++;
+                continue;
+            }
+            if (*p == '<') {
+                Token t = {TOK_LT_OP, arena_strdup("<"), lineno, start_col, start_col + 1};
+                ts_add(t);
+                p++;
+                continue;
+            }
+            if (*p == '(') {
+                Token t = {TOK_LPAREN, arena_strdup("("), lineno, start_col, start_col + 1};
+                ts_add(t);
+                p++;
+                continue;
+            }
+            if (*p == ')') {
+                Token t = {TOK_RPAREN, arena_strdup(")"), lineno, start_col, start_col + 1};
+                ts_add(t);
+                p++;
+                continue;
+            }
+            if (*p == '[') {
+                Token t = {TOK_LBRACKET, arena_strdup("["), lineno, start_col, start_col + 1};
+                ts_add(t);
+                p++;
+                continue;
+            }
+            if (*p == ']') {
+                Token t = {TOK_RBRACKET, arena_strdup("]"), lineno, start_col, start_col + 1};
+                ts_add(t);
+                p++;
+                continue;
+            }
+            if (*p == '{') {
+                Token t = {TOK_LBRACE, arena_strdup("{"), lineno, start_col, start_col + 1};
+                ts_add(t);
+                p++;
+                continue;
+            }
+            if (*p == '}') {
+                Token t = {TOK_RBRACE, arena_strdup("}"), lineno, start_col, start_col + 1};
+                ts_add(t);
+                p++;
+                continue;
+            }
+            if (*p == ';') {
+                Token t = {TOK_NEWLINE, arena_strdup(";"), lineno, start_col, start_col + 1};
+                ts_add(t);
+                p++;
+                continue;
+            }
+            if (*p == ',') {
+                Token t = {TOK_COMMA, arena_strdup(","), lineno, start_col, start_col + 1};
+                ts_add(t);
+                p++;
+                continue;
+            }
+            if (*p == '+') {
+                Token t = {TOK_PLUS, arena_strdup("+"), lineno, start_col, start_col + 1};
+                ts_add(t);
+                p++;
+                continue;
+            }
+            if (*p == '-') {
+                Token t = {TOK_MINUS, arena_strdup("-"), lineno, start_col, start_col + 1};
+                ts_add(t);
+                p++;
+                continue;
+            }
+            if (*p == '*') {
+                Token t = {TOK_STAR, arena_strdup("*"), lineno, start_col, start_col + 1};
+                ts_add(t);
+                p++;
+                continue;
+            }
+            if (*p == '%') {
+                Token t = {TOK_PERCENT, arena_strdup("%"), lineno, start_col, start_col + 1};
+                ts_add(t);
+                p++;
+                continue;
+            }
+            if (*p == ':') {
+                Token t = {TOK_COLON, arena_strdup(":"), lineno, start_col, start_col + 1};
+                ts_add(t);
+                p++;
+                continue;
+            }
 
             if (*p == '/') {
                 /* '/' es división cuando estamos justo después de un token
@@ -305,28 +437,27 @@ void tokenize_file(FILE *fp) {
                  * conservan `cd /tmp`, incluso cuando / y tmp sean tokens
                  * separados. */
                 TokenType prev_type = TOK_EOF;
-                if (ts.count > 0) prev_type = ts.tokens[ts.count - 1].type;
-                bool after_expr =
-                    prev_type == TOK_NUMBER ||
-                    prev_type == TOK_IDENT ||
-                    prev_type == TOK_STRING_LITERAL ||
-                    prev_type == TOK_RPAREN ||
-                    prev_type == TOK_RBRACKET ||
-                    prev_type == TOK_TRUE ||
-                    prev_type == TOK_FALSE;
+                if (ts.count > 0)
+                    prev_type = ts.tokens[ts.count - 1].type;
+                bool after_expr = prev_type == TOK_NUMBER || prev_type == TOK_IDENT ||
+                                  prev_type == TOK_STRING_LITERAL || prev_type == TOK_RPAREN ||
+                                  prev_type == TOK_RBRACKET || prev_type == TOK_TRUE ||
+                                  prev_type == TOK_FALSE;
 
                 char *next = p + 1;
-                bool can_start_path = *next != '\0' &&
-                    (isalnum((unsigned char)*next) || *next == '_' ||
-                     *next == '/' || *next == '.' || *next == '-' || *next == '~');
+                bool can_start_path =
+                    *next != '\0' && (isalnum((unsigned char)*next) || *next == '_' ||
+                                      *next == '/' || *next == '.' || *next == '-' || *next == '~');
 
                 if (!after_expr && can_start_path) {
                     char *start = p;
-                    while (*p && (isalnum((unsigned char)*p) || *p == '_' ||
-                                  *p == '/' || *p == '.' || *p == '-' || *p == '~')) p++;
+                    while (*p && (isalnum((unsigned char)*p) || *p == '_' || *p == '/' ||
+                                  *p == '.' || *p == '-' || *p == '~'))
+                        p++;
                     size_t path_len = (size_t)(p - start);
                     char *lexeme = arena_strndup(start, path_len);
-                    if (!lexeme) error(lineno, "Memoria insuficiente para ruta");
+                    if (!lexeme)
+                        error(lineno, "Memoria insuficiente para ruta");
                     TokenType k = lookup_keyword(lexeme);
                     Token t;
                     t.type = (k != TOK_IDENT) ? k : TOK_IDENT;
@@ -362,43 +493,78 @@ void tokenize_file(FILE *fp) {
                 char quote = *p++;
                 size_t cap = 64, bi = 0;
                 char *buf = malloc(cap);
-                if (!buf) error(lineno, "Memoria insuficiente para cadena");
+                if (!buf)
+                    error(lineno, "Memoria insuficiente para cadena");
                 while (*p && *p != quote && *p != '\n') {
                     char pending[2];
                     size_t pending_len = 0;
-                    if (*p == '\\' && *(p+1)) {
+                    if (*p == '\\' && *(p + 1)) {
                         p++;
                         char esc = *p++;
                         switch (esc) {
-                            case 'n': pending[0] = '\n'; pending_len = 1; break;
-                            case 't': pending[0] = '\t'; pending_len = 1; break;
-                            case 'r': pending[0] = '\r'; pending_len = 1; break;
-                            case '\\': pending[0] = '\\'; pending_len = 1; break;
-                            case '"': pending[0] = '"'; pending_len = 1; break;
-                            case '\'': pending[0] = '\''; pending_len = 1; break;
-                            case 'N': pending[0] = 0x1A; pending_len = 1; break;
-                            case '0': case '1': case '2': case '3':
-                            case '4': case '5': case '6': case '7': {
-                                int val = esc - '0';
-                                for (int i = 0; i < 2 && *p >= '0' && *p <= '7'; i++) {
-                                    val = val * 8 + (*p - '0');
-                                    p++;
-                                }
-                                pending[0] = (char)val; pending_len = 1;
-                                break;
+                        case 'n':
+                            pending[0] = '\n';
+                            pending_len = 1;
+                            break;
+                        case 't':
+                            pending[0] = '\t';
+                            pending_len = 1;
+                            break;
+                        case 'r':
+                            pending[0] = '\r';
+                            pending_len = 1;
+                            break;
+                        case '\\':
+                            pending[0] = '\\';
+                            pending_len = 1;
+                            break;
+                        case '"':
+                            pending[0] = '"';
+                            pending_len = 1;
+                            break;
+                        case '\'':
+                            pending[0] = '\'';
+                            pending_len = 1;
+                            break;
+                        case 'N':
+                            pending[0] = 0x1A;
+                            pending_len = 1;
+                            break;
+                        case '0':
+                        case '1':
+                        case '2':
+                        case '3':
+                        case '4':
+                        case '5':
+                        case '6':
+                        case '7': {
+                            int val = esc - '0';
+                            for (int i = 0; i < 2 && *p >= '0' && *p <= '7'; i++) {
+                                val = val * 8 + (*p - '0');
+                                p++;
                             }
-                            default:
-                                pending[0] = '\\'; pending[1] = esc; pending_len = 2;
-                                break;
+                            pending[0] = (char)val;
+                            pending_len = 1;
+                            break;
+                        }
+                        default:
+                            pending[0] = '\\';
+                            pending[1] = esc;
+                            pending_len = 2;
+                            break;
                         }
                     } else {
                         pending[0] = *p++;
                         pending_len = 1;
                     }
                     if (bi + pending_len + 1 > cap) {
-                        while (bi + pending_len + 1 > cap) cap *= 2;
+                        while (bi + pending_len + 1 > cap)
+                            cap *= 2;
                         char *tmp = realloc(buf, cap);
-                        if (!tmp) { free(buf); error(lineno, "Memoria insuficiente para cadena"); }
+                        if (!tmp) {
+                            free(buf);
+                            error(lineno, "Memoria insuficiente para cadena");
+                        }
                         buf = tmp;
                     }
                     memcpy(buf + bi, pending, pending_len);
@@ -418,12 +584,14 @@ void tokenize_file(FILE *fp) {
                 continue;
             }
 
-            if (isdigit(*p) || (*p == '.' && isdigit(*(p+1)))) {
+            if (isdigit(*p) || (*p == '.' && isdigit(*(p + 1)))) {
                 char *start = p;
-                while (isdigit(*p)) p++;
-                if (*p == '.' && isdigit(*(p+1))) {
+                while (isdigit(*p))
                     p++;
-                    while (isdigit(*p)) p++;
+                if (*p == '.' && isdigit(*(p + 1))) {
+                    p++;
+                    while (isdigit(*p))
+                        p++;
                 }
                 /* Notación científica: 1.5e2, 3E-4, 2.5e+10, 1.0e29.
                  * Solo consume la 'e'/'E' si va seguida de un dígito
@@ -433,15 +601,17 @@ void tokenize_file(FILE *fp) {
                  * error de sintaxis, pero no un error del lexer). */
                 if ((*p == 'e' || *p == 'E') &&
                     (isdigit((unsigned char)*(p + 1)) ||
-                    ((*(p + 1) == '+' || *(p + 1) == '-') &&
-                    isdigit((unsigned char)*(p + 2))))) {
-                    p++;                              /* consumir 'e' o 'E' */
-                    if (*p == '+' || *p == '-') p++;  /* consumir signo */
-                        while (isdigit((unsigned char)*p)) p++;
-                    }
-                    size_t len = (size_t)(p - start);
+                     ((*(p + 1) == '+' || *(p + 1) == '-') && isdigit((unsigned char)*(p + 2))))) {
+                    p++; /* consumir 'e' o 'E' */
+                    if (*p == '+' || *p == '-')
+                        p++; /* consumir signo */
+                    while (isdigit((unsigned char)*p))
+                        p++;
+                }
+                size_t len = (size_t)(p - start);
                 char *lexeme = arena_strndup(start, len);
-                if (!lexeme) error(lineno, "Memoria insuficiente para número");
+                if (!lexeme)
+                    error(lineno, "Memoria insuficiente para número");
                 Token t = {TOK_NUMBER, lexeme, lineno, start_col, (int)(p - line)};
                 ts_add(t);
                 continue;
@@ -472,15 +642,15 @@ void tokenize_file(FILE *fp) {
             }
 
             if ((*p == '$' || *p == '?') &&
-                (isalpha(*(p+1)) || *(p+1) == '_' ||
-                 (unsigned char)*(p+1) >= 0x80)) {
+                (isalpha(*(p + 1)) || *(p + 1) == '_' || (unsigned char)*(p + 1) >= 0x80)) {
                 char *start = p;
                 p++;
-                while (isalnum(*p) || *p == '_' ||
-                       (unsigned char)*p >= 0x80) p++;
+                while (isalnum(*p) || *p == '_' || (unsigned char)*p >= 0x80)
+                    p++;
                 size_t len = (size_t)(p - start);
                 char *lexeme = arena_strndup(start, len);
-                if (!lexeme) error(lineno, "Memoria insuficiente para identificador");
+                if (!lexeme)
+                    error(lineno, "Memoria insuficiente para identificador");
                 Token t = {TOK_IDENT, lexeme, lineno, start_col, (int)(p - line)};
                 ts_add(t);
                 continue;
@@ -490,15 +660,15 @@ void tokenize_file(FILE *fp) {
                 (unsigned char)*p >= 0x80) {
                 char *start = p;
                 bool path_prefix = (*start == '.' || *start == '~');
-                while (isalnum((unsigned char)*p) || *p == '_' || *p == '.' ||
-                       *p == '~' || *p == '&' || (unsigned char)*p >= 0x80 ||
-                       (path_prefix && *p == '/') ||
+                while (isalnum((unsigned char)*p) || *p == '_' || *p == '.' || *p == '~' ||
+                       *p == '&' || (unsigned char)*p >= 0x80 || (path_prefix && *p == '/') ||
                        (*p == '-' && *(p + 1) != '-')) {
                     p++;
                 }
                 size_t len = (size_t)(p - start);
                 char *lexeme = arena_strndup(start, len);
-                if (!lexeme) error(lineno, "Memoria insuficiente para identificador");
+                if (!lexeme)
+                    error(lineno, "Memoria insuficiente para identificador");
                 TokenType k = lookup_keyword(lexeme);
                 Token t;
                 t.type = (k != TOK_IDENT) ? k : TOK_IDENT;

@@ -3,42 +3,43 @@
  * Copyright (C) 2026, David Baña Szymaniak
  * Este software se distribuye bajo la licencia Apache 2.0
  * Código fuente de Infernal: runtime/command.c
-*/
+ */
 
+#include "core/value.h"
+#include <ctype.h>
+#include <dirent.h>
+#include <dlfcn.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <limits.h>
+#include <pwd.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <ctype.h>
-#include <unistd.h>
 #include <sys/stat.h>
-#include <fcntl.h>
-#include <errno.h>
-#include <limits.h>
-#include <dirent.h>
 #include <sys/types.h>
-#include <pwd.h>
-#include <dlfcn.h>
-#include "core/value.h"
 #include <sys/wait.h>
-#include <stdint.h>
+#include <unistd.h>
 
 #include "command.h"
 #include "core/memory.h"
-#include "runtime/scope.h"
-#include "runtime/globals.h"
+#include "developer/debug.h"
+#include "embedded/embedded.h"
+#include "runtime/constants.h"
 #include "runtime/error.h"
 #include "runtime/evaluator/helpers.h"
-#include "embedded/embedded.h"
-#include "developer/debug.h"
-#include "runtime/constants.h"
+#include "runtime/globals.h"
+#include "runtime/scope.h"
 
 /* --- Límite de seguridad para descompresión --- */
-#define MAX_DECOMPRESSED_SIZE (500 * 1024 * 1024)  // 500 MiB
+#define MAX_DECOMPRESSED_SIZE (500 * 1024 * 1024) // 500 MiB
 
 static char *embedded_tmp_dir = NULL;
 
 void set_embedded_tmp_dir(const char *dir) {
-    if (embedded_tmp_dir) free(embedded_tmp_dir);
+    if (embedded_tmp_dir)
+        free(embedded_tmp_dir);
     embedded_tmp_dir = dir ? infernal_strdup(dir) : NULL;
 }
 
@@ -49,36 +50,56 @@ char *get_var_string(const char *name) {
         char buf[256];
         char *result = NULL;
         switch (constant_value.type) {
-            case VAL_INT: case VAL_UINT: {
-                char *number = bigint_to_string(value_as_bigint(constant_value));
-                result = strdup(number ? number : "0");
-                free(number);
-                break;
-            }
-            case VAL_FLOAT: snprintf(buf, sizeof(buf), "%g", constant_value.data.fval); result = strdup(buf); break;
-            case VAL_BOOL: result = strdup(constant_value.data.bval ? "true" : "false"); break;
-            case VAL_STRING: result = strdup(constant_value.data.sval); break;
-            default: break;
+        case VAL_INT:
+        case VAL_UINT: {
+            char *number = bigint_to_string(value_as_bigint(constant_value));
+            result = strdup(number ? number : "0");
+            free(number);
+            break;
+        }
+        case VAL_FLOAT:
+            snprintf(buf, sizeof(buf), "%g", constant_value.data.fval);
+            result = strdup(buf);
+            break;
+        case VAL_BOOL:
+            result = strdup(constant_value.data.bval ? "true" : "false");
+            break;
+        case VAL_STRING:
+            result = strdup(constant_value.data.sval);
+            break;
+        default:
+            break;
         }
         value_free(&constant_value);
         return result;
     }
-    if (!e) return NULL;
+    if (!e)
+        return NULL;
     Value *v = &e->value;
     char buf[256];
     switch (v->type) {
-        case VAL_INT: snprintf(buf, sizeof(buf), "%d", v->data.ival); break;
-        case VAL_UINT: snprintf(buf, sizeof(buf), "%u", v->data.uval); break;
-        case VAL_FLOAT: snprintf(buf, sizeof(buf), "%g", v->data.fval); break;
-        case VAL_BOOL: return strdup(v->data.bval ? "true" : "false");
-        case VAL_STRING: return strdup(v->data.sval);
-        default: return NULL;
+    case VAL_INT:
+        snprintf(buf, sizeof(buf), "%d", v->data.ival);
+        break;
+    case VAL_UINT:
+        snprintf(buf, sizeof(buf), "%u", v->data.uval);
+        break;
+    case VAL_FLOAT:
+        snprintf(buf, sizeof(buf), "%g", v->data.fval);
+        break;
+    case VAL_BOOL:
+        return strdup(v->data.bval ? "true" : "false");
+    case VAL_STRING:
+        return strdup(v->data.sval);
+    default:
+        return NULL;
     }
     return strdup(buf);
 }
 
 static bool grow_text_buffer(char **buffer, size_t *cap, size_t needed) {
-    if (needed <= *cap) return true;
+    if (needed <= *cap)
+        return true;
     size_t new_cap = *cap ? *cap : 64;
     while (new_cap < needed) {
         if (new_cap > SIZE_MAX / 2) {
@@ -87,9 +108,11 @@ static bool grow_text_buffer(char **buffer, size_t *cap, size_t needed) {
         }
         new_cap *= 2;
     }
-    if (new_cap < needed) return false;
+    if (new_cap < needed)
+        return false;
     char *tmp = realloc(*buffer, new_cap);
-    if (!tmp) return false;
+    if (!tmp)
+        return false;
     *buffer = tmp;
     *cap = new_cap;
     return true;
@@ -118,16 +141,13 @@ static bool grow_text_buffer(char **buffer, size_t *cap, size_t needed) {
  *
  * Cualquier otro '$' que no vaya seguido de un nombre válido se copia
  * tal cual. */
-static bool is_var_name_start(unsigned char c) {
-    return isalpha(c) || c == '_' || c >= 0x80;
-}
+static bool is_var_name_start(unsigned char c) { return isalpha(c) || c == '_' || c >= 0x80; }
 
-static bool is_var_name_cont(unsigned char c) {
-    return isalnum(c) || c == '_' || c >= 0x80;
-}
+static bool is_var_name_cont(unsigned char c) { return isalnum(c) || c == '_' || c >= 0x80; }
 
 char *expand_command(const char *cmd) {
-    if (!cmd) return NULL;
+    if (!cmd)
+        return NULL;
 
     size_t raw_len = strlen(cmd);
     if (raw_len > (SIZE_MAX - 65) / 2) {
@@ -177,9 +197,11 @@ char *expand_command(const char *cmd) {
         /* '$nombre' -> valor de la variable Infernal 'nombre'. */
         if (p[0] == '$' && is_var_name_start((unsigned char)p[1])) {
             const char *start = p + 1;
-            while (is_var_name_cont((unsigned char)*start)) start++;
+            while (is_var_name_cont((unsigned char)*start))
+                start++;
             size_t nlen = (size_t)(start - (p + 1));
-            if (nlen > 127) nlen = 127;
+            if (nlen > 127)
+                nlen = 127;
             char name[128];
             memcpy(name, p + 1, nlen);
             name[nlen] = '\0';
@@ -190,7 +212,8 @@ char *expand_command(const char *cmd) {
                 if (existing) {
                     free(result);
                     error(current_eval_line,
-                          "La variable '%s' es de tipo '%s' y no se puede expandir en un comando shell.\n"
+                          "La variable '%s' es de tipo '%s' y no se puede expandir en un comando "
+                          "shell.\n"
                           "    Conviértela primero a string: \"\" + $%s",
                           name, value_type_name(existing->value.type), name);
                 }
@@ -235,7 +258,8 @@ char *expand_command(const char *cmd) {
 }
 
 /* --- Descompresión usando libz cargada dinámicamente --- */
-static unsigned char *gunzip_data(const unsigned char *compressed, size_t compressed_len, size_t *out_len) {
+static unsigned char *gunzip_data(const unsigned char *compressed, size_t compressed_len,
+                                  size_t *out_len) {
     static void *zlib_handle = NULL;
     static int zlib_available = -1;
     static const char *zlib_version_str = NULL;
@@ -245,65 +269,67 @@ static unsigned char *gunzip_data(const unsigned char *compressed, size_t compre
         if (!zlib_handle) {
             zlib_available = 0;
         } else {
-            if (!dlsym(zlib_handle, "inflateInit2_") ||
-                !dlsym(zlib_handle, "inflate") ||
+            if (!dlsym(zlib_handle, "inflateInit2_") || !dlsym(zlib_handle, "inflate") ||
                 !dlsym(zlib_handle, "inflateEnd")) {
                 dlclose(zlib_handle);
-            zlib_handle = NULL;
-            zlib_available = 0;
-                } else {
-                    typedef const char *(*zlibVersion_t)(void);
-                    zlibVersion_t p_zlibVersion = (zlibVersion_t)dlsym(zlib_handle, "zlibVersion");
-                    zlib_version_str = p_zlibVersion ? p_zlibVersion() : "1.2.0";
-                    zlib_available = 1;
-                }
+                zlib_handle = NULL;
+                zlib_available = 0;
+            } else {
+                typedef const char *(*zlibVersion_t)(void);
+                zlibVersion_t p_zlibVersion = (zlibVersion_t)dlsym(zlib_handle, "zlibVersion");
+                zlib_version_str = p_zlibVersion ? p_zlibVersion() : "1.2.0";
+                zlib_available = 1;
+            }
         }
     }
 
     if (zlib_available == 0) {
-        fprintf(stderr, "Error en descompresión de embebidos comprimidos: falta zlib (no está disponible en el sistema).\n");
+        fprintf(stderr, "Error en descompresión de embebidos comprimidos: falta zlib (no está "
+                        "disponible en el sistema).\n");
         return NULL;
     }
 
     typedef void *(*alloc_func)(void *opaque, unsigned items, unsigned size);
-    typedef void  (*free_func)(void *opaque, void *address);
+    typedef void (*free_func)(void *opaque, void *address);
 
     typedef struct z_stream_s {
         unsigned char *next_in;
-        unsigned     avail_in;
+        unsigned avail_in;
         unsigned long total_in;
         unsigned char *next_out;
-        unsigned     avail_out;
+        unsigned avail_out;
         unsigned long total_out;
-        char         *msg;
-        void         *state;
-        alloc_func   zalloc;
-        free_func    zfree;
-        void         *opaque;
-        int          data_type;
+        char *msg;
+        void *state;
+        alloc_func zalloc;
+        free_func zfree;
+        void *opaque;
+        int data_type;
         unsigned long adler;
         unsigned long reserved;
     } z_stream;
 
-    typedef int (*inflateInit2_t)(z_stream *strm, int windowBits, const char *version, int stream_size);
+    typedef int (*inflateInit2_t)(z_stream *strm, int windowBits, const char *version,
+                                  int stream_size);
     typedef int (*inflate_t)(z_stream *strm, int flush);
     typedef int (*inflateEnd_t)(z_stream *strm);
 
     inflateInit2_t p_inflateInit2 = (inflateInit2_t)dlsym(zlib_handle, "inflateInit2_");
-    inflate_t      p_inflate      = (inflate_t)dlsym(zlib_handle, "inflate");
-    inflateEnd_t   p_inflateEnd   = (inflateEnd_t)dlsym(zlib_handle, "inflateEnd");
+    inflate_t p_inflate = (inflate_t)dlsym(zlib_handle, "inflate");
+    inflateEnd_t p_inflateEnd = (inflateEnd_t)dlsym(zlib_handle, "inflateEnd");
 
-    #define Z_OK            0
-    #define Z_STREAM_END    1
-    #define Z_NO_FLUSH      0
-    #define Z_STREAM_ERROR (-2)
-    #define Z_DATA_ERROR   (-3)
-    #define Z_BUF_ERROR    (-5)
-    #define MAX_WBITS       15
+#define Z_OK 0
+#define Z_STREAM_END 1
+#define Z_NO_FLUSH 0
+#define Z_STREAM_ERROR (-2)
+#define Z_DATA_ERROR (-3)
+#define Z_BUF_ERROR (-5)
+#define MAX_WBITS 15
 
     z_stream strm = {0};
     if (p_inflateInit2(&strm, 16 + MAX_WBITS, zlib_version_str, sizeof(strm)) != Z_OK) {
-        fprintf(stderr, "Error: no se pudo inicializar la descompresión zlib (versión %s)\n", zlib_version_str);
+        fprintf(stderr, "Error: no se pudo inicializar la descompresión zlib (versión %s)\n",
+                zlib_version_str);
         return NULL;
     }
 
@@ -313,9 +339,12 @@ static unsigned char *gunzip_data(const unsigned char *compressed, size_t compre
     else
         buf_size = compressed_len * 4 + 1024;
     unsigned char *out = malloc(buf_size);
-    if (!out) { p_inflateEnd(&strm); return NULL; }
+    if (!out) {
+        p_inflateEnd(&strm);
+        return NULL;
+    }
 
-    strm.next_in  = (unsigned char *)compressed;
+    strm.next_in = (unsigned char *)compressed;
     strm.avail_in = compressed_len;
     strm.next_out = out;
     strm.avail_out = buf_size;
@@ -323,7 +352,8 @@ static unsigned char *gunzip_data(const unsigned char *compressed, size_t compre
     int ret;
     for (;;) {
         ret = p_inflate(&strm, Z_NO_FLUSH);
-        if (ret == Z_STREAM_END) break;
+        if (ret == Z_STREAM_END)
+            break;
         if (ret != Z_OK) {
             free(out);
             p_inflateEnd(&strm);
@@ -345,7 +375,11 @@ static unsigned char *gunzip_data(const unsigned char *compressed, size_t compre
         buf_size = new_size;
 
         unsigned char *tmp = realloc(out, buf_size);
-        if (!tmp) { free(out); p_inflateEnd(&strm); return NULL; }
+        if (!tmp) {
+            free(out);
+            p_inflateEnd(&strm);
+            return NULL;
+        }
         out = tmp;
         strm.next_out = out + used;
         strm.avail_out = buf_size - used;
@@ -386,10 +420,10 @@ static char *prepare_embedded_binary(const char *cmd_name) {
         if (dir_len > 0 && (size_t)dir_len < sizeof(work_dir) &&
             (mkdir(work_dir, 0700) == 0 || errno == EEXIST)) {
             int path_len = snprintf(tmp_path, sizeof(tmp_path), "%s/infernal_XXXXXX", work_dir);
-        if (path_len > 0 && (size_t)path_len < sizeof(tmp_path)) {
-            fd = mkstemp(tmp_path);
-        }
+            if (path_len > 0 && (size_t)path_len < sizeof(tmp_path)) {
+                fd = mkstemp(tmp_path);
             }
+        }
     }
 
     if (fd == -1) {
@@ -414,7 +448,8 @@ static char *prepare_embedded_binary(const char *cmd_name) {
     while (offset < raw_size) {
         ssize_t written = write(fd, raw_data + offset, raw_size - offset);
         if (written < 0) {
-            if (errno == EINTR) continue;
+            if (errno == EINTR)
+                continue;
             perror("write");
             close(fd);
             unlink(tmp_path);
@@ -441,14 +476,16 @@ static char *prepare_embedded_binary(const char *cmd_name) {
 
 /* --- Ejecutar comandos a través del shell configurado de Infernal --- */
 static char *shell_quote(const char *text) {
-    if (!text) return NULL;
+    if (!text)
+        return NULL;
 
     size_t len = 2; /* comillas simples de apertura y cierre */
     for (const char *p = text; *p; p++)
         len += (*p == '\'') ? 4 : 1;
 
     char *quoted = malloc(len + 1);
-    if (!quoted) return NULL;
+    if (!quoted)
+        return NULL;
 
     size_t out = 0;
     quoted[out++] = '\'';
@@ -468,7 +505,8 @@ static char *shell_quote(const char *text) {
 }
 
 FILE *popen_infernal_shell(const char *cmd, const char *mode) {
-    if (!cmd || !mode) return NULL;
+    if (!cmd || !mode)
+        return NULL;
 
     const char *shell = infernal_shell ? infernal_shell : "/bin/sh";
     char *quoted_shell = shell_quote(shell);
@@ -498,23 +536,43 @@ FILE *popen_infernal_shell(const char *cmd, const char *mode) {
 
 /* --- Ejecutar comando embebido y devolver código de salida --- */
 int execute_embedded(const char *full_cmd) {
-    if (!full_cmd) return -1;
+    if (!full_cmd)
+        return -1;
     char *cmd_copy = infernal_strdup(full_cmd);
     char *saveptr;
     char *cmd_name = strtok_r(cmd_copy, " \t", &saveptr);
-    if (!cmd_name) { free(cmd_copy); return -1; }
+    if (!cmd_name) {
+        free(cmd_copy);
+        return -1;
+    }
 
     char *binary_path = prepare_embedded_binary(cmd_name);
-    if (!binary_path) { free(cmd_copy); return -1; }
+    if (!binary_path) {
+        free(cmd_copy);
+        return -1;
+    }
 
     char *quoted_binary = shell_quote(binary_path);
-    if (!quoted_binary) { unlink(binary_path); free(binary_path); free(cmd_copy); return -1; }
+    if (!quoted_binary) {
+        unlink(binary_path);
+        free(binary_path);
+        free(cmd_copy);
+        return -1;
+    }
     size_t len = strlen(quoted_binary) + 1;
     char *rest = saveptr;
-    if (rest && *rest) len += strlen(rest) + 1;
+    if (rest && *rest)
+        len += strlen(rest) + 1;
     char *exec_cmd = malloc(len);
-    if (!exec_cmd) { unlink(binary_path); free(quoted_binary); free(binary_path); free(cmd_copy); return -1; }
-    int written = snprintf(exec_cmd, len, "%s%s%s", quoted_binary, (rest && *rest) ? " " : "", (rest && *rest) ? rest : "");
+    if (!exec_cmd) {
+        unlink(binary_path);
+        free(quoted_binary);
+        free(binary_path);
+        free(cmd_copy);
+        return -1;
+    }
+    int written = snprintf(exec_cmd, len, "%s%s%s", quoted_binary, (rest && *rest) ? " " : "",
+                           (rest && *rest) ? rest : "");
     if (written < 0 || (size_t)written >= len) {
         unlink(binary_path);
         free(quoted_binary);
@@ -539,7 +597,8 @@ int execute_embedded(const char *full_cmd) {
         do {
             waited = waitpid(pid, &ret, 0);
         } while (waited < 0 && errno == EINTR);
-        if (waited < 0) ret = -1;
+        if (waited < 0)
+            ret = -1;
     }
 
     unlink(binary_path);
@@ -548,27 +607,49 @@ int execute_embedded(const char *full_cmd) {
     free(exec_cmd);
     free(cmd_copy);
 
-    if (ret == -1) return -1;
-    if (WIFEXITED(ret)) return WEXITSTATUS(ret);
+    if (ret == -1)
+        return -1;
+    if (WIFEXITED(ret))
+        return WEXITSTATUS(ret);
     return -1;
 }
 
 FILE *popen_embedded_with_path(const char *full_cmd, const char *mode, char **temp_path) {
-    if (!full_cmd || !temp_path) return NULL;
+    if (!full_cmd || !temp_path)
+        return NULL;
     char *cmd_copy = infernal_strdup(full_cmd);
     char *saveptr;
     char *cmd_name = strtok_r(cmd_copy, " \t", &saveptr);
-    if (!cmd_name) { free(cmd_copy); return NULL; }
+    if (!cmd_name) {
+        free(cmd_copy);
+        return NULL;
+    }
     char *binary_path = prepare_embedded_binary(cmd_name);
-    if (!binary_path) { free(cmd_copy); return NULL; }
+    if (!binary_path) {
+        free(cmd_copy);
+        return NULL;
+    }
     char *quoted_binary = shell_quote(binary_path);
-    if (!quoted_binary) { unlink(binary_path); free(binary_path); free(cmd_copy); return NULL; }
+    if (!quoted_binary) {
+        unlink(binary_path);
+        free(binary_path);
+        free(cmd_copy);
+        return NULL;
+    }
     size_t len = strlen(quoted_binary) + 1;
     char *rest = saveptr;
-    if (rest && *rest) len += strlen(rest) + 1;
+    if (rest && *rest)
+        len += strlen(rest) + 1;
     char *exec_cmd = malloc(len);
-    if (!exec_cmd) { unlink(binary_path); free(quoted_binary); free(binary_path); free(cmd_copy); return NULL; }
-    int written = snprintf(exec_cmd, len, "%s%s%s", quoted_binary, (rest && *rest) ? " " : "", (rest && *rest) ? rest : "");
+    if (!exec_cmd) {
+        unlink(binary_path);
+        free(quoted_binary);
+        free(binary_path);
+        free(cmd_copy);
+        return NULL;
+    }
+    int written = snprintf(exec_cmd, len, "%s%s%s", quoted_binary, (rest && *rest) ? " " : "",
+                           (rest && *rest) ? rest : "");
     if (written < 0 || (size_t)written >= len) {
         unlink(binary_path);
         free(quoted_binary);
@@ -578,8 +659,12 @@ FILE *popen_embedded_with_path(const char *full_cmd, const char *mode, char **te
         return NULL;
     }
     FILE *fp = popen_infernal_shell(exec_cmd, mode);
-    if (fp) { *temp_path = binary_path; }
-    else { unlink(binary_path); free(binary_path); }
+    if (fp) {
+        *temp_path = binary_path;
+    } else {
+        unlink(binary_path);
+        free(binary_path);
+    }
     free(quoted_binary);
     free(exec_cmd);
     free(cmd_copy);
@@ -590,16 +675,21 @@ void cleanup_embedded_temp_dir(void) {
     const char *base_dir = embedded_tmp_dir ? embedded_tmp_dir : ".";
     char work_dir[PATH_MAX];
     int dir_len = snprintf(work_dir, sizeof(work_dir), "%s/.infernal_tmp", base_dir);
-    if (dir_len <= 0 || (size_t)dir_len >= sizeof(work_dir)) return;
+    if (dir_len <= 0 || (size_t)dir_len >= sizeof(work_dir))
+        return;
     DIR *d = opendir(work_dir);
-    if (!d) return;
+    if (!d)
+        return;
     struct dirent *entry;
     while ((entry = readdir(d)) != NULL) {
-        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) continue;
-        if (strncmp(entry->d_name, "infernal_", 9) != 0) continue;
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
+            continue;
+        if (strncmp(entry->d_name, "infernal_", 9) != 0)
+            continue;
         char full_path[PATH_MAX];
         int path_len = snprintf(full_path, sizeof(full_path), "%s/%s", work_dir, entry->d_name);
-        if (path_len <= 0 || (size_t)path_len >= sizeof(full_path)) continue;
+        if (path_len <= 0 || (size_t)path_len >= sizeof(full_path))
+            continue;
         unlink(full_path);
     }
     closedir(d);
@@ -622,9 +712,11 @@ int run_shell_command(const char *cmd) {
     } else if (pid > 0) {
         int status;
         while (waitpid(pid, &status, 0) < 0) {
-            if (errno != EINTR) return -1;
+            if (errno != EINTR)
+                return -1;
         }
-        if (WIFEXITED(status)) return WEXITSTATUS(status);
+        if (WIFEXITED(status))
+            return WEXITSTATUS(status);
         return -1;
     } else {
         return -1;
@@ -632,9 +724,11 @@ int run_shell_command(const char *cmd) {
 }
 
 int run_command_get_exit_code(const char *cmd) {
-    if (!cmd) return -1;
+    if (!cmd)
+        return -1;
     char *expanded = expand_command(cmd);
-    if (!expanded) return -1;
+    if (!expanded)
+        return -1;
 
     // Construir comando con stderr redirigido a /dev/null
     char *silent_cmd = malloc(strlen(expanded) + 20);
@@ -647,13 +741,16 @@ int run_command_get_exit_code(const char *cmd) {
 
     FILE *fp = popen_infernal_shell(silent_cmd, "r");
     free(silent_cmd);
-    if (!fp) return -1;
+    if (!fp)
+        return -1;
 
     // Leer y descartar toda la salida (stdout)
     char buf[1024];
-    while (fgets(buf, sizeof(buf), fp) != NULL) {}
+    while (fgets(buf, sizeof(buf), fp) != NULL) {
+    }
 
     int status = pclose(fp);
-    if (WIFEXITED(status)) return WEXITSTATUS(status);
+    if (WIFEXITED(status))
+        return WEXITSTATUS(status);
     return -1;
 }

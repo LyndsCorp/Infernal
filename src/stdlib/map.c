@@ -3,15 +3,14 @@
  * Copyright (C) 2026, David Baña Szymaniak
  * Este software se distribuye bajo la licencia Apache 2.0
  * Código fuente de Infernal: stdlib/map.c
-*/
+ */
 
-#include <stdlib.h>
-#include <string.h>
 #include "map.h"
 #include "core/value.h"
 #include "runtime/error.h"
 #include "runtime/globals.h"
-
+#include <stdlib.h>
+#include <string.h>
 
 /* ================================================
  *  Funciones de la biblioteca
@@ -20,8 +19,10 @@
 /* --- keys() ---
  * Devuelve una lista con las claves del mapa, en orden de inserción. */
 static Value builtin_keys(int argc, Value *args) {
-    if (argc != 1) error(0, "keys() espera exactamente 1 argumento");
-    if (args[0].type != VAL_MAP) error(0, "keys() espera un mapa");
+    if (argc != 1)
+        error(0, "keys() espera exactamente 1 argumento");
+    if (args[0].type != VAL_MAP)
+        error(0, "keys() espera un mapa");
 
     Value list = val_list_empty();
     MapData *md = args[0].data.map;
@@ -35,8 +36,10 @@ static Value builtin_keys(int argc, Value *args) {
  * Devuelve una lista con los valores del mapa, en orden de inserción
  * (el mismo orden que devuelve keys()). */
 static Value builtin_values(int argc, Value *args) {
-    if (argc != 1) error(0, "values() espera exactamente 1 argumento");
-    if (args[0].type != VAL_MAP) error(0, "values() espera un mapa");
+    if (argc != 1)
+        error(0, "values() espera exactamente 1 argumento");
+    if (args[0].type != VAL_MAP)
+        error(0, "values() espera un mapa");
 
     Value list = val_list_empty();
     MapData *md = args[0].data.map;
@@ -51,21 +54,23 @@ static Value builtin_values(int argc, Value *args) {
  * resultante. Si la clave no existe, no hace nada y devuelve una copia
  * del mapa tal cual estaba. */
 static Value builtin_delete(int argc, Value *args) {
-    if (argc != 2) error(0, "delete() espera exactamente 2 argumentos");
-    if (args[0].type != VAL_MAP) error(0, "delete() espera un mapa como primer argumento");
-    if (args[1].type != VAL_STRING) error(0, "delete() espera una cadena como segundo argumento");
+    if (argc != 2)
+        error(0, "delete() espera exactamente 2 argumentos");
+    if (args[0].type != VAL_MAP)
+        error(0, "delete() espera un mapa como primer argumento");
+    if (args[1].type != VAL_STRING)
+        error(0, "delete() espera una cadena como segundo argumento");
 
     val_map_delete(&args[0], args[1].data.sval);
     return copy_value_secure(args[0]);
 }
-
 
 /* ================================================
  *  Registro de funciones
  * ================================================ */
 
 void register_map_builtins(void) {
-    func_register_builtin("keys",   builtin_keys);
+    func_register_builtin("keys", builtin_keys);
     func_register_builtin("values", builtin_values);
     func_register_builtin("delete", builtin_delete);
 }

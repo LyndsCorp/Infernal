@@ -3,24 +3,24 @@
  * Copyright (C) 2026, David Baña Szymaniak
  * Este software se distribuye bajo la licencia Apache 2.0
  * Código fuente de Infernal: runtime/evaluator/eval_binop.c
-*/
+ */
 
 #include "eval_binop.h"
-#include "eval_slice.h"
-#include "helpers.h"
-#include "evaluator.h"
 #include "core/value.h"
+#include "developer/debug.h"
+#include "eval_slice.h"
+#include "evaluator.h"
+#include "helpers.h"
 #include "runtime/error.h"
 #include "runtime/globals.h"
-#include "developer/debug.h"
+#include <errno.h>
+#include <limits.h>
+#include <math.h>
+#include <setjmp.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <math.h>
-#include <stdint.h>
-#include <limits.h>
-#include <errno.h>
-#include <setjmp.h>
 
 /* ====================================================================
  *  Helpers UTF-8 para manipulación cruda de strings
@@ -39,15 +39,13 @@ static size_t utf8_char_count(const char *s) {
         size_t width = 1;
         if (*p < 0x80) {
             width = 1;
-        } else if ((*p & 0xE0) == 0xC0 && p[1] &&
-                   (p[1] & 0xC0) == 0x80) {
+        } else if ((*p & 0xE0) == 0xC0 && p[1] && (p[1] & 0xC0) == 0x80) {
             width = 2;
-        } else if ((*p & 0xF0) == 0xE0 && p[1] && p[2] &&
-                   (p[1] & 0xC0) == 0x80 && (p[2] & 0xC0) == 0x80) {
+        } else if ((*p & 0xF0) == 0xE0 && p[1] && p[2] && (p[1] & 0xC0) == 0x80 &&
+                   (p[2] & 0xC0) == 0x80) {
             width = 3;
-        } else if ((*p & 0xF8) == 0xF0 && p[1] && p[2] && p[3] &&
-                   (p[1] & 0xC0) == 0x80 && (p[2] & 0xC0) == 0x80 &&
-                   (p[3] & 0xC0) == 0x80) {
+        } else if ((*p & 0xF8) == 0xF0 && p[1] && p[2] && p[3] && (p[1] & 0xC0) == 0x80 &&
+                   (p[2] & 0xC0) == 0x80 && (p[3] & 0xC0) == 0x80) {
             width = 4;
         }
         s += width;
@@ -64,15 +62,13 @@ static const char *utf8_advance(const char *s, size_t n) {
         size_t width = 1;
         if (*p < 0x80) {
             width = 1;
-        } else if ((*p & 0xE0) == 0xC0 && p[1] &&
-                   (p[1] & 0xC0) == 0x80) {
+        } else if ((*p & 0xE0) == 0xC0 && p[1] && (p[1] & 0xC0) == 0x80) {
             width = 2;
-        } else if ((*p & 0xF0) == 0xE0 && p[1] && p[2] &&
-                   (p[1] & 0xC0) == 0x80 && (p[2] & 0xC0) == 0x80) {
+        } else if ((*p & 0xF0) == 0xE0 && p[1] && p[2] && (p[1] & 0xC0) == 0x80 &&
+                   (p[2] & 0xC0) == 0x80) {
             width = 3;
-        } else if ((*p & 0xF8) == 0xF0 && p[1] && p[2] && p[3] &&
-                   (p[1] & 0xC0) == 0x80 && (p[2] & 0xC0) == 0x80 &&
-                   (p[3] & 0xC0) == 0x80) {
+        } else if ((*p & 0xF8) == 0xF0 && p[1] && p[2] && p[3] && (p[1] & 0xC0) == 0x80 &&
+                   (p[2] & 0xC0) == 0x80 && (p[3] & 0xC0) == 0x80) {
             width = 4;
         }
         s += width;
@@ -88,8 +84,7 @@ static bool value_is_numeric(Value v) {
 /* Aísla el punto de recuperación en un helper para que eval_binop no tenga
  * que preservar todos sus registros en el caso común. Los literales se
  * evalúan sin protección: su evaluación no puede lanzar errores del lenguaje. */
-static Value eval_binop_right_protected(ASTNode *right_node, int line,
-                                        Value *left) {
+static Value eval_binop_right_protected(ASTNode *right_node, int line, Value *left) {
     jmp_buf saved_env;
     memcpy(&saved_env, &exception_env, sizeof(jmp_buf));
     int saved_raised = exception_raised;
@@ -111,21 +106,44 @@ static Value eval_binop_right_protected(ASTNode *right_node, int line,
 /* Traduce un NODE_SLICE de string a un rango [lo, hi] de caracteres
  * a eliminar (1-based, ambos inclusive). Si hi < lo, no se elimina nada.
  * Las conversiones son las mismas que en remove_slice() de eval_slice.c. */
-static void slice_to_remove_range(ASTNode *slice_node, int total,
-                                  int *lo, int *hi) {
-    int mode  = slice_node->data.slice.mode;
+static void slice_to_remove_range(ASTNode *slice_node, int total, int *lo, int *hi) {
+    int mode = slice_node->data.slice.mode;
     int start = slice_node->data.slice.start;
-    int end   = slice_node->data.slice.end;
+    int end = slice_node->data.slice.end;
 
     switch (mode) {
-        case 0: *lo = start;     *hi = start;   break;  /* [N]   */
-        case 1: *lo = start;     *hi = end;     break;  /* [N:M] */
-        case 2: *lo = start + 1; *hi = total;   break;  /* [N*]  */
-        case 3: *lo = 1;         *hi = end - 1; break;  /* [*M]  */
-        case 4: *lo = start;     *hi = total;   break;  /* [N**] */
-        case 5: *lo = 1;         *hi = end;     break;  /* [**M] */
-        case 6: *lo = 1;         *hi = total;   break;  /* [*]   */
-        default: *lo = 1; *hi = 0; break;
+    case 0:
+        *lo = start;
+        *hi = start;
+        break; /* [N]   */
+    case 1:
+        *lo = start;
+        *hi = end;
+        break; /* [N:M] */
+    case 2:
+        *lo = start + 1;
+        *hi = total;
+        break; /* [N*]  */
+    case 3:
+        *lo = 1;
+        *hi = end - 1;
+        break; /* [*M]  */
+    case 4:
+        *lo = start;
+        *hi = total;
+        break; /* [N**] */
+    case 5:
+        *lo = 1;
+        *hi = end;
+        break; /* [**M] */
+    case 6:
+        *lo = 1;
+        *hi = total;
+        break; /* [*]   */
+    default:
+        *lo = 1;
+        *hi = 0;
+        break;
     }
 }
 
@@ -133,25 +151,29 @@ static void slice_to_remove_range(ASTNode *slice_node, int total,
  * Devuelve un buffer malloc'd con el resultado. */
 static char *utf8_remove_range(const char *s, int lo, int hi, int line) {
     size_t total = utf8_char_count(s);
-    if (lo < 1) lo = 1;
-    if (hi > (int)total) hi = (int)total;
+    if (lo < 1)
+        lo = 1;
+    if (hi > (int)total)
+        hi = (int)total;
 
     if (lo > hi || lo > (int)total) {
         size_t len = strlen(s);
         char *dup = malloc(len + 1);
-        if (!dup) error(line, "Memoria insuficiente al eliminar de string");
+        if (!dup)
+            error(line, "Memoria insuficiente al eliminar de string");
         memcpy(dup, s, len + 1);
         return dup;
     }
 
     const char *start_ptr = utf8_advance(s, (size_t)(lo - 1));
-    const char *end_ptr   = utf8_advance(s, (size_t)hi);
+    const char *end_ptr = utf8_advance(s, (size_t)hi);
 
     size_t prefix_len = (size_t)(start_ptr - s);
     size_t suffix_len = strlen(end_ptr);
 
     char *out = malloc(prefix_len + suffix_len + 1);
-    if (!out) error(line, "Memoria insuficiente al eliminar de string");
+    if (!out)
+        error(line, "Memoria insuficiente al eliminar de string");
 
     memcpy(out, s, prefix_len);
     memcpy(out + prefix_len, end_ptr, suffix_len);
@@ -161,19 +183,21 @@ static char *utf8_remove_range(const char *s, int lo, int hi, int line) {
 
 /* Inserta `to_insert` (debe tener exactamente 1 carácter UTF-8) en la
  * posición `pos` (1-based) del string `s`. Devuelve un buffer malloc'd. */
-static char *utf8_insert_at(const char *s, const char *to_insert,
-                            int pos, int line) {
+static char *utf8_insert_at(const char *s, const char *to_insert, int pos, int line) {
     size_t total = utf8_char_count(s);
-    if (pos < 1) pos = 1;
-    if (pos > (int)total + 1) pos = (int)total + 1;
+    if (pos < 1)
+        pos = 1;
+    if (pos > (int)total + 1)
+        pos = (int)total + 1;
 
     const char *insert_ptr = utf8_advance(s, (size_t)(pos - 1));
     size_t prefix_len = (size_t)(insert_ptr - s);
-    size_t ins_len    = strlen(to_insert);
+    size_t ins_len = strlen(to_insert);
     size_t suffix_len = strlen(insert_ptr);
 
     char *out = malloc(prefix_len + ins_len + suffix_len + 1);
-    if (!out) error(line, "Memoria insuficiente al insertar en string");
+    if (!out)
+        error(line, "Memoria insuficiente al insertar en string");
 
     memcpy(out, s, prefix_len);
     memcpy(out + prefix_len, to_insert, ins_len);
@@ -199,7 +223,8 @@ static char *utf8_insert_at(const char *s, const char *to_insert,
  * Devuelve un buffer malloc'd (liberar con free) o NULL si no se puede
  * obtener una clave string. */
 static char *extract_map_key(ASTNode *node) {
-    if (!node) return NULL;
+    if (!node)
+        return NULL;
 
     if (node->kind == NODE_LIST && node->data.list_lit.count == 1) {
         ASTNode *item = node->data.list_lit.items[0];
@@ -210,7 +235,8 @@ static char *extract_map_key(ASTNode *node) {
 
         if (item->kind == NODE_VAR && !item->data.var.clone) {
             const char *name = item->data.var.name;
-            if (name[0] == '$') name++;
+            if (name[0] == '$')
+                name++;
             VarEntry *e = scope_find(current_scope, name);
             if (!e) {
                 /* Identificador sin definir: se trata como clave literal. */
@@ -253,21 +279,50 @@ static char *extract_map_key(ASTNode *node) {
 Value eval_binop(ASTNode *expr) {
     const char *op_name = "?";
     switch (expr->data.binop.op) {
-        case TOK_PLUS:  op_name = "+"; break;
-        case TOK_MINUS: op_name = "-"; break;
-        case TOK_STAR:  op_name = "*"; break;
-        case TOK_SLASH: op_name = "/"; break;
-        case TOK_PERCENT: op_name = "%"; break;
-        case TOK_EEQ:   op_name = "=="; break;
-        case TOK_NEQ:   op_name = "!="; break;
-        case TOK_LT_OP: op_name = "<"; break;
-        case TOK_GT_OP: op_name = ">"; break;
-        case TOK_LE:    op_name = "<="; break;
-        case TOK_GE:    op_name = ">="; break;
-        case TOK_AND:   op_name = "&&"; break;
-        case TOK_OR:    op_name = "||"; break;
-        case TOK_POW:   op_name = "**"; break;
-        default:        op_name = "desconocido";
+    case TOK_PLUS:
+        op_name = "+";
+        break;
+    case TOK_MINUS:
+        op_name = "-";
+        break;
+    case TOK_STAR:
+        op_name = "*";
+        break;
+    case TOK_SLASH:
+        op_name = "/";
+        break;
+    case TOK_PERCENT:
+        op_name = "%";
+        break;
+    case TOK_EEQ:
+        op_name = "==";
+        break;
+    case TOK_NEQ:
+        op_name = "!=";
+        break;
+    case TOK_LT_OP:
+        op_name = "<";
+        break;
+    case TOK_GT_OP:
+        op_name = ">";
+        break;
+    case TOK_LE:
+        op_name = "<=";
+        break;
+    case TOK_GE:
+        op_name = ">=";
+        break;
+    case TOK_AND:
+        op_name = "&&";
+        break;
+    case TOK_OR:
+        op_name = "||";
+        break;
+    case TOK_POW:
+        op_name = "**";
+        break;
+    default:
+        op_name = "desconocido";
     }
     DEBUG_INFO("NODE_BINOP: operador '%s'", op_name);
 
@@ -313,12 +368,16 @@ Value eval_binop(ASTNode *expr) {
             idx = (int)right_node->data.lit.uval;
         } else {
             Value right_val = eval_expr(right_node);
-            if (right_val.type == VAL_INT) idx = right_val.data.ival;
-            else if (right_val.type == VAL_UINT && right_val.data.uval <= INT_MAX) idx = (int)right_val.data.uval;
+            if (right_val.type == VAL_INT)
+                idx = right_val.data.ival;
+            else if (right_val.type == VAL_UINT && right_val.data.uval <= INT_MAX)
+                idx = (int)right_val.data.uval;
             else if (right_val.type == VAL_LIST && right_val.data.list.count == 1) {
                 Value item = right_val.data.list.items[0];
-                if (item.type == VAL_INT) idx = item.data.ival;
-                else if (item.type == VAL_UINT && item.data.uval <= INT_MAX) idx = (int)item.data.uval;
+                if (item.type == VAL_INT)
+                    idx = item.data.ival;
+                else if (item.type == VAL_UINT && item.data.uval <= INT_MAX)
+                    idx = (int)item.data.uval;
             }
             value_free(&right_val);
         }
@@ -327,15 +386,15 @@ Value eval_binop(ASTNode *expr) {
             DEBUG_INFO("Índice extraído: %d", idx);
             if (idx < 1 || idx > left.data.list.count) {
                 value_free(&left);
-                error(expr->line,
-                      "Índice fuera de rango: %d. La lista tiene %d elemento(s).",
-                      idx, left.data.list.count);
+                error(expr->line, "Índice fuera de rango: %d. La lista tiene %d elemento(s).", idx,
+                      left.data.list.count);
             }
             Value new_list = val_list_empty();
             if (left.data.list.items == NULL && left.data.list.count > 0)
                 error(expr->line, "Lista corrupta al eliminar elemento");
             for (int i = 0; i < left.data.list.count; i++) {
-                if (i == idx - 1) continue;
+                if (i == idx - 1)
+                    continue;
                 val_list_append(&new_list, copy_value_secure(left.data.list.items[i]));
             }
             DEBUG_VAR("lista resultado", new_list);
@@ -344,7 +403,9 @@ Value eval_binop(ASTNode *expr) {
         }
 
         value_free(&left);
-        error(expr->line, "No se puede eliminar de la lista con este tipo de especificación (nodo: %d)", right_node->kind);
+        error(expr->line,
+              "No se puede eliminar de la lista con este tipo de especificación (nodo: %d)",
+              right_node->kind);
     }
 
     /* =================================================================
@@ -361,9 +422,8 @@ Value eval_binop(ASTNode *expr) {
             value_free(&base);
             value_free(&index_val);
             value_free(&left);
-            error(expr->line,
-                  "El valor a insertar en la lista no tiene valor (void): "
-                  "una función o expresión no devolvió nada.");
+            error(expr->line, "El valor a insertar en la lista no tiene valor (void): "
+                              "una función o expresión no devolvió nada.");
         }
 
         int pos = -1;
@@ -380,31 +440,31 @@ Value eval_binop(ASTNode *expr) {
                 value_free(&base);
                 value_free(&index_val);
                 value_free(&left);
-                error(expr->line,
-                  "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
+                error(expr->line, "Índice fuera de rango. No se admiten índices de números "
+                                  "negativos ni números decimales.");
             }
         } else {
             value_free(&base);
             value_free(&index_val);
             value_free(&left);
-            error(expr->line,
-                "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
+            error(expr->line, "Índice fuera de rango. No se admiten índices de números negativos "
+                              "ni números decimales.");
         }
 
-    /* Cero y negativos: error explícito. Los índices que exceden la
-     * longitud de la lista siguen acomodándose al final, como antes. */
-    if (pos < 1) {
-        value_free(&base);
-        value_free(&index_val);
-        value_free(&left);
-        error(expr->line,
-              "Índice fuera de rango. No se admiten índices de números negativos ni números decimales.");
-    }
+        /* Cero y negativos: error explícito. Los índices que exceden la
+         * longitud de la lista siguen acomodándose al final, como antes. */
+        if (pos < 1) {
+            value_free(&base);
+            value_free(&index_val);
+            value_free(&left);
+            error(expr->line, "Índice fuera de rango. No se admiten índices de números negativos "
+                              "ni números decimales.");
+        }
 
-    int len = left.data.list.count;
-    if (pos > len + 1) {
-        pos = len + 1;
-    }
+        int len = left.data.list.count;
+        if (pos > len + 1) {
+            pos = len + 1;
+        }
 
         DEBUG_INFO("Insertando elemento en posición %d", pos);
         Value new_list = val_list_empty();
@@ -438,9 +498,8 @@ Value eval_binop(ASTNode *expr) {
         if (right.type == VAL_VOID) {
             value_free(&right);
             value_free(&left);
-            error(expr->line,
-                  "El operando derecho de '+' no tiene valor (void): "
-                  "una función o expresión no devolvió nada.");
+            error(expr->line, "El operando derecho de '+' no tiene valor (void): "
+                              "una función o expresión no devolvió nada.");
         }
 
         /* `left` es propiedad exclusiva de este frame: nadie más
@@ -450,10 +509,11 @@ Value eval_binop(ASTNode *expr) {
          * O(1) amortizado. */
         if (left.data.list.count >= left.data.list.cap) {
             int new_cap = left.data.list.cap == 0 ? 4 : left.data.list.cap * 2;
-            if (new_cap <= left.data.list.count) new_cap = left.data.list.count + 1;
-            Value *tmp = realloc(left.data.list.items,
-                                 (size_t)new_cap * sizeof(Value));
-            if (!tmp) error(expr->line, "Memoria insuficiente al añadir a la lista");
+            if (new_cap <= left.data.list.count)
+                new_cap = left.data.list.count + 1;
+            Value *tmp = realloc(left.data.list.items, (size_t)new_cap * sizeof(Value));
+            if (!tmp)
+                error(expr->line, "Memoria insuficiente al añadir a la lista");
             left.data.list.items = tmp;
             left.data.list.cap = new_cap;
         }
@@ -517,8 +577,7 @@ Value eval_binop(ASTNode *expr) {
      * forma silenciosa. */
     if (left.type == VAL_MAP) {
         value_free(&left);
-        error(expr->line,
-              "Operación no soportada con mapa y operador '%s'", op_name);
+        error(expr->line, "Operación no soportada con mapa y operador '%s'", op_name);
     }
 
     /* =================================================================
@@ -547,8 +606,7 @@ Value eval_binop(ASTNode *expr) {
             size_t total_sz = utf8_char_count(left.data.sval);
             if (total_sz > (size_t)INT_MAX) {
                 value_free(&left);
-                error(expr->line,
-                      "El string es demasiado largo para aplicar slices");
+                error(expr->line, "El string es demasiado largo para aplicar slices");
             }
             int total = (int)total_sz;
             int lo, hi;
@@ -578,12 +636,16 @@ Value eval_binop(ASTNode *expr) {
             idx = (int)right_node->data.lit.uval;
         } else {
             Value right_val = eval_expr(right_node);
-            if (right_val.type == VAL_INT) idx = right_val.data.ival;
-            else if (right_val.type == VAL_UINT && right_val.data.uval <= INT_MAX) idx = (int)right_val.data.uval;
+            if (right_val.type == VAL_INT)
+                idx = right_val.data.ival;
+            else if (right_val.type == VAL_UINT && right_val.data.uval <= INT_MAX)
+                idx = (int)right_val.data.uval;
             else if (right_val.type == VAL_LIST && right_val.data.list.count == 1) {
                 Value item = right_val.data.list.items[0];
-                if (item.type == VAL_INT) idx = item.data.ival;
-                else if (item.type == VAL_UINT && item.data.uval <= INT_MAX) idx = (int)item.data.uval;
+                if (item.type == VAL_INT)
+                    idx = item.data.ival;
+                else if (item.type == VAL_UINT && item.data.uval <= INT_MAX)
+                    idx = (int)item.data.uval;
             }
             value_free(&right_val);
         }
@@ -592,15 +654,15 @@ Value eval_binop(ASTNode *expr) {
             value_free(&left);
             error(expr->line,
                   "No se puede eliminar de un string con este tipo de especificación "
-                  "(nodo: %d)", right_node->kind);
+                  "(nodo: %d)",
+                  right_node->kind);
         }
 
         {
             size_t total_sz = utf8_char_count(left.data.sval);
             if (idx < 1 || (size_t)idx > total_sz) {
                 value_free(&left);
-                error(expr->line,
-                      "Índice fuera de rango: %d. El string tiene %zu carácter(es).",
+                error(expr->line, "Índice fuera de rango: %d. El string tiene %zu carácter(es).",
                       idx, total_sz);
             }
         }
@@ -681,8 +743,7 @@ Value eval_binop(ASTNode *expr) {
                 value_free(&base);
                 value_free(&index_val);
                 value_free(&left);
-                error(expr->line,
-                      "La posición de inserción debe ser un entero positivo");
+                error(expr->line, "La posición de inserción debe ser un entero positivo");
             }
 
             char *new_str = utf8_insert_at(left.data.sval, base.data.sval, pos, expr->line);
@@ -693,7 +754,7 @@ Value eval_binop(ASTNode *expr) {
             value_free(&left);
             return result;
         }
-        }
+    }
 
     /* =================================================================
      *  RESTO DE OPERADORES (AND, OR, comparaciones, POW, concat, aritmética)
@@ -707,9 +768,8 @@ Value eval_binop(ASTNode *expr) {
             value_free(&left);
             error(expr->line, "Los operadores lógicos 'and'/'or' requieren valores bool");
         }
-        bool short_circuit =
-            (expr->data.binop.op == TOK_AND && !left.data.bval) ||
-            (expr->data.binop.op == TOK_OR && left.data.bval);
+        bool short_circuit = (expr->data.binop.op == TOK_AND && !left.data.bval) ||
+                             (expr->data.binop.op == TOK_OR && left.data.bval);
         if (short_circuit) {
             bool result = left.data.bval;
             value_free(&left);
@@ -723,9 +783,8 @@ Value eval_binop(ASTNode *expr) {
      * memoria que liberar en caso de error. Para tipos sin heap
      * (int, uint, float, bool, null, void, ptr), value_free()
      * es un no-op y el setjmp/longjmp sería trabajo puro. */
-    bool left_needs_cleanup =
-        left.type == VAL_STRING || left.type == VAL_LIST ||
-        left.type == VAL_MAP || left.type == VAL_REFERENCE;
+    bool left_needs_cleanup = left.type == VAL_STRING || left.type == VAL_LIST ||
+                              left.type == VAL_MAP || left.type == VAL_REFERENCE;
     if (right_node->kind == NODE_LITERAL || !left_needs_cleanup) {
         right = eval_expr(right_node);
     } else {
@@ -748,9 +807,8 @@ Value eval_binop(ASTNode *expr) {
             value_free(&right);
             error(expr->line, "Los operadores lógicos 'and'/'or' requieren valores bool");
         }
-        bool result = (expr->data.binop.op == TOK_AND)
-                    ? (left.data.bval && right.data.bval)
-                    : (left.data.bval || right.data.bval);
+        bool result = (expr->data.binop.op == TOK_AND) ? (left.data.bval && right.data.bval)
+                                                       : (left.data.bval || right.data.bval);
         Value result_value = val_bool(result);
         value_free(&left);
         value_free(&right);
@@ -761,33 +819,38 @@ Value eval_binop(ASTNode *expr) {
         bool equal = false;
         if (left.type == right.type) {
             switch (left.type) {
-                case VAL_NULL:   equal = true; break;
-                case VAL_BOOL:   equal = (left.data.bval == right.data.bval); break;
-                case VAL_INT: case VAL_UINT:
-                    equal = value_integer_compare(left, right) == 0;
-                    break;
-                case VAL_FLOAT:  equal = (left.data.fval == right.data.fval); break;
-                case VAL_STRING: equal = (strcmp(left.data.sval, right.data.sval) == 0); break;
-                default: equal = false;
+            case VAL_NULL:
+                equal = true;
+                break;
+            case VAL_BOOL:
+                equal = (left.data.bval == right.data.bval);
+                break;
+            case VAL_INT:
+            case VAL_UINT:
+                equal = value_integer_compare(left, right) == 0;
+                break;
+            case VAL_FLOAT:
+                equal = (left.data.fval == right.data.fval);
+                break;
+            case VAL_STRING:
+                equal = (strcmp(left.data.sval, right.data.sval) == 0);
+                break;
+            default:
+                equal = false;
             }
         }
         /* int vs float: comparación numérica (como Python). */
         else if (left.type == VAL_INT && right.type == VAL_FLOAT) {
             equal = (value_integer_to_double(left) == right.data.fval);
-        }
-        else if (left.type == VAL_FLOAT && right.type == VAL_INT) {
+        } else if (left.type == VAL_FLOAT && right.type == VAL_INT) {
             equal = (left.data.fval == value_integer_to_double(right));
-        }
-        else if (left.type == VAL_UINT && right.type == VAL_INT) {
+        } else if (left.type == VAL_UINT && right.type == VAL_INT) {
             equal = value_integer_compare(left, right) == 0;
-        }
-        else if (left.type == VAL_INT && right.type == VAL_UINT) {
+        } else if (left.type == VAL_INT && right.type == VAL_UINT) {
             equal = value_integer_compare(left, right) == 0;
-        }
-        else if (left.type == VAL_UINT && right.type == VAL_FLOAT) {
+        } else if (left.type == VAL_UINT && right.type == VAL_FLOAT) {
             equal = (value_integer_to_double(left) == right.data.fval);
-        }
-        else if (left.type == VAL_FLOAT && right.type == VAL_UINT) {
+        } else if (left.type == VAL_FLOAT && right.type == VAL_UINT) {
             equal = (left.data.fval == value_integer_to_double(right));
         }
         Value result = val_bool(expr->data.binop.op == TOK_EEQ ? equal : !equal);
@@ -818,49 +881,51 @@ Value eval_binop(ASTNode *expr) {
          * float como alternativa razonable, para no ser más estrictos
          * aquí que en cualquier otra operación numérica. */
         if (left.type == VAL_STRING && value_is_numeric(right)) {
-            int target = (right.type == VAL_FLOAT) ? TOK_FLOAT :
-                         (right.type == VAL_UINT) ? TOK_UINT : TOK_INT;
+            int target = (right.type == VAL_FLOAT)  ? TOK_FLOAT
+                         : (right.type == VAL_UINT) ? TOK_UINT
+                                                    : TOK_INT;
             if (!try_convert_value(&left, target)) {
                 if (target == TOK_INT && try_convert_value(&left, TOK_FLOAT)) {
                     /* El string tenía decimales; comparamos como float. */
                 } else {
                     char bad[256];
-                    snprintf(bad, sizeof(bad), "%.200s",
-                             left.data.sval ? left.data.sval : "");
+                    snprintf(bad, sizeof(bad), "%.200s", left.data.sval ? left.data.sval : "");
                     value_free(&left);
                     value_free(&right);
-                    error(expr->line,
-                          "No se puede comparar un string con un número: el string \"%s\" "
-                          "no representa un valor numérico.\n"
-                          "    Para comparar el texto como tal, usa '==' o '!=' con comillas.\n"
-                          "    Para comparar como número, escribe un valor que se pueda interpretar\n"
-                          "    como int o float, por ejemplo \"3\", \"3.14\" o \"-1\".\n"
-                          "    Si querías comparar el número como texto, conviértelo con:\n"
-                          "        \"\" + $numero",
-                          bad);
+                    error(
+                        expr->line,
+                        "No se puede comparar un string con un número: el string \"%s\" "
+                        "no representa un valor numérico.\n"
+                        "    Para comparar el texto como tal, usa '==' o '!=' con comillas.\n"
+                        "    Para comparar como número, escribe un valor que se pueda interpretar\n"
+                        "    como int o float, por ejemplo \"3\", \"3.14\" o \"-1\".\n"
+                        "    Si querías comparar el número como texto, conviértelo con:\n"
+                        "        \"\" + $numero",
+                        bad);
                 }
             }
         } else if (right.type == VAL_STRING && value_is_numeric(left)) {
-            int target = (left.type == VAL_FLOAT) ? TOK_FLOAT :
-                         (left.type == VAL_UINT) ? TOK_UINT : TOK_INT;
+            int target = (left.type == VAL_FLOAT)  ? TOK_FLOAT
+                         : (left.type == VAL_UINT) ? TOK_UINT
+                                                   : TOK_INT;
             if (!try_convert_value(&right, target)) {
                 if (target == TOK_INT && try_convert_value(&right, TOK_FLOAT)) {
                     /* El string tenía decimales; comparamos como float. */
                 } else {
                     char bad[256];
-                    snprintf(bad, sizeof(bad), "%.200s",
-                             right.data.sval ? right.data.sval : "");
+                    snprintf(bad, sizeof(bad), "%.200s", right.data.sval ? right.data.sval : "");
                     value_free(&left);
                     value_free(&right);
-                    error(expr->line,
-                          "No se puede comparar un número con un string: el string \"%s\" "
-                          "no representa un valor numérico.\n"
-                          "    Para comparar el texto como tal, usa '==' o '!=' con comillas.\n"
-                          "    Para comparar como número, escribe un valor que se pueda interpretar\n"
-                          "    como int o float, por ejemplo \"3\", \"3.14\" o \"-1\".\n"
-                          "    Si querías comparar el número como texto, conviértelo con:\n"
-                          "        \"\" + $numero",
-                          bad);
+                    error(
+                        expr->line,
+                        "No se puede comparar un número con un string: el string \"%s\" "
+                        "no representa un valor numérico.\n"
+                        "    Para comparar el texto como tal, usa '==' o '!=' con comillas.\n"
+                        "    Para comparar como número, escribe un valor que se pueda interpretar\n"
+                        "    como int o float, por ejemplo \"3\", \"3.14\" o \"-1\".\n"
+                        "    Si querías comparar el número como texto, conviértelo con:\n"
+                        "        \"\" + $numero",
+                        bad);
                 }
             }
         }
@@ -870,7 +935,9 @@ Value eval_binop(ASTNode *expr) {
             const char *rt = value_type_name(right.type);
             value_free(&left);
             value_free(&right);
-            error(expr->line, "Los operadores '<', '>', '<=' y '>=' requieren que valores sean numéricos como int o float (se recibió %s y %s)",
+            error(expr->line,
+                  "Los operadores '<', '>', '<=' y '>=' requieren que valores sean numéricos como "
+                  "int o float (se recibió %s y %s)",
                   lt, rt);
         }
         bool integer_comparison = (left.type == VAL_INT || left.type == VAL_UINT) &&
@@ -880,24 +947,34 @@ Value eval_binop(ASTNode *expr) {
             integer_order = value_integer_compare(left, right);
         }
         double lv = (left.type == VAL_INT || left.type == VAL_UINT) ? value_integer_to_double(left)
-        : (left.type == VAL_FLOAT) ? left.data.fval
-        : (left.data.bval ? 1.0 : 0.0);
-        double rv = (right.type == VAL_INT || right.type == VAL_UINT) ? value_integer_to_double(right)
-        : (right.type == VAL_FLOAT) ? right.data.fval
-        : (right.data.bval ? 1.0 : 0.0);
+                    : (left.type == VAL_FLOAT)                      ? left.data.fval
+                                                                    : (left.data.bval ? 1.0 : 0.0);
+        double rv = (right.type == VAL_INT || right.type == VAL_UINT)
+                        ? value_integer_to_double(right)
+                    : (right.type == VAL_FLOAT) ? right.data.fval
+                                                : (right.data.bval ? 1.0 : 0.0);
         bool result = false;
         switch (expr->data.binop.op) {
-            case TOK_LT_OP: result = integer_comparison ? integer_order < 0 : lv < rv; break;
-            case TOK_GT_OP: result = integer_comparison ? integer_order > 0 : lv > rv; break;
-            case TOK_LE:    result = integer_comparison ? integer_order <= 0 : lv <= rv; break;
-            case TOK_GE:    result = integer_comparison ? integer_order >= 0 : lv >= rv; break;
-            default: break;
+        case TOK_LT_OP:
+            result = integer_comparison ? integer_order < 0 : lv < rv;
+            break;
+        case TOK_GT_OP:
+            result = integer_comparison ? integer_order > 0 : lv > rv;
+            break;
+        case TOK_LE:
+            result = integer_comparison ? integer_order <= 0 : lv <= rv;
+            break;
+        case TOK_GE:
+            result = integer_comparison ? integer_order >= 0 : lv >= rv;
+            break;
+        default:
+            break;
         }
         Value result_value = val_bool(result);
         value_free(&left);
         value_free(&right);
         return result_value;
-        }
+    }
 
     if (expr->data.binop.op == TOK_POW) {
         if (!value_is_numeric(left) || !value_is_numeric(right)) {
@@ -907,7 +984,8 @@ Value eval_binop(ASTNode *expr) {
             value_free(&right);
             error(expr->line,
                   "El operador '**' requiere operandos numéricos (int, uint, float o bool); "
-                  "se recibió %s y %s", lt, rt);
+                  "se recibió %s y %s",
+                  lt, rt);
         }
         if ((left.type == VAL_INT || left.type == VAL_UINT) &&
             (right.type == VAL_INT || right.type == VAL_UINT)) {
@@ -918,19 +996,26 @@ Value eval_binop(ASTNode *expr) {
             if (exponent_value.negative || !bigint_to_u64(exponent_value, &exponent) ||
                 exponent > UINT32_MAX ||
                 !bigint_pow(value_as_bigint(left), (uint32_t)exponent, &powered)) {
-                value_free(&left); value_free(&right);
-                error(expr->line, "Desbordamiento o exponente no válido en '**' (máximo: 64 bytes)");
+                value_free(&left);
+                value_free(&right);
+                error(expr->line,
+                      "Desbordamiento o exponente no válido en '**' (máximo: 64 bytes)");
             }
             if (unsigned_power && powered.negative) {
-                value_free(&left); value_free(&right);
+                value_free(&left);
+                value_free(&right);
                 error(expr->line, "Un valor uint no puede ser negativo");
             }
             Value result = val_bigint(powered, unsigned_power);
-            value_free(&left); value_free(&right);
+            value_free(&left);
+            value_free(&right);
             return result;
         }
-        double lv = (left.type == VAL_INT || left.type == VAL_UINT) ? value_integer_to_double(left) : left.data.fval;
-        double rv = (right.type == VAL_INT || right.type == VAL_UINT) ? value_integer_to_double(right) : right.data.fval;
+        double lv = (left.type == VAL_INT || left.type == VAL_UINT) ? value_integer_to_double(left)
+                                                                    : left.data.fval;
+        double rv = (right.type == VAL_INT || right.type == VAL_UINT)
+                        ? value_integer_to_double(right)
+                        : right.data.fval;
         errno = 0;
         double powered = pow(lv, rv);
         if (!isfinite(powered) && isfinite(lv) && isfinite(rv)) {
@@ -964,8 +1049,7 @@ Value eval_binop(ASTNode *expr) {
                 char *number = bigint_to_string(value_as_bigint(left));
                 snprintf(lbuf, sizeof(lbuf), "%s", number ? number : "0");
                 free(number);
-            }
-            else if (left.type == VAL_FLOAT)
+            } else if (left.type == VAL_FLOAT)
                 snprintf(lbuf, sizeof(lbuf), "%.15g", left.data.fval);
             else if (left.type == VAL_BOOL)
                 snprintf(lbuf, sizeof(lbuf), "%s", left.data.bval ? "true" : "false");
@@ -983,8 +1067,7 @@ Value eval_binop(ASTNode *expr) {
                 char *number = bigint_to_string(value_as_bigint(right));
                 snprintf(rbuf, sizeof(rbuf), "%s", number ? number : "0");
                 free(number);
-            }
-            else if (right.type == VAL_FLOAT)
+            } else if (right.type == VAL_FLOAT)
                 snprintf(rbuf, sizeof(rbuf), "%.15g", right.data.fval);
             else if (right.type == VAL_BOOL)
                 snprintf(rbuf, sizeof(rbuf), "%s", right.data.bval ? "true" : "false");
@@ -1001,7 +1084,8 @@ Value eval_binop(ASTNode *expr) {
         size_t rs_len = strlen(rs);
         size_t total = ls_len + rs_len + 1;
         char *buf = malloc(total);
-        if (!buf) error(expr->line, "Memoria insuficiente al concatenar cadenas");
+        if (!buf)
+            error(expr->line, "Memoria insuficiente al concatenar cadenas");
         memcpy(buf, ls, ls_len);
         memcpy(buf + ls_len, rs, rs_len + 1);
         /* Construimos el Value directamente: val_string() haría un
@@ -1023,57 +1107,73 @@ Value eval_binop(ASTNode *expr) {
             int64_t result = 0;
             bool overflow = false;
             switch (expr->data.binop.op) {
-                case TOK_PLUS:
-                case TOK_STAR:
-                    if (left.type == VAL_UINT && right.type == VAL_UINT) {
-                        uint64_t n = expr->data.binop.op == TOK_PLUS
-                            ? (uint64_t)left.data.uval + right.data.uval
-                            : (uint64_t)left.data.uval * right.data.uval;
-                        value_free(&left); value_free(&right);
-                        return n <= UINT32_MAX ? val_uint((uint32_t)n)
-                                               : val_bigint(bigint_from_u64(n), true);
-                    }
-                    overflow = expr->data.binop.op == TOK_PLUS
-                        ? __builtin_add_overflow(a, b, &result)
-                        : __builtin_mul_overflow(a, b, &result);
-                    break;
-                case TOK_MINUS:
-                    overflow = __builtin_sub_overflow(a, b, &result);
-                    break;
-                case TOK_PERCENT:
-                    if (!b) { value_free(&left); value_free(&right); error(expr->line, "Módulo por cero"); }
-                    result = a % b;
-                    break;
-                case TOK_SLASH:
-                    if (!b) { value_free(&left); value_free(&right); error(expr->line, "División por cero"); }
-                    value_free(&left); value_free(&right);
-                    return val_float((double)a / (double)b);
-                default:
-                    value_free(&left); value_free(&right);
-                    error(expr->line, "Operador no soportado");
+            case TOK_PLUS:
+            case TOK_STAR:
+                if (left.type == VAL_UINT && right.type == VAL_UINT) {
+                    uint64_t n = expr->data.binop.op == TOK_PLUS
+                                     ? (uint64_t)left.data.uval + right.data.uval
+                                     : (uint64_t)left.data.uval * right.data.uval;
+                    value_free(&left);
+                    value_free(&right);
+                    return n <= UINT32_MAX ? val_uint((uint32_t)n)
+                                           : val_bigint(bigint_from_u64(n), true);
+                }
+                overflow = expr->data.binop.op == TOK_PLUS ? __builtin_add_overflow(a, b, &result)
+                                                           : __builtin_mul_overflow(a, b, &result);
+                break;
+            case TOK_MINUS:
+                overflow = __builtin_sub_overflow(a, b, &result);
+                break;
+            case TOK_PERCENT:
+                if (!b) {
+                    value_free(&left);
+                    value_free(&right);
+                    error(expr->line, "Módulo por cero");
+                }
+                result = a % b;
+                break;
+            case TOK_SLASH:
+                if (!b) {
+                    value_free(&left);
+                    value_free(&right);
+                    error(expr->line, "División por cero");
+                }
+                value_free(&left);
+                value_free(&right);
+                return val_float((double)a / (double)b);
+            default:
+                value_free(&left);
+                value_free(&right);
+                error(expr->line, "Operador no soportado");
             }
             if (!overflow) {
                 if (unsigned_result && result < 0) {
                     Value negative = val_bigint(bigint_from_i64(result), false);
                     if (!try_convert_value(&negative, TOK_UINT)) {
-                        value_free(&negative); value_free(&left); value_free(&right);
+                        value_free(&negative);
+                        value_free(&left);
+                        value_free(&right);
                         error(expr->line, "El resultado de '%s' es negativo para uint", op_name);
                     }
-                    value_free(&left); value_free(&right);
+                    value_free(&left);
+                    value_free(&right);
                     return negative;
                 }
                 if (!unsigned_result && result >= INT_MIN && result <= INT_MAX) {
-                    value_free(&left); value_free(&right);
+                    value_free(&left);
+                    value_free(&right);
                     return val_int((int)result);
                 }
                 if (unsigned_result && (uint64_t)result <= UINT32_MAX) {
-                    value_free(&left); value_free(&right);
+                    value_free(&left);
+                    value_free(&right);
                     return val_uint((uint32_t)result);
                 }
                 Value widened = unsigned_result
-                    ? val_bigint(bigint_from_u64((uint64_t)result), true)
-                    : val_bigint(bigint_from_i64(result), false);
-                value_free(&left); value_free(&right);
+                                    ? val_bigint(bigint_from_u64((uint64_t)result), true)
+                                    : val_bigint(bigint_from_i64(result), false);
+                value_free(&left);
+                value_free(&right);
                 return widened;
             }
         }
@@ -1081,69 +1181,102 @@ Value eval_binop(ASTNode *expr) {
         bool unsigned_result = left.type == VAL_UINT || right.type == VAL_UINT;
         bool ok = true;
         switch (expr->data.binop.op) {
-            case TOK_PLUS: ok = bigint_add(a, b, &result); break;
-            case TOK_MINUS: ok = bigint_sub(a, b, &result); break;
-            case TOK_STAR: ok = bigint_mul(a, b, &result); break;
-            case TOK_PERCENT: {
-                InfernalBigInt quotient;
-                ok = bigint_divmod(a, b, &quotient, &result);
-                if (!ok) { value_free(&left); value_free(&right); error(expr->line, "Módulo por cero"); }
-                break;
-            }
-            case TOK_SLASH: {
-                if (bigint_is_zero(b)) { value_free(&left); value_free(&right); error(expr->line, "División por cero"); }
-                double lv = bigint_to_double(a), rv = bigint_to_double(b);
-                value_free(&left); value_free(&right);
-                return val_float(lv / rv);
-            }
-            default: ok = false; break;
-        }
-        if (!ok) { value_free(&left); value_free(&right); error(expr->line, "Operación entera fuera del límite de 64 bytes o no soportada"); }
-        if (unsigned_result && result.negative) {
-            Value negative = val_bigint(result, false);
-            if (!try_convert_value(&negative, TOK_UINT)) {
-                value_free(&negative); value_free(&left); value_free(&right);
-                error(expr->line, "El resultado de '%s' es negativo para uint", op_name);
-            }
-            value_free(&left); value_free(&right);
-            return negative;
-        }
-        Value value = val_bigint(result, unsigned_result);
-        value_free(&left); value_free(&right);
-        return value;
-    }
-
-    double lv = (left.type == VAL_INT || left.type == VAL_UINT) ? value_integer_to_double(left) :
-    (left.type == VAL_FLOAT) ? left.data.fval :
-    (left.type == VAL_BOOL) ? (left.data.bval ? 1.0 : 0.0) : 0.0;
-    double rv = (right.type == VAL_INT || right.type == VAL_UINT) ? value_integer_to_double(right) :
-    (right.type == VAL_FLOAT) ? right.data.fval :
-    (right.type == VAL_BOOL) ? (right.data.bval ? 1.0 : 0.0) : 0.0;
-    Value result;
-    switch (expr->data.binop.op) {
-        case TOK_PLUS: result = val_float(lv + rv); break;
-        case TOK_MINUS: result = val_float(lv - rv); break;
-        case TOK_STAR: result = val_float(lv * rv); break;
-        case TOK_SLASH:
-            if (rv == 0) {
-                value_free(&left);
-                value_free(&right);
-                error(expr->line, "División por cero");
-            }
-            result = val_float(lv / rv);
+        case TOK_PLUS:
+            ok = bigint_add(a, b, &result);
             break;
-        case TOK_PERCENT:
-            if (rv == 0.0) {
+        case TOK_MINUS:
+            ok = bigint_sub(a, b, &result);
+            break;
+        case TOK_STAR:
+            ok = bigint_mul(a, b, &result);
+            break;
+        case TOK_PERCENT: {
+            InfernalBigInt quotient;
+            ok = bigint_divmod(a, b, &quotient, &result);
+            if (!ok) {
                 value_free(&left);
                 value_free(&right);
                 error(expr->line, "Módulo por cero");
             }
-            result = val_float(fmod(lv, rv));
             break;
-        default:
+        }
+        case TOK_SLASH: {
+            if (bigint_is_zero(b)) {
+                value_free(&left);
+                value_free(&right);
+                error(expr->line, "División por cero");
+            }
+            double lv = bigint_to_double(a), rv = bigint_to_double(b);
             value_free(&left);
             value_free(&right);
-            error(expr->line, "Operador no soportado");
+            return val_float(lv / rv);
+        }
+        default:
+            ok = false;
+            break;
+        }
+        if (!ok) {
+            value_free(&left);
+            value_free(&right);
+            error(expr->line, "Operación entera fuera del límite de 64 bytes o no soportada");
+        }
+        if (unsigned_result && result.negative) {
+            Value negative = val_bigint(result, false);
+            if (!try_convert_value(&negative, TOK_UINT)) {
+                value_free(&negative);
+                value_free(&left);
+                value_free(&right);
+                error(expr->line, "El resultado de '%s' es negativo para uint", op_name);
+            }
+            value_free(&left);
+            value_free(&right);
+            return negative;
+        }
+        Value value = val_bigint(result, unsigned_result);
+        value_free(&left);
+        value_free(&right);
+        return value;
+    }
+
+    double lv = (left.type == VAL_INT || left.type == VAL_UINT) ? value_integer_to_double(left)
+                : (left.type == VAL_FLOAT)                      ? left.data.fval
+                : (left.type == VAL_BOOL)                       ? (left.data.bval ? 1.0 : 0.0)
+                                                                : 0.0;
+    double rv = (right.type == VAL_INT || right.type == VAL_UINT) ? value_integer_to_double(right)
+                : (right.type == VAL_FLOAT)                       ? right.data.fval
+                : (right.type == VAL_BOOL)                        ? (right.data.bval ? 1.0 : 0.0)
+                                                                  : 0.0;
+    Value result;
+    switch (expr->data.binop.op) {
+    case TOK_PLUS:
+        result = val_float(lv + rv);
+        break;
+    case TOK_MINUS:
+        result = val_float(lv - rv);
+        break;
+    case TOK_STAR:
+        result = val_float(lv * rv);
+        break;
+    case TOK_SLASH:
+        if (rv == 0) {
+            value_free(&left);
+            value_free(&right);
+            error(expr->line, "División por cero");
+        }
+        result = val_float(lv / rv);
+        break;
+    case TOK_PERCENT:
+        if (rv == 0.0) {
+            value_free(&left);
+            value_free(&right);
+            error(expr->line, "Módulo por cero");
+        }
+        result = val_float(fmod(lv, rv));
+        break;
+    default:
+        value_free(&left);
+        value_free(&right);
+        error(expr->line, "Operador no soportado");
     }
     value_free(&left);
     value_free(&right);

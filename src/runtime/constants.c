@@ -3,18 +3,17 @@
  * Copyright (C) 2026, David Baña Szymaniak
  * Este software se distribuye bajo la licencia Apache 2.0
  * Código fuente de Infernal: runtime/constants.c
-*/
+ */
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
 #include "constants.h"
 #include "core/memory.h"
 #include "runtime/error.h"
 #include "runtime/evaluator/helpers.h"
 #include "runtime/globals.h"
-
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
 
 typedef struct ConstantEntry {
     char *name;
@@ -51,7 +50,8 @@ static void constant_index_insert(ConstantEntry *entry) {
 }
 
 static ConstantEntry *find_constant(const char *name) {
-    if (!name) return NULL;
+    if (!name)
+        return NULL;
     size_t bucket = constant_name_hash(name) % CONSTANT_BUCKET_COUNT;
     for (ConstantEntry *entry = constant_buckets[bucket]; entry; entry = entry->hash_next) {
         if (strcmp(entry->name, name) == 0)
@@ -65,11 +65,8 @@ static void internal_registration_error(const char *message) {
     abort();
 }
 
-static void register_internal_constant(const char *name,
-                                       int vtype,
-                                       Value default_value,
-                                       ConstantGetter getter,
-                                       ConstantSetter setter) {
+static void register_internal_constant(const char *name, int vtype, Value default_value,
+                                       ConstantGetter getter, ConstantSetter setter) {
     if (!name || name[0] != '_')
         internal_registration_error("las constantes internas deben empezar por '_'");
     if (vtype == 0)
@@ -92,27 +89,30 @@ static void register_internal_constant(const char *name,
 }
 
 bool constants_lookup(const char *name, Value *out) {
-    if (!name) return false;
+    if (!name)
+        return false;
 
     ConstantEntry *entry = find_constant(name);
-    if (!entry) return false;
+    if (!entry)
+        return false;
 
     if (entry->getter) {
         Value current = entry->getter();
         value_free(&entry->value);
         entry->value = copy_value_secure(current);
-        if (out) *out = current;
-        else value_free(&current);
+        if (out)
+            *out = current;
+        else
+            value_free(&current);
         return true;
     }
 
-    if (out) *out = copy_value_secure(entry->value);
+    if (out)
+        *out = copy_value_secure(entry->value);
     return true;
 }
 
-bool constants_is_reserved(const char *name) {
-    return name && find_constant(name) != NULL;
-}
+bool constants_is_reserved(const char *name) { return name && find_constant(name) != NULL; }
 
 /* -------------------------------------------------------------------------
  *  API para módulos Lava
@@ -135,11 +135,13 @@ bool constants_is_reserved(const char *name) {
  * ------------------------------------------------------------------------- */
 
 Value *constants_make_mutable(const char *name) {
-    if (!name || !*name) return NULL;
+    if (!name || !*name)
+        return NULL;
 
     ConstantEntry *entry = find_constant(name);
     if (entry) {
-        if (entry->has_value) return NULL;
+        if (entry->has_value)
+            return NULL;
         return &entry->value;
     }
 
@@ -160,10 +162,12 @@ Value *constants_make_mutable(const char *name) {
 }
 
 Value *constants_get_ptr(const char *name) {
-    if (!name || !*name) return NULL;
+    if (!name || !*name)
+        return NULL;
 
     ConstantEntry *entry = find_constant(name);
-    if (!entry) return NULL;
+    if (!entry)
+        return NULL;
 
     if (entry->getter) {
         Value current = entry->getter();
@@ -177,9 +181,8 @@ Value *constants_get_ptr(const char *name) {
 void constants_define(const char *name, Value value, int line) {
     if (!definition_allowed) {
         value_free(&value);
-        error(line,
-              "Las constantes solo se pueden definir en el script principal; "
-              "los scripts ejecutados con 'execute' no pueden definirlas");
+        error(line, "Las constantes solo se pueden definir en el script principal; "
+                    "los scripts ejecutados con 'execute' no pueden definirlas");
     }
 
     if (!name || !*name) {
@@ -192,7 +195,9 @@ void constants_define(const char *name, Value value, int line) {
 
     if (!entry && current_scope && scope_find(current_scope, name)) {
         value_free(&value);
-        error(line, "El nombre '%s' ya está usado por una variable y no se puede convertir en constante", name);
+        error(line,
+              "El nombre '%s' ya está usado por una variable y no se puede convertir en constante",
+              name);
     }
 
     if (entry) {
@@ -202,7 +207,8 @@ void constants_define(const char *name, Value value, int line) {
                 value_free(&value);
                 error(line,
                       "La constante interna \"%s\" es de solo lectura "
-                      "y no se puede redefinir", name);
+                      "y no se puede redefinir",
+                      name);
             }
             if (actual_type != entry->vtype) {
                 value_free(&value);
@@ -237,14 +243,18 @@ void constants_define(const char *name, Value value, int line) {
         }
 
         value_free(&value);
-        error(line, "La constante \"%s\" ya está definida y no se puede volver a definir ni sobreescribir", name);
+        error(
+            line,
+            "La constante \"%s\" ya está definida y no se puede volver a definir ni sobreescribir",
+            name);
     }
 
     /* Los nombres con '_' quedan reservados para constantes internas. */
     if (name[0] == '_') {
         value_free(&value);
         error(line,
-              "La constante \"%s\" usa el prefijo reservado '_' pero no existe como constante interna",
+              "La constante \"%s\" usa el prefijo reservado '_' pero no existe como constante "
+              "interna",
               name);
     }
 
@@ -267,21 +277,15 @@ void constants_define(const char *name, Value value, int line) {
     constant_index_insert(entry);
 }
 
-void constants_set_definition_allowed(bool allowed) {
-    definition_allowed = allowed;
-}
+void constants_set_definition_allowed(bool allowed) { definition_allowed = allowed; }
 
-bool constants_definition_allowed(void) {
-    return definition_allowed;
-}
+bool constants_definition_allowed(void) { return definition_allowed; }
 
 /* -------------------------------------------------------------------------
  * Constantes internas de Infernal
  * ------------------------------------------------------------------------- */
 
-static Value get_max_loop_limit(void) {
-    return val_int(max_loop_iterations);
-}
+static Value get_max_loop_limit(void) { return val_int(max_loop_iterations); }
 
 static void set_max_loop_limit(const Value *value) {
     if (!value || value->type != VAL_INT) {
@@ -293,13 +297,9 @@ static void set_max_loop_limit(const Value *value) {
     max_loop_iterations = value->data.ival;
 }
 
-static Value get_command_fail_error(void) {
-    return val_bool(command_fail_error);
-}
+static Value get_command_fail_error(void) { return val_bool(command_fail_error); }
 
-static Value get_uint_negative_error(void) {
-    return val_bool(uint_negative_error);
-}
+static Value get_uint_negative_error(void) { return val_bool(uint_negative_error); }
 
 static void set_uint_negative_error(const Value *value) {
     if (!value || value->type != VAL_BOOL)
@@ -339,9 +339,7 @@ static Value get_infernal_version(void) {
     return val_string(version ? version : "");
 }
 
-static Value get_max_string_len(void) {
-    return val_int(max_string_len);
-}
+static Value get_max_string_len(void) { return val_int(max_string_len); }
 
 static void set_max_string_len(const Value *value) {
     if (!value || value->type != VAL_INT) {
@@ -353,46 +351,23 @@ static void set_max_string_len(const Value *value) {
     max_string_len = value->data.ival;
 }
 
-static Value get_pid(void) {
-    return val_int((int)getpid());
-}
+static Value get_pid(void) { return val_int((int)getpid()); }
 
 void register_all_constants(void) {
-    register_internal_constant("_UINT_NEGATIVE_ERROR",
-                               TOK_BOOL,
-                               val_bool(uint_negative_error),
-                               get_uint_negative_error,
-                               set_uint_negative_error);
-    register_internal_constant("_COMMAND_FAIL_ERROR",
-                               TOK_BOOL,
-                               val_bool(command_fail_error),
-                               get_command_fail_error,
-                               set_command_fail_error);
-    register_internal_constant("_INFERNAL_SHELL",
-                               TOK_STRING,
+    register_internal_constant("_UINT_NEGATIVE_ERROR", TOK_BOOL, val_bool(uint_negative_error),
+                               get_uint_negative_error, set_uint_negative_error);
+    register_internal_constant("_COMMAND_FAIL_ERROR", TOK_BOOL, val_bool(command_fail_error),
+                               get_command_fail_error, set_command_fail_error);
+    register_internal_constant("_INFERNAL_SHELL", TOK_STRING,
                                val_string(infernal_shell ? infernal_shell : "/bin/sh"),
-                               get_infernal_shell,
-                               set_infernal_shell);
-    register_internal_constant("_INFERNAL_VERSION",
-                               TOK_STRING,
-                               get_infernal_version(),
-                               get_infernal_version,
-                               NULL);
-    register_internal_constant("_MAX_LOOP_LIMIT",
-                               TOK_INT,
-                               val_int(max_loop_iterations),
-                               get_max_loop_limit,
-                               set_max_loop_limit);
-    register_internal_constant("_MAX_STRING_LEN",
-                               TOK_INT,
-                               val_int(max_string_len),
-                               get_max_string_len,
-                               set_max_string_len);
-    register_internal_constant("_PID",
-                               TOK_INT,
-                               val_int((int)getpid()),
-                               get_pid,
-                               NULL);
+                               get_infernal_shell, set_infernal_shell);
+    register_internal_constant("_INFERNAL_VERSION", TOK_STRING, get_infernal_version(),
+                               get_infernal_version, NULL);
+    register_internal_constant("_MAX_LOOP_LIMIT", TOK_INT, val_int(max_loop_iterations),
+                               get_max_loop_limit, set_max_loop_limit);
+    register_internal_constant("_MAX_STRING_LEN", TOK_INT, val_int(max_string_len),
+                               get_max_string_len, set_max_string_len);
+    register_internal_constant("_PID", TOK_INT, val_int((int)getpid()), get_pid, NULL);
 }
 
 void constants_cleanup(void) {
@@ -409,7 +384,8 @@ void constants_cleanup(void) {
 }
 
 void constants_foreach(ConstantVisitor visitor, void *user_data) {
-    if (!visitor) return;
+    if (!visitor)
+        return;
     for (ConstantEntry *entry = constant_table; entry; entry = entry->next) {
         Value v;
         if (entry->getter) {

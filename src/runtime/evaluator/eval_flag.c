@@ -3,38 +3,43 @@
  * Copyright (C) 2026, David Baña Szymaniak
  * Este software se distribuye bajo la licencia Apache 2.0
  * Código fuente de Infernal: runtime/evaluator/eval_flag.c
-*/
+ */
 
 #include "eval_flag.h"
+#include "core/ast.h"
+#include "core/value.h"
 #include "evaluator.h"
 #include "helpers.h"
-#include "core/value.h"
-#include "core/ast.h"
-#include "runtime/scope.h"
-#include "runtime/globals.h"
-#include "runtime/error.h"
 #include "lexer/lexer.h"
 #include "parser/parser.h"
-#include <stdlib.h>
-#include <string.h>
-#include <stdio.h>
-#include <setjmp.h>
+#include "runtime/error.h"
+#include "runtime/globals.h"
+#include "runtime/scope.h"
 #include <errno.h>
 #include <limits.h>
 #include <math.h>
+#include <setjmp.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <strings.h>
 
 static char *clean_flag_value(const char *val_str) {
-    if (!val_str) return strdup("");
+    if (!val_str)
+        return strdup("");
     const char *start = val_str;
     const char *end = val_str + strlen(val_str);
     if ((val_str[0] == '"' || val_str[0] == '\'') && end > start + 1) {
         char quote = val_str[0];
-        if (end[-1] == quote) { start++; end--; }
+        if (end[-1] == quote) {
+            start++;
+            end--;
+        }
     }
     size_t len = (size_t)(end - start);
     char *cleaned = malloc(len + 1);
-    if (!cleaned) return NULL;
+    if (!cleaned)
+        return NULL;
     memcpy(cleaned, start, len);
     cleaned[len] = '\0';
     return cleaned;
@@ -42,7 +47,8 @@ static char *clean_flag_value(const char *val_str) {
 
 /* --- Ejecutar un spec individual (ya existente) --- */
 void exec_flag_spec_impl(FlagSpec *spec) {
-    if (spec->body_count == 0) return;
+    if (spec->body_count == 0)
+        return;
 
     int saved_fi_nesting = parser_get_fi_nesting();
 
@@ -51,8 +57,8 @@ void exec_flag_spec_impl(FlagSpec *spec) {
     int saved_body_count = spec->body_count;
 
     ts.tokens = spec->body_tokens;
-    ts.count  = spec->body_count;
-    ts.pos    = 0;
+    ts.count = spec->body_count;
+    ts.pos = 0;
 
     /* El spec cede temporalmente la propiedad del array de tokens
      * mientras se ejecuta su body. Si el body llama a exit(), cleanup_all()
@@ -121,73 +127,74 @@ void exec_flag_spec_impl(FlagSpec *spec) {
  *
  * Si el spec no tiene vtype/var_name (p. ej. --help|-h), no hace nada. */
 static void bind_flag_value(FlagSpec *spec, const char *val_str, int line) {
-    if (!spec->vtype || !spec->var_name) return;
+    if (!spec->vtype || !spec->var_name)
+        return;
 
     char *cleaned = clean_flag_value(val_str);
-    if (!cleaned) error(line, "Memoria insuficiente para valor de flag");
+    if (!cleaned)
+        error(line, "Memoria insuficiente para valor de flag");
     if (spec->vtype == TOK_FLOAT) {
         char *coma = strchr(cleaned, ',');
-        if (coma) *coma = '.';
+        if (coma)
+            *coma = '.';
     }
     Value v;
     switch (spec->vtype) {
-        case TOK_UINT: {
-            v = val_string(cleaned);
-            if (!try_convert_value(&v, TOK_UINT)) {
-                free(cleaned);
-                error(line, "El flag '%s' espera un uint válido", spec->var_name);
-            }
-            break;
+    case TOK_UINT: {
+        v = val_string(cleaned);
+        if (!try_convert_value(&v, TOK_UINT)) {
+            free(cleaned);
+            error(line, "El flag '%s' espera un uint válido", spec->var_name);
         }
-        case TOK_INT: {
-            char *end = NULL;
-            errno = 0;
-            long n = strtol(cleaned, &end, 10);
-            if (errno != 0 || end == cleaned || *end != '\0' ||
-                n < INT_MIN || n > INT_MAX) {
-                char bad[256];
-                snprintf(bad, sizeof(bad), "%.200s", cleaned);
-                free(cleaned);
-                error(line, "El flag '%s' espera un int, se recibió \"%s\"",
-                      spec->var_name, bad);
-            }
-            v = val_int((int)n);
-            break;
+        break;
+    }
+    case TOK_INT: {
+        char *end = NULL;
+        errno = 0;
+        long n = strtol(cleaned, &end, 10);
+        if (errno != 0 || end == cleaned || *end != '\0' || n < INT_MIN || n > INT_MAX) {
+            char bad[256];
+            snprintf(bad, sizeof(bad), "%.200s", cleaned);
+            free(cleaned);
+            error(line, "El flag '%s' espera un int, se recibió \"%s\"", spec->var_name, bad);
         }
-        case TOK_FLOAT: {
-            char *end = NULL;
-            errno = 0;
-            double f = strtod(cleaned, &end);
-            if (errno != 0 || end == cleaned || *end != '\0' || !isfinite(f)) {
-                char bad[256];
-                snprintf(bad, sizeof(bad), "%.200s", cleaned);
-                free(cleaned);
-                error(line, "El flag '%s' espera un float, se recibió \"%s\"",
-                      spec->var_name, bad);
-            }
-            v = val_float(f);
-            break;
+        v = val_int((int)n);
+        break;
+    }
+    case TOK_FLOAT: {
+        char *end = NULL;
+        errno = 0;
+        double f = strtod(cleaned, &end);
+        if (errno != 0 || end == cleaned || *end != '\0' || !isfinite(f)) {
+            char bad[256];
+            snprintf(bad, sizeof(bad), "%.200s", cleaned);
+            free(cleaned);
+            error(line, "El flag '%s' espera un float, se recibió \"%s\"", spec->var_name, bad);
         }
-        case TOK_BOOL: {
-            bool b;
-            if (strcasecmp(cleaned, "true") == 0 ||
-                strcmp(cleaned, "1") == 0) {
-                b = true;
-            } else if (strcasecmp(cleaned, "false") == 0 ||
-                       strcmp(cleaned, "0") == 0) {
-                b = false;
-            } else {
-                char bad[256];
-                snprintf(bad, sizeof(bad), "%.200s", cleaned);
-                free(cleaned);
-                error(line, "El flag '%s' espera un bool (true/false/1/0), se recibió \"%s\"",
-                      spec->var_name, bad);
-            }
-            v = val_bool(b);
-            break;
+        v = val_float(f);
+        break;
+    }
+    case TOK_BOOL: {
+        bool b;
+        if (strcasecmp(cleaned, "true") == 0 || strcmp(cleaned, "1") == 0) {
+            b = true;
+        } else if (strcasecmp(cleaned, "false") == 0 || strcmp(cleaned, "0") == 0) {
+            b = false;
+        } else {
+            char bad[256];
+            snprintf(bad, sizeof(bad), "%.200s", cleaned);
+            free(cleaned);
+            error(line, "El flag '%s' espera un bool (true/false/1/0), se recibió \"%s\"",
+                  spec->var_name, bad);
         }
-        case TOK_STRING: v = val_string(cleaned); break;
-        default:         v = val_string(cleaned);
+        v = val_bool(b);
+        break;
+    }
+    case TOK_STRING:
+        v = val_string(cleaned);
+        break;
+    default:
+        v = val_string(cleaned);
     }
     free(cleaned);
 
@@ -238,7 +245,8 @@ void exec_flags(ASTNode *node) {
     int spec_count = node->data.flags.spec_count;
 
     bool *volatile handled = calloc(script_argc > 0 ? (size_t)script_argc : 1, sizeof(bool));
-    if (!handled) error(node->line, "Memoria insuficiente al procesar flags");
+    if (!handled)
+        error(node->line, "Memoria insuficiente al procesar flags");
 
     /* Error via longjmp dentro de un body: liberar `handled` antes de
      * re-lanzar. */
@@ -254,7 +262,10 @@ void exec_flags(ASTNode *node) {
 
     FlagSpec *catch_all = NULL;
     for (int s = 0; s < spec_count; s++) {
-        if (specs[s].catch_all) { catch_all = &specs[s]; break; }
+        if (specs[s].catch_all) {
+            catch_all = &specs[s];
+            break;
+        }
     }
 
     /* Siguiente spec que puede llenarse posicionalmente. Avanza solo
@@ -262,9 +273,11 @@ void exec_flags(ASTNode *node) {
     int slot_idx = 0;
 
     for (int a = flags_arg_index; a < script_argc; a++) {
-        if (handled[a]) continue;
+        if (handled[a])
+            continue;
         char *arg = script_argv[a];
-        if (!arg) continue;
+        if (!arg)
+            continue;
 
         /* ──────────────────────────────────────────────────────────
          * 1. Match por nombre.
@@ -273,16 +286,20 @@ void exec_flags(ASTNode *node) {
          * spec con ese nombre entre sus aliases.
          * ────────────────────────────────────────────────────────── */
         char *arg_dup = strdup(arg);
-        if (!arg_dup) error(node->line, "Memoria insuficiente al procesar flags");
+        if (!arg_dup)
+            error(node->line, "Memoria insuficiente al procesar flags");
         char *eq_pos = strchr(arg_dup, '=');
-        if (eq_pos) *eq_pos = '\0';
+        if (eq_pos)
+            *eq_pos = '\0';
 
         bool matched = false;
         for (int s = 0; s < spec_count && !matched; s++) {
             FlagSpec *spec = &specs[s];
-            if (spec->catch_all) continue;
+            if (spec->catch_all)
+                continue;
             for (int n = 0; n < spec->name_count; n++) {
-                if (strcmp(arg_dup, spec->names[n]) != 0) continue;
+                if (strcmp(arg_dup, spec->names[n]) != 0)
+                    continue;
 
                 if (spec->var_name) {
                     if (eq_pos) {
@@ -294,8 +311,7 @@ void exec_flags(ASTNode *node) {
                         bind_flag_value(spec, script_argv[a], node->line);
                     } else {
                         free(arg_dup);
-                        error(node->line,
-                              "Falta el valor para el flag '%s'", arg);
+                        error(node->line, "Falta el valor para el flag '%s'", arg);
                     }
                 } else {
                     /* Sin var: solo body (--help|-h). */
@@ -310,18 +326,20 @@ void exec_flags(ASTNode *node) {
             }
         }
         free(arg_dup);
-        if (matched) continue;
+        if (matched)
+            continue;
 
         /* ──────────────────────────────────────────────────────────
          * 2. Clúster corto -abc -> -a -b -c.
          * ────────────────────────────────────────────────────────── */
         if (arg[0] == '-' && arg[1] != '-' && arg[1] != '\0' && arg[2] != '\0') {
             for (int c = 1; arg[c]; c++) {
-                char sn[3] = { '-', arg[c], '\0' };
+                char sn[3] = {'-', arg[c], '\0'};
                 bool found = false;
                 for (int s = 0; s < spec_count; s++) {
                     FlagSpec *spec = &specs[s];
-                    if (spec->catch_all) continue;
+                    if (spec->catch_all)
+                        continue;
                     for (int n = 0; n < spec->name_count; n++) {
                         if (strcmp(sn, spec->names[n]) == 0) {
                             if (spec->body_count > 0) {
@@ -331,7 +349,8 @@ void exec_flags(ASTNode *node) {
                             break;
                         }
                     }
-                    if (found) break;
+                    if (found)
+                        break;
                 }
                 if (!found && catch_all) {
                     set_catch_all_var(sn);
@@ -350,7 +369,8 @@ void exec_flags(ASTNode *node) {
             while (slot_idx < spec_count) {
                 FlagSpec *candidate = &specs[slot_idx];
                 slot_idx++;
-                if (candidate->catch_all) continue;
+                if (candidate->catch_all)
+                    continue;
                 if (candidate->is_empty || candidate->var_name) {
                     slot = candidate;
                     break;
@@ -401,4 +421,3 @@ void exec_flags(ASTNode *node) {
     memcpy(&exception_env, &saved_env, sizeof(jmp_buf));
     exception_raised = saved_raised;
 }
-

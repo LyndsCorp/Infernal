@@ -3,24 +3,24 @@
  * Copyright (C) 2026, David Baña Szymaniak
  * Este software se distribuye bajo la licencia Apache 2.0
  * Código fuente de Infernal: stdlib/io.c
-*/
+ */
 
-#include <stdio.h>
-#include <string.h>
-#include <stdlib.h>
-#include <setjmp.h>
-#include <stdbool.h>
-#include <unistd.h>
-#include <termios.h>
-#include <errno.h>
 #include "io.h"
 #include "core/value.h"
-#include "runtime/scope.h"
-#include "runtime/globals.h"
-#include "runtime/error.h"
 #include "runtime/constants.h"
+#include "runtime/error.h"
 #include "runtime/evaluator/helpers.h"
+#include "runtime/globals.h"
+#include "runtime/scope.h"
 #include "stdlib/output.h"
+#include <errno.h>
+#include <setjmp.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <termios.h>
+#include <unistd.h>
 
 /* --- Impresión "de inspección" --------------------------------
  *
@@ -36,57 +36,72 @@
  */
 static void print_value_for_inspection(Value v) {
     switch (v.type) {
-        case VAL_STRING:
-            putchar('"');
-            if (v.data.sval) {
-                for (const unsigned char *p = (const unsigned char *)v.data.sval; *p; ++p) {
-                    switch (*p) {
-                        case '\\': printf("\\\\"); break;
-                        case '"':  printf("\\\""); break;
-                        case '\n': printf("\\n");  break;
-                        case '\r': printf("\\r");  break;
-                        case '\t': printf("\\t");  break;
-                        default:   putchar(*p);    break;
-                    }
+    case VAL_STRING:
+        putchar('"');
+        if (v.data.sval) {
+            for (const unsigned char *p = (const unsigned char *)v.data.sval; *p; ++p) {
+                switch (*p) {
+                case '\\':
+                    printf("\\\\");
+                    break;
+                case '"':
+                    printf("\\\"");
+                    break;
+                case '\n':
+                    printf("\\n");
+                    break;
+                case '\r':
+                    printf("\\r");
+                    break;
+                case '\t':
+                    printf("\\t");
+                    break;
+                default:
+                    putchar(*p);
+                    break;
                 }
             }
-            putchar('"');
-            break;
-
-        case VAL_LIST:
-            printf("[");
-            for (int i = 0; i < v.data.list.count; i++) {
-                if (i > 0) printf(", ");
-                print_value_for_inspection(v.data.list.items[i]);
-            }
-            printf("]");
-            break;
-
-        case VAL_MAP: {
-            printf("[");
-            MapData *md = v.data.map;
-            if (md) {
-                for (int i = 0; i < md->count; i++) {
-                    if (i > 0) printf(", ");
-                    printf("%s = ", md->pairs[i].key ? md->pairs[i].key : "");
-                    print_value_for_inspection(md->pairs[i].value);
-                }
-            }
-            printf("]");
-            break;
         }
+        putchar('"');
+        break;
 
-        default:
-            /* int, float, bool, null, reference, ptr */
-            print_value(v);
-            break;
+    case VAL_LIST:
+        printf("[");
+        for (int i = 0; i < v.data.list.count; i++) {
+            if (i > 0)
+                printf(", ");
+            print_value_for_inspection(v.data.list.items[i]);
+        }
+        printf("]");
+        break;
+
+    case VAL_MAP: {
+        printf("[");
+        MapData *md = v.data.map;
+        if (md) {
+            for (int i = 0; i < md->count; i++) {
+                if (i > 0)
+                    printf(", ");
+                printf("%s = ", md->pairs[i].key ? md->pairs[i].key : "");
+                print_value_for_inspection(md->pairs[i].value);
+            }
+        }
+        printf("]");
+        break;
+    }
+
+    default:
+        /* int, float, bool, null, reference, ptr */
+        print_value(v);
+        break;
     }
 }
 
 static void print_var_entry(const VarEntry *entry, const char *indent, int line) {
     printf("%s%s", indent, entry->name);
     if (entry->value.type == VAL_REFERENCE) {
-        const char *container = entry->value.data.ref.container_name ? entry->value.data.ref.container_name : "?";
+        const char *container =
+            entry->value.data.ref.container_name ? entry->value.data.ref.container_name : "?";
         if (entry->value.data.ref.is_map) {
             printf(" -> %s[\"%s\"]: ", container,
                    entry->value.data.ref.map_key ? entry->value.data.ref.map_key : "?");
@@ -120,7 +135,8 @@ static void print_var_entry(const VarEntry *entry, const char *indent, int line)
 
 /* --- printAllVars() --- */
 static Value builtin_printAllVars(int argc, Value *args) {
-    (void)argc; (void)args;
+    (void)argc;
+    (void)args;
     printf("Variables accesibles:\n");
 
     if (super_global_scope && super_global_scope->vars) {
@@ -139,11 +155,14 @@ static Value builtin_printAllVars(int argc, Value *args) {
             continue;
         }
         if (s->vars) {
-            if (s == global_scope) printf("  Ámbito del script:\n");
-            else if (s->function_name) printf("  Ámbito local de función '%s':\n", s->function_name);
+            if (s == global_scope)
+                printf("  Ámbito del script:\n");
+            else if (s->function_name)
+                printf("  Ámbito local de función '%s':\n", s->function_name);
             else if (s->func_def && s->func_def->kind == NODE_FUNC_DEF)
                 printf("  Ámbito local de función '%s':\n", s->func_def->data.func.name);
-            else printf("  Scope %p:\n", (void*)s);
+            else
+                printf("  Scope %p:\n", (void *)s);
 
             for (VarEntry *e = s->vars; e; e = e->next) {
                 total_vars++;
@@ -170,13 +189,18 @@ static Value builtin_printAllVars(int argc, Value *args) {
  * misma función.
  */
 static bool has_dotted_sibling(FuncEntry *e) {
-    if (!e->obj || e->obj->kind != FUNC_USER || !e->obj->def) return false;
+    if (!e->obj || e->obj->kind != FUNC_USER || !e->obj->def)
+        return false;
     ASTNode *def = e->obj->def;
     for (FuncEntry *other = func_table; other; other = other->next) {
-        if (other == e) continue;
-        if (!other->obj || other->obj->kind != FUNC_USER) continue;
-        if (other->obj->def != def) continue;
-        if (strchr(other->name, '.') != NULL) return true;
+        if (other == e)
+            continue;
+        if (!other->obj || other->obj->kind != FUNC_USER)
+            continue;
+        if (other->obj->def != def)
+            continue;
+        if (strchr(other->name, '.') != NULL)
+            return true;
     }
     return false;
 }
@@ -187,9 +211,11 @@ static void print_function_signature(FuncEntry *e) {
     ASTNode *def = e->obj->def;
     if (def && def->kind == NODE_FUNC_DEF) {
         for (int i = 0; i < def->data.func.param_count; i++) {
-            if (i > 0) printf(", ");
+            if (i > 0)
+                printf(", ");
             int ptype = (def->data.func.ptypes) ? def->data.func.ptypes[i] : 0;
-            if (ptype != 0) printf("%s ", type_name(ptype));
+            if (ptype != 0)
+                printf("%s ", type_name(ptype));
             printf("%s", def->data.func.params[i]);
         }
     }
@@ -198,7 +224,8 @@ static void print_function_signature(FuncEntry *e) {
 
 /* --- printAllFunctions() --- */
 static Value builtin_printAllFunctions(int argc, Value *args) {
-    (void)argc; (void)args;
+    (void)argc;
+    (void)args;
 
     printf("Funciones disponibles:\n");
 
@@ -210,40 +237,43 @@ static Value builtin_printAllFunctions(int argc, Value *args) {
     printf("  Funciones definidas en el script:\n");
     int n = 0;
     for (FuncEntry *e = func_table; e; e = e->next) {
-        if (!e->obj || e->obj->kind != FUNC_USER) continue;
+        if (!e->obj || e->obj->kind != FUNC_USER)
+            continue;
         /* e->module es la fuente de verdad: lo pone el parser
          * al registrar la función (current_import_prefix). Si es
          * NULL, la función fue definida en el script. */
-        if (e->module != NULL) continue;
+        if (e->module != NULL)
+            continue;
         printf("    ");
         print_function_signature(e);
         printf("\n");
         n++;
     }
-    if (n == 0) printf("    (ninguna)\n");
+    if (n == 0)
+        printf("    (ninguna)\n");
 
     /* --- 2. Funciones importadas de módulos .fire --- */
     printf("\n  Funciones importadas de módulos .fire:\n");
     n = 0;
     for (FuncEntry *e = func_table; e; e = e->next) {
-        if (!e->obj || e->obj->kind != FUNC_USER) continue;
-        if (e->module == NULL) continue;
+        if (!e->obj || e->obj->kind != FUNC_USER)
+            continue;
+        if (e->module == NULL)
+            continue;
         printf("    ");
         print_function_signature(e);
         printf("\n");
         n++;
     }
-    if (n == 0) printf("    (ninguna)\n");
+    if (n == 0)
+        printf("    (ninguna)\n");
 
     return val_make_null();
 }
 
 /* --- Helpers para printAllBuiltins() -------------------------- */
 
-static void print_constant_visitor(const char *name,
-                                   int vtype,
-                                   const Value *value,
-                                   bool internal,
+static void print_constant_visitor(const char *name, int vtype, const Value *value, bool internal,
                                    void *user_data) {
     (void)user_data;
     printf("    %s (%s%s) = ", name, type_name(vtype), internal ? "" : "");
@@ -264,7 +294,8 @@ static void print_constant_visitor(const char *name,
  * _MAX_LOOP_LIMIT) se consulta siempre el valor vivo mediante el
  * getter, así que la salida refleja el estado real del intérprete. */
 static Value builtin_printAllBuiltins(int argc, Value *args) {
-    (void)argc; (void)args;
+    (void)argc;
+    (void)args;
 
     printf("Elementos builtin disponibles:\n");
 
@@ -277,7 +308,8 @@ static Value builtin_printAllBuiltins(int argc, Value *args) {
             n++;
         }
     }
-    if (n == 0) printf("    (ninguna)\n");
+    if (n == 0)
+        printf("    (ninguna)\n");
 
     /* --- 2. Constantes --- */
     printf("\n  Constantes:\n");
@@ -302,9 +334,11 @@ static int read_byte(unsigned char *out) {
 /* Redibuja el buffer de entrada sin volver a imprimir el prompt.
  * Se asume que antes se guardó la posición del cursor con "\033[s". */
 static void redraw_input(const char *buffer, size_t length, size_t cursor) {
-    printf("\033[u\033[K");              /* restaura cursor y borra hasta fin de línea */
-    if (length > 0) fwrite(buffer, 1, length, stdout);
-    if (length > cursor) printf("\033[%zuD", length - cursor);
+    printf("\033[u\033[K"); /* restaura cursor y borra hasta fin de línea */
+    if (length > 0)
+        fwrite(buffer, 1, length, stdout);
+    if (length > cursor)
+        printf("\033[%zuD", length - cursor);
     fflush(stdout);
 }
 
@@ -316,13 +350,15 @@ static void redraw_input(const char *buffer, size_t length, size_t cursor) {
  * se reimprime nunca. */
 static Value input_line_editor(void) {
     struct termios original, raw;
-    if (tcgetattr(STDIN_FILENO, &original) != 0) return val_string("");
+    if (tcgetattr(STDIN_FILENO, &original) != 0)
+        return val_string("");
 
     raw = original;
     raw.c_lflag &= (tcflag_t) ~(ICANON | ECHO);
     raw.c_cc[VMIN] = 1;
     raw.c_cc[VTIME] = 0;
-    if (tcsetattr(STDIN_FILENO, TCSANOW, &raw) != 0) return val_string("");
+    if (tcsetattr(STDIN_FILENO, TCSANOW, &raw) != 0)
+        return val_string("");
 
     /* Guardamos la posición del cursor justo después del prompt. */
     printf("\033[s");
@@ -352,7 +388,8 @@ static Value input_line_editor(void) {
 
     for (;;) {
         unsigned char c;
-        if (!read_byte(&c)) break;
+        if (!read_byte(&c))
+            break;
 
         if (c == '\r' || c == '\n') {
             printf("\033[0m\n");
@@ -385,11 +422,14 @@ static Value input_line_editor(void) {
 
         if (c == 27) { /* ESC: posibles secuencias de flechas / Home / End / Delete */
             unsigned char a, b, d;
-            if (!read_byte(&a)) continue;
+            if (!read_byte(&a))
+                continue;
             if (a == '[') {
-                if (!read_byte(&b)) continue;
+                if (!read_byte(&b))
+                    continue;
                 if (b >= '0' && b <= '9') {
-                    if (!read_byte(&d)) continue;
+                    if (!read_byte(&d))
+                        continue;
                     if (b == '3' && d == '~' && cursor < length) { /* Delete */
                         memmove(buffer + cursor, buffer + cursor + 1, length - cursor);
                         length--;
@@ -398,37 +438,43 @@ static Value input_line_editor(void) {
                     continue;
                 }
                 switch (b) {
-                    case 'D': /* Izquierda */
-                        if (cursor > 0) cursor--;
-                        redraw_input(buffer, length, cursor);
-                        break;
-                    case 'C': /* Derecha */
-                        if (cursor < length) cursor++;
-                        redraw_input(buffer, length, cursor);
-                        break;
-                    case 'H': /* Home */
-                        cursor = 0;
-                        redraw_input(buffer, length, cursor);
-                        break;
-                    case 'F': /* End */
-                        cursor = length;
-                        redraw_input(buffer, length, cursor);
-                        break;
-                    case 'A': /* Arriba: reservado para historial */
-                    case 'B': /* Abajo: reservado para historial */
-                    default:
-                        break;
+                case 'D': /* Izquierda */
+                    if (cursor > 0)
+                        cursor--;
+                    redraw_input(buffer, length, cursor);
+                    break;
+                case 'C': /* Derecha */
+                    if (cursor < length)
+                        cursor++;
+                    redraw_input(buffer, length, cursor);
+                    break;
+                case 'H': /* Home */
+                    cursor = 0;
+                    redraw_input(buffer, length, cursor);
+                    break;
+                case 'F': /* End */
+                    cursor = length;
+                    redraw_input(buffer, length, cursor);
+                    break;
+                case 'A': /* Arriba: reservado para historial */
+                case 'B': /* Abajo: reservado para historial */
+                default:
+                    break;
                 }
             } else if (a == 'O') {
-                if (!read_byte(&b)) continue;
-                if (b == 'H') cursor = 0;
-                else if (b == 'F') cursor = length;
+                if (!read_byte(&b))
+                    continue;
+                if (b == 'H')
+                    cursor = 0;
+                else if (b == 'F')
+                    cursor = length;
                 redraw_input(buffer, length, cursor);
             }
             continue;
         }
 
-        if (c < 32) continue; /* ignorar otros controles */
+        if (c < 32)
+            continue; /* ignorar otros controles */
 
         if (length + 1 >= capacity) {
             size_t new_capacity = (capacity < 4096) ? capacity * 2 : capacity + 4096;
@@ -475,7 +521,8 @@ static Value input_line_editor(void) {
  */
 static Value builtin_input(int argc, Value *args) {
     const char *prompt = "";
-    if (argc >= 1 && args[0].type == VAL_STRING) prompt = args[0].data.sval;
+    if (argc >= 1 && args[0].type == VAL_STRING)
+        prompt = args[0].data.sval;
 
     if (prompt[0]) {
         printf("%s", prompt);
@@ -493,7 +540,8 @@ static Value builtin_input(int argc, Value *args) {
     }
 
     size_t len = strlen(buffer);
-    if (len > 0 && buffer[len - 1] == '\n') buffer[len - 1] = '\0';
+    if (len > 0 && buffer[len - 1] == '\n')
+        buffer[len - 1] = '\0';
 
     printf("\033[0m");
     fflush(stdout);
@@ -505,8 +553,8 @@ static Value builtin_input(int argc, Value *args) {
  * ================================================ */
 
 void register_io_builtins(void) {
-    func_register_builtin("printAllVars",      builtin_printAllVars);
+    func_register_builtin("printAllVars", builtin_printAllVars);
     func_register_builtin("printAllFunctions", builtin_printAllFunctions);
-    func_register_builtin("printAllBuiltins",  builtin_printAllBuiltins);
-    func_register_builtin("input",             builtin_input);
+    func_register_builtin("printAllBuiltins", builtin_printAllBuiltins);
+    func_register_builtin("input", builtin_input);
 }

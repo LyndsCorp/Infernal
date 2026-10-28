@@ -3,26 +3,27 @@
  * Copyright (C) 2026, David Baña Szymaniak
  * Este software se distribuye bajo la licencia Apache 2.0
  * Código fuente de Infernal: parser/expression.c
-*/
+ */
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include "expression.h"
+#include "core/ast.h"
+#include "core/memory.h"
+#include "developer/debug.h"
+#include "lexer/lexer.h"
+#include "parser.h"
+#include "runtime/error.h"
+#include "runtime/globals.h"
 #include <errno.h>
 #include <limits.h>
 #include <math.h>
-#include "expression.h"
-#include "core/ast.h"
-#include "lexer/lexer.h"
-#include "runtime/globals.h"
-#include "runtime/error.h"
-#include "parser.h"
-#include "developer/debug.h"
-#include "core/memory.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 /* --- LIMPIEZA DE NOMBRE DE VARIABLE (elimina $ o ?) --- */
 static char *clean_var_name(const char *raw) {
-    if (!raw) return NULL;
+    if (!raw)
+        return NULL;
     /* Solo '$' marca una variable Infernal. '?' NO es un alias de '$':
      * '?nombre' solo tiene sentido dentro de comandos shell, donde
      * expand_command() lo traduce a '$nombre' para que lo expanda el
@@ -53,27 +54,27 @@ static int parse_int_literal(const char *text, int line, const char *context) {
     errno = 0;
     long value = strtol(text, &end, 10);
     if (errno == ERANGE || end == text || *end != '\0' || value < INT_MIN || value > INT_MAX)
-        error(line, "Número entero fuera de rango en %s (límite: %d..%d)",
-              context, INT_MIN, INT_MAX);
+        error(line, "Número entero fuera de rango en %s (límite: %d..%d)", context, INT_MIN,
+              INT_MAX);
     return (int)value;
 }
 
 static bool token_starts_expression(TokenType type) {
     switch (type) {
-        case TOK_NUMBER:
-        case TOK_STRING_LITERAL:
-        case TOK_TRUE:
-        case TOK_FALSE:
-        case TOK_IDENT:
-        case TOK_LBRACKET:
-        case TOK_LBRACE:
-        case TOK_LPAREN:
-        case TOK_MINUS:
-        case TOK_PLUS:
-        case TOK_NOT:
-            return true;
-        default:
-            return false;
+    case TOK_NUMBER:
+    case TOK_STRING_LITERAL:
+    case TOK_TRUE:
+    case TOK_FALSE:
+    case TOK_IDENT:
+    case TOK_LBRACKET:
+    case TOK_LBRACE:
+    case TOK_LPAREN:
+    case TOK_MINUS:
+    case TOK_PLUS:
+    case TOK_NOT:
+        return true;
+    default:
+        return false;
     }
 }
 
@@ -96,8 +97,8 @@ static void expression_expected_value(Token t, const char *context) {
                  "Se esperaba %s, pero apareció '='. Usa '=' para asignar y '==' para comparar",
                  context);
     }
-    error_at(t.line, t.start_col > 0 ? t.start_col : 1,
-             "Se esperaba %s, pero apareció '%s'", context, t.lexeme);
+    error_at(t.line, t.start_col > 0 ? t.start_col : 1, "Se esperaba %s, pero apareció '%s'",
+             context, t.lexeme);
 }
 
 /* --- parse_slice_content (no static, declarada en .h) --- */
@@ -113,23 +114,30 @@ ASTNode *parse_slice_content(int line) {
         ts_advance();
         if (ts_peek().type == TOK_RBRACKET) {
             /* [*] – todos los elementos */
-            mode = 6; start = 0; end = 0;
+            mode = 6;
+            start = 0;
+            end = 0;
         } else if (ts_peek().type == TOK_NUMBER) {
             Token num = ts_advance();
             if (strchr(num.lexeme, '.') != NULL) {
                 error(line, "Índice inválido: no se permiten números decimales");
             }
             int val = parse_int_literal(num.lexeme, line, "índice");
-            if (val < 1) error(line, "Índice inválido: debe ser positivo");
+            if (val < 1)
+                error(line, "Índice inválido: debe ser positivo");
 
             TokenType after = ts_peek().type;
             if (after == TOK_STAR || after == TOK_POW) {
                 /* [*N*] o [*N**] – forma larga de [**N] */
                 ts_advance();
-                mode = 5; start = -1; end = val;
+                mode = 5;
+                start = -1;
+                end = val;
             } else {
                 /* [*N] – todo lo que está ANTES de N, sin contar N */
-                mode = 3; start = -1; end = val;
+                mode = 3;
+                start = -1;
+                end = val;
             }
         } else {
             error(line, "Se esperaba número o ']' después de '*'");
@@ -138,16 +146,21 @@ ASTNode *parse_slice_content(int line) {
         /* [**M] o [**] */
         ts_advance();
         if (ts_peek().type == TOK_RBRACKET) {
-            mode = 6; start = 0; end = 0;
+            mode = 6;
+            start = 0;
+            end = 0;
         } else if (ts_peek().type == TOK_NUMBER) {
             Token num = ts_advance();
             if (strchr(num.lexeme, '.') != NULL) {
                 error(line, "Índice inválido: no se permiten números decimales");
             }
             int val = parse_int_literal(num.lexeme, line, "índice");
-            if (val < 1) error(line, "Índice inválido: debe ser positivo");
+            if (val < 1)
+                error(line, "Índice inválido: debe ser positivo");
             /* [**N] – todo lo que está ANTES de N, incluyendo N */
-            mode = 5; start = -1; end = val;
+            mode = 5;
+            start = -1;
+            end = val;
         } else {
             error(line, "Se esperaba número o ']' después de '**'");
         }
@@ -157,12 +170,15 @@ ASTNode *parse_slice_content(int line) {
             error(line, "Índice inválido: no se permiten números decimales");
         }
         int val = parse_int_literal(num.lexeme, line, "índice");
-        if (val < 1) error(line, "Índice inválido: debe ser positivo");
+        if (val < 1)
+            error(line, "Índice inválido: debe ser positivo");
 
         Token next = ts_peek();
         if (next.type == TOK_RBRACKET) {
             /* [N] – índice único */
-            mode = 0; start = val; end = val;
+            mode = 0;
+            start = val;
+            end = val;
         } else if (next.type == TOK_COLON) {
             ts_advance();
             Token next2 = ts_peek();
@@ -172,11 +188,14 @@ ASTNode *parse_slice_content(int line) {
                     error(line, "Índice inválido: no se permiten números decimales");
                 }
                 int val2 = parse_int_literal(num2.lexeme, line, "índice");
-                if (val2 < 1) error(line, "Índice inválido: debe ser positivo");
-                mode = 1; start = val; end = val2;
+                if (val2 < 1)
+                    error(line, "Índice inválido: debe ser positivo");
+                mode = 1;
+                start = val;
+                end = val2;
                 if (start > end) {
-                    error(line, "Rango invertido: [%d:%d] – quizás te referías a [%d:%d]?",
-                          start, end, end, start);
+                    error(line, "Rango invertido: [%d:%d] – quizás te referías a [%d:%d]?", start,
+                          end, end, start);
                 }
             } else {
                 error(line, "Se esperaba un número después de ':'");
@@ -184,11 +203,15 @@ ASTNode *parse_slice_content(int line) {
         } else if (next.type == TOK_STAR) {
             ts_advance();
             /* [N*] – todo lo que está DESPUÉS de N, sin contar N */
-            mode = 2; start = val; end = -1;
+            mode = 2;
+            start = val;
+            end = -1;
         } else if (next.type == TOK_POW) {
             ts_advance();
             /* [N**] – todo desde N en adelante, incluyendo N */
-            mode = 4; start = val; end = -1;
+            mode = 4;
+            start = val;
+            end = -1;
         } else {
             error(line, "Token inesperado '%s' en slice", next.lexeme);
         }
@@ -206,7 +229,8 @@ ASTNode *parse_slice_content(int line) {
     node->data.slice.start = start;
     node->data.slice.end = end;
     node->data.slice.list = NULL;
-    DEBUG_INFO("parse_slice_content: creado NODE_SLICE modo %d, start=%d, end=%d", mode, start, end);
+    DEBUG_INFO("parse_slice_content: creado NODE_SLICE modo %d, start=%d, end=%d", mode, start,
+               end);
     return node;
 }
 
@@ -215,7 +239,8 @@ ASTNode *parse_index_or_slice(int line) {
     Token t = ts_peek();
     ASTNode *node = NULL;
 
-    if (t.type == TOK_STAR || (t.type == TOK_NUMBER && (ts.tokens[ts.pos+1].type == TOK_COLON || ts.tokens[ts.pos+1].type == TOK_STAR))) {
+    if (t.type == TOK_STAR || (t.type == TOK_NUMBER && (ts.tokens[ts.pos + 1].type == TOK_COLON ||
+                                                        ts.tokens[ts.pos + 1].type == TOK_STAR))) {
         node = parse_slice_content(line);
     } else {
         ASTNode *idx = parse_expression(0);
@@ -236,21 +261,26 @@ ASTNode *parse_index_or_slice(int line) {
  *
  * Este helper detecta el patrón y emite un mensaje específico. */
 void check_unescaped_quote(int prev_pos, const char *context) {
-    if (prev_pos < 0 || prev_pos >= ts.count) return;
-    if (ts.pos >= ts.count) return;
+    if (prev_pos < 0 || prev_pos >= ts.count)
+        return;
+    if (ts.pos >= ts.count)
+        return;
     Token prev = ts.tokens[prev_pos];
-    Token cur  = ts.tokens[ts.pos];
-    if (prev.type != TOK_STRING_LITERAL) return;
-    if (prev.line != cur.line) return;
-    if (cur.start_col != prev.end_col) return;  /* hay espacio: no aplica */
-    if (cur.type != TOK_IDENT &&
-        cur.type != TOK_STRING_LITERAL &&
-        cur.type != TOK_NUMBER) return;
+    Token cur = ts.tokens[ts.pos];
+    if (prev.type != TOK_STRING_LITERAL)
+        return;
+    if (prev.line != cur.line)
+        return;
+    if (cur.start_col != prev.end_col)
+        return; /* hay espacio: no aplica */
+    if (cur.type != TOK_IDENT && cur.type != TOK_STRING_LITERAL && cur.type != TOK_NUMBER)
+        return;
 
     error_at(cur.line, cur.start_col > 0 ? cur.start_col : 1,
              "El token '%s' aparece pegado al string anterior%s.\n"
              "    Probablemente olvidaste escapar una comilla doble dentro del string.\n"
-             "    Para incluir \" dentro de un string, escríbelo como \\\" (barra invertida + comilla):\n"
+             "    Para incluir \" dentro de un string, escríbelo como \\\" (barra invertida + "
+             "comilla):\n"
              "        \"Hola, dijo \\\"adiós\\\" y se fue\"\n"
              "O también puedes usar ' que a veces es más cómodo:\n"
              "        'Hola, dijo \"miau\".'\n"
@@ -282,43 +312,48 @@ static ASTNode *parse_map_literal(int line) {
         Token key = ts_peek();
         if (key.type == TOK_EOF) {
             error_at(line, 1,
-                     "El list o map empieza aquí, pero nunca se cerró; falta ']' antes del final del archivo");
+                     "El list o map empieza aquí, pero nunca se cerró; falta ']' antes del final "
+                     "del archivo");
         }
 
         int value_type = 0;
-        if (key.type == TOK_INT || key.type == TOK_UINT || key.type == TOK_FLOAT || key.type == TOK_BOOL ||
-            key.type == TOK_STRING || key.type == TOK_LIST || key.type == TOK_MAP) {
+        if (key.type == TOK_INT || key.type == TOK_UINT || key.type == TOK_FLOAT ||
+            key.type == TOK_BOOL || key.type == TOK_STRING || key.type == TOK_LIST ||
+            key.type == TOK_MAP) {
             value_type = ts_advance().type;
-        key = ts_peek();
-            }
+            key = ts_peek();
+        }
 
-            if (key.type != TOK_IDENT && key.type != TOK_STRING_LITERAL) {
-                error_at(key.line, key.start_col > 0 ? key.start_col : 1,
-                         "Se esperaba una clave de mapa (identificador o string), pero apareció '%s'",
-                         key.lexeme);
-            }
-            if (key.lexeme[0] == '$' || key.lexeme[0] == '?') {
-                error(line, "Los mapas no permiten punteros ni comandos en las claves");
-            }
-            ts_advance();
+        if (key.type != TOK_IDENT && key.type != TOK_STRING_LITERAL) {
+            error_at(key.line, key.start_col > 0 ? key.start_col : 1,
+                     "Se esperaba una clave de mapa (identificador o string), pero apareció '%s'",
+                     key.lexeme);
+        }
+        if (key.lexeme[0] == '$' || key.lexeme[0] == '?') {
+            error(line, "Los mapas no permiten punteros ni comandos en las claves");
+        }
+        ts_advance();
 
-            Token eq = ts_peek();
-            if (eq.type != TOK_EQ) {
-                error_at(eq.line, eq.start_col > 0 ? eq.start_col : 1,
-                         "Se esperaba '=' después de la clave del mapa");
-            }
-            if (eq.line != key.line || eq.start_col <= key.end_col) {
-                error(line, "Error de sintaxis en mapa: debe haber al menos un espacio entre la clave y '='");
-            }
-            ts_advance();
+        Token eq = ts_peek();
+        if (eq.type != TOK_EQ) {
+            error_at(eq.line, eq.start_col > 0 ? eq.start_col : 1,
+                     "Se esperaba '=' después de la clave del mapa");
+        }
+        if (eq.line != key.line || eq.start_col <= key.end_col) {
+            error(line,
+                  "Error de sintaxis en mapa: debe haber al menos un espacio entre la clave y '='");
+        }
+        ts_advance();
 
-            char *key_name = strdup(key.lexeme);
-            if (!key_name) error(line, "Memoria insuficiente para clave de mapa");
+        char *key_name = strdup(key.lexeme);
+        if (!key_name)
+            error(line, "Memoria insuficiente para clave de mapa");
 
-            ASTNode *value = parse_expression(0);
+        ASTNode *value = parse_expression(0);
 
-        void *new_pairs = infernal_realloc(node->data.map.pairs,
-                                  (size_t)(node->data.map.pair_count + 1) * sizeof(*node->data.map.pairs));
+        void *new_pairs =
+            infernal_realloc(node->data.map.pairs, (size_t)(node->data.map.pair_count + 1) *
+                                                       sizeof(*node->data.map.pairs));
         if (!new_pairs) {
             free(key_name);
             error(line, "Memoria insuficiente para entradas de mapa");
@@ -343,10 +378,14 @@ static ASTNode *parse_map_literal(int line) {
          *   ]
          */
         bool saw_sep = false;
-        while (ts_peek().type == TOK_NEWLINE) { ts_advance(); saw_sep = true; }
+        while (ts_peek().type == TOK_NEWLINE) {
+            ts_advance();
+            saw_sep = true;
+        }
         if (ts_match(TOK_COMMA)) {
             saw_sep = true;
-            while (ts_peek().type == TOK_NEWLINE) ts_advance();
+            while (ts_peek().type == TOK_NEWLINE)
+                ts_advance();
         }
 
         if (ts_peek().type == TOK_RBRACKET) {
@@ -357,9 +396,10 @@ static ASTNode *parse_map_literal(int line) {
         if (!saw_sep) {
             Token bad = ts_peek();
             check_unescaped_quote(ts.pos - 1, " dentro de un mapa");
-            error_at(bad.line, bad.start_col > 0 ? bad.start_col : 1,
-                     "Se esperaba ',', ']' o un salto de línea después del valor del par '%s' del mapa",
-                     key_name);
+            error_at(
+                bad.line, bad.start_col > 0 ? bad.start_col : 1,
+                "Se esperaba ',', ']' o un salto de línea después del valor del par '%s' del mapa",
+                key_name);
         }
     }
     return node;
@@ -372,7 +412,8 @@ static ASTNode *parse_map_literal(int line) {
  * de un escueto "Se esperaba ']'" damos una explicación accionable. */
 static void expect_index_close_bracket(int line) {
     ts_skip_newlines();
-    if (ts_match(TOK_RBRACKET)) return;
+    if (ts_match(TOK_RBRACKET))
+        return;
 
     Token at = ts_peek();
 
@@ -389,18 +430,15 @@ static void expect_index_close_bracket(int line) {
     }
 
     if (at.type == TOK_EOF) {
-        error_at(line, 1,
-                 "El acceso '[' nunca se cerró: falta ']' antes del final del archivo.");
+        error_at(line, 1, "El acceso '[' nunca se cerró: falta ']' antes del final del archivo.");
     }
 
     if (at.type == TOK_NEWLINE) {
-        error_at(at.line, 1,
-                 "El acceso '[' nunca se cerró en esta línea: falta ']'.");
+        error_at(at.line, 1, "El acceso '[' nunca se cerró en esta línea: falta ']'.");
     }
 
     error_at(at.line, at.start_col > 0 ? at.start_col : 1,
-             "Se esperaba ']' para cerrar el índice, pero apareció '%s'.",
-             at.lexeme);
+             "Se esperaba ']' para cerrar el índice, pero apareció '%s'.", at.lexeme);
 }
 
 /* --- Procesar el contenido de un '[...]' sobre una base ---
@@ -461,11 +499,8 @@ ASTNode *parse_primary() {
             char *end = NULL;
             errno = 0;
             double fv = strtod(t.lexeme, &end);
-            if (errno == ERANGE || end == t.lexeme || *end != '\0' ||
-                !isfinite(fv)) {
-                error(t.line,
-                      "Número flotante fuera de rango o no finito: %s",
-                      t.lexeme);
+            if (errno == ERANGE || end == t.lexeme || *end != '\0' || !isfinite(fv)) {
+                error(t.line, "Número flotante fuera de rango o no finito: %s", t.lexeme);
             }
             n->data.lit.fval = fv;
         } else {
@@ -474,13 +509,15 @@ ASTNode *parse_primary() {
                 error(t.line, "Número entero fuera del rango máximo de 64 bytes");
             if (bigint_fits_width(integer, 4, true)) {
                 n->data.lit.type = TOK_INT;
-                int64_t small = 0; (void)bigint_to_i64(integer, &small);
+                int64_t small = 0;
+                (void)bigint_to_i64(integer, &small);
                 n->data.lit.ival = (int)small;
             } else if (bigint_min_width(integer, false)) {
                 n->data.lit.type = TOK_UINT;
                 n->data.lit.integer_wide = bigint_min_width(integer, false) > 4;
                 if (!n->data.lit.integer_wide) {
-                    uint64_t small = 0; (void)bigint_to_u64(integer, &small);
+                    uint64_t small = 0;
+                    (void)bigint_to_u64(integer, &small);
                     n->data.lit.uval = (uint32_t)small;
                 } else {
                     n->data.lit.payload.integer_cache = malloc(sizeof(integer));
@@ -488,7 +525,8 @@ ASTNode *parse_primary() {
                         error(t.line, "Memoria insuficiente al guardar el literal entero");
                     *n->data.lit.payload.integer_cache = integer;
                 }
-            } else error(t.line, "Número entero fuera del rango máximo de 64 bytes");
+            } else
+                error(t.line, "Número entero fuera del rango máximo de 64 bytes");
         }
         /* Permitir indexación/slice sobre un literal numérico:
          *   3[i]      → NODE_INDEX(list=3, index=i)
@@ -536,10 +574,10 @@ ASTNode *parse_primary() {
             n->data.call.argc = 0;
             n->data.call.args = NULL;
             n->data.call.resolved = NULL;
-            n->data.call.module_prefix = current_import_prefix
-                ? strdup(current_import_prefix) : NULL;
-            ts_advance(); // consume '('
-            ts_skip_newlines();  /* llamada multilínea: '\n' tras '(' */
+            n->data.call.module_prefix =
+                current_import_prefix ? strdup(current_import_prefix) : NULL;
+            ts_advance();       // consume '('
+            ts_skip_newlines(); /* llamada multilínea: '\n' tras '(' */
 
             // Si no hay paréntesis de cierre inmediato, parseamos argumentos
             if (!ts_match(TOK_RPAREN)) {
@@ -549,13 +587,14 @@ ASTNode *parse_primary() {
                         expression_expected_value(arg_start, "un argumento");
 
                     ASTNode *arg_node = parse_expression(0);
-                    n->data.call.args = infernal_realloc(n->data.call.args,
-                                                (n->data.call.argc + 1) * sizeof(ASTNode*));
+                    n->data.call.args = infernal_realloc(
+                        n->data.call.args, (n->data.call.argc + 1) * sizeof(ASTNode *));
                     n->data.call.args[n->data.call.argc++] = arg_node;
 
-                    ts_skip_newlines();  /* '\n' antes de ',' o ')' */
+                    ts_skip_newlines(); /* '\n' antes de ',' o ')' */
                     Token next = ts_peek();
-                    if (next.type == TOK_RPAREN) break;
+                    if (next.type == TOK_RPAREN)
+                        break;
                     if (next.type != TOK_COMMA) {
                         /* Si el siguiente token es algo que podría iniciar
                          * otra expresión, el usuario olvidó la coma (o una
@@ -563,20 +602,25 @@ ASTNode *parse_primary() {
                          * sea ',' ni ')' también es error aquí: antes se
                          * colaba hasta el ts_match(TOK_RPAREN) final. */
                         if (next.type == TOK_STRING_LITERAL || next.type == TOK_NUMBER ||
-                            next.type == TOK_IDENT || next.type == TOK_TRUE || next.type == TOK_FALSE ||
-                            next.type == TOK_LBRACKET || next.type == TOK_LPAREN || next.type == TOK_LBRACE) {
+                            next.type == TOK_IDENT || next.type == TOK_TRUE ||
+                            next.type == TOK_FALSE || next.type == TOK_LBRACKET ||
+                            next.type == TOK_LPAREN || next.type == TOK_LBRACE) {
                             check_unescaped_quote(ts.pos - 1, " en la llamada a función");
-                            error(t.line, "Falta una coma entre argumentos en la llamada a función '%s'", func_name);
+                            error(t.line,
+                                  "Falta una coma entre argumentos en la llamada a función '%s'",
+                                  func_name);
                         }
-                        error_at(next.line, next.start_col,
-                                 "Se esperaba ',' o ')' después del argumento %d de la llamada a '%s'",
-                                 n->data.call.argc, func_name);
+                        error_at(
+                            next.line, next.start_col,
+                            "Se esperaba ',' o ')' después del argumento %d de la llamada a '%s'",
+                            n->data.call.argc, func_name);
                     }
-                    ts_advance();  /* consumir ',' */
+                    ts_advance(); /* consumir ',' */
                     ts_skip_newlines();
                     if (ts_peek().type == TOK_RPAREN) {
                         error_at(ts_peek().line, ts_peek().start_col,
-                                 "No puede haber una coma al final de los argumentos de '%s'", func_name);
+                                 "No puede haber una coma al final de los argumentos de '%s'",
+                                 func_name);
                     }
                 }
                 if (!ts_match(TOK_RPAREN))
@@ -615,7 +659,8 @@ ASTNode *parse_primary() {
 
             // --- Comparar si el siguiente token es '{' ---
             if (ts_peek().type == TOK_LBRACE) {
-                error(t.line, "Para acceder a elementos de una lista o mapa, usa corchetes `[]`, no llaves `{}`.");
+                error(t.line, "Para acceder a elementos de una lista o mapa, usa corchetes `[]`, "
+                              "no llaves `{}`.");
             }
 
             while (ts_peek().type == TOK_LBRACKET) {
@@ -669,76 +714,82 @@ ASTNode *parse_primary() {
              * (ver NODE_ASSIGN en eval_stmt.c). */
             return node_create(NODE_EMPTY_AMBIGUOUS, t.line);
         }
-        if (first.type == TOK_IDENT || first.type == TOK_STRING_LITERAL || first.type == TOK_NUMBER) {
+        if (first.type == TOK_IDENT || first.type == TOK_STRING_LITERAL ||
+            first.type == TOK_NUMBER) {
             ts_advance();
             if (ts_peek().type == TOK_EQ) {
                 is_map = 1;
             }
-        } else if (first.type == TOK_INT || first.type == TOK_UINT || first.type == TOK_FLOAT || first.type == TOK_BOOL ||
-            first.type == TOK_STRING || first.type == TOK_LIST || first.type == TOK_MAP) {
+        } else if (first.type == TOK_INT || first.type == TOK_UINT || first.type == TOK_FLOAT ||
+                   first.type == TOK_BOOL || first.type == TOK_STRING || first.type == TOK_LIST ||
+                   first.type == TOK_MAP) {
             /* Una entrada con tipo explícito empieza por el token de tipo:
              * [int numero = 7]. */
             ts_advance();
-        if (ts_peek().type == TOK_IDENT) {
-            ts_advance();
-            if (ts_peek().type == TOK_EQ) {
-                is_map = 1;
+            if (ts_peek().type == TOK_IDENT) {
+                ts_advance();
+                if (ts_peek().type == TOK_EQ) {
+                    is_map = 1;
+                }
             }
         }
-            }
-            ts.pos = saved_pos;
+        ts.pos = saved_pos;
 
-            if (is_map) {
-                return parse_map_literal(t.line);
-            } else {
-                ASTNode *n = node_create(NODE_LIST, t.line);
-                n->data.list_lit.items = NULL;
-                n->data.list_lit.count = 0;
-                if (!ts_match(TOK_RBRACKET)) {
-                    do {
-                        ts_skip_newlines();
-                        Token item_start = ts_peek();
-                        if (item_start.type == TOK_EOF) {
-                            error_at(t.line, t.start_col,
-                                     "El list o map empieza aquí, pero nunca se cerró; falta ']' antes del final del archivo");
-                        }
-                        if (item_start.type == TOK_NEWLINE) {
-                            error_at(item_start.line, item_start.start_col > 0 ? item_start.start_col : 1,
-                                     "Falta un elemento de la lista antes del final de la línea");
-                        }
-                        if (!token_starts_expression(item_start.type))
-                            expression_expected_value(item_start, "un elemento de la lista");
-                        ASTNode *item_node = parse_expression(0);
-                        n->data.list_lit.items = infernal_realloc(n->data.list_lit.items,
-                                                         (n->data.list_lit.count + 1) * sizeof(ASTNode*));
-                        n->data.list_lit.items[n->data.list_lit.count++] = item_node;
-                        ts_skip_newlines();
-                        if (ts_peek().type != TOK_COMMA && ts_peek().type != TOK_RBRACKET) {
-                            Token bad = ts_peek();
-                            if (token_starts_expression(bad.type)) {
-                                check_unescaped_quote(ts.pos - 1, " dentro de una lista");
-                                error_at(bad.line, bad.start_col,
-                                         "Falta ',' entre elementos de la lista");
-                            }
-                        }
-                    } while (ts_match(TOK_COMMA) && ts_peek().type != TOK_RBRACKET);
-                    if (ts_peek().type == TOK_RBRACKET && ts.pos > 0 &&
-                        ts.tokens[ts.pos - 1].type == TOK_COMMA) {
-                        error_at(ts_peek().line, ts_peek().start_col,
-                                 "No puede haber una coma al final de la lista");
-                        }
-                        ts_skip_newlines();
-                    if (!ts_match(TOK_RBRACKET)) {
-                        Token at = ts_peek();
-                        if (at.type == TOK_EOF) {
-                            error_at(t.line, t.start_col,
-                                     "El list o map empieza aquí, pero nunca se cerró; falta ']' antes del final del archivo");
-                        }
-                        error_at(at.line, at.start_col > 0 ? at.start_col : 1, "Se esperaba ']' para cerrar el list");
+        if (is_map) {
+            return parse_map_literal(t.line);
+        } else {
+            ASTNode *n = node_create(NODE_LIST, t.line);
+            n->data.list_lit.items = NULL;
+            n->data.list_lit.count = 0;
+            if (!ts_match(TOK_RBRACKET)) {
+                do {
+                    ts_skip_newlines();
+                    Token item_start = ts_peek();
+                    if (item_start.type == TOK_EOF) {
+                        error_at(t.line, t.start_col,
+                                 "El list o map empieza aquí, pero nunca se cerró; falta ']' antes "
+                                 "del final del archivo");
                     }
+                    if (item_start.type == TOK_NEWLINE) {
+                        error_at(item_start.line,
+                                 item_start.start_col > 0 ? item_start.start_col : 1,
+                                 "Falta un elemento de la lista antes del final de la línea");
+                    }
+                    if (!token_starts_expression(item_start.type))
+                        expression_expected_value(item_start, "un elemento de la lista");
+                    ASTNode *item_node = parse_expression(0);
+                    n->data.list_lit.items = infernal_realloc(
+                        n->data.list_lit.items, (n->data.list_lit.count + 1) * sizeof(ASTNode *));
+                    n->data.list_lit.items[n->data.list_lit.count++] = item_node;
+                    ts_skip_newlines();
+                    if (ts_peek().type != TOK_COMMA && ts_peek().type != TOK_RBRACKET) {
+                        Token bad = ts_peek();
+                        if (token_starts_expression(bad.type)) {
+                            check_unescaped_quote(ts.pos - 1, " dentro de una lista");
+                            error_at(bad.line, bad.start_col,
+                                     "Falta ',' entre elementos de la lista");
+                        }
+                    }
+                } while (ts_match(TOK_COMMA) && ts_peek().type != TOK_RBRACKET);
+                if (ts_peek().type == TOK_RBRACKET && ts.pos > 0 &&
+                    ts.tokens[ts.pos - 1].type == TOK_COMMA) {
+                    error_at(ts_peek().line, ts_peek().start_col,
+                             "No puede haber una coma al final de la lista");
                 }
-                return n;
+                ts_skip_newlines();
+                if (!ts_match(TOK_RBRACKET)) {
+                    Token at = ts_peek();
+                    if (at.type == TOK_EOF) {
+                        error_at(t.line, t.start_col,
+                                 "El list o map empieza aquí, pero nunca se cerró; falta ']' antes "
+                                 "del final del archivo");
+                    }
+                    error_at(at.line, at.start_col > 0 ? at.start_col : 1,
+                             "Se esperaba ']' para cerrar el list");
+                }
             }
+            return n;
+        }
     }
     if (t.type == TOK_LBRACE) {
         /* Bloque embebido '{ ... }'.
@@ -768,11 +819,12 @@ ASTNode *parse_primary() {
     }
     if (t.type == TOK_LPAREN) {
         ts_advance();
-        ts_skip_newlines();  /* agrupación multilínea: '\n' tras '(' */
+        ts_skip_newlines(); /* agrupación multilínea: '\n' tras '(' */
         ASTNode *n = parse_expression(0);
-        ts_skip_newlines();  /* '\n' antes de ')' */
+        ts_skip_newlines(); /* '\n' antes de ')' */
         if (!ts_match(TOK_RPAREN))
-            error_at(ts_peek().line, ts_peek().start_col, "Falta ')' para cerrar la expresión que empezó aquí");
+            error_at(ts_peek().line, ts_peek().start_col,
+                     "Falta ')' para cerrar la expresión que empezó aquí");
         return n;
     }
     if (t.type == TOK_EOF)
@@ -783,10 +835,10 @@ ASTNode *parse_primary() {
         expression_expected_value(t, "una expresión");
     if (t.type == TOK_COMMA)
         error_at(t.line, t.start_col, "Hay una coma donde falta una expresión");
-    if (t.type == TOK_THEN || t.type == TOK_FI || t.type == TOK_ELSE ||
-        t.type == TOK_ELSEIF || t.type == TOK_CASE || t.type == TOK_DEFAULT ||
-        t.type == TOK_CATCH)
-        error_at(t.line, t.start_col, "'%s' no puede aparecer aquí; falta una expresión antes de este bloque", t.lexeme);
+    if (t.type == TOK_THEN || t.type == TOK_FI || t.type == TOK_ELSE || t.type == TOK_ELSEIF ||
+        t.type == TOK_CASE || t.type == TOK_DEFAULT || t.type == TOK_CATCH)
+        error_at(t.line, t.start_col,
+                 "'%s' no puede aparecer aquí; falta una expresión antes de este bloque", t.lexeme);
     expression_expected_value(t, "una expresión");
     return NULL;
 }
@@ -798,13 +850,13 @@ static ASTNode *parse_postfix(void) {
         if (ts_peek().type == TOK_INC || ts_peek().type == TOK_DEC) {
             Token op = ts_advance();
             if (expr->kind != NODE_VAR && expr->kind != NODE_INDEX) {
-                error(expr->line,
-                      "Solo se puede incrementar/decrementar una variable "
-                      "o un elemento de lista/mapa");
+                error(expr->line, "Solo se puede incrementar/decrementar una variable "
+                                  "o un elemento de lista/mapa");
             }
             /* Se permite cualquier nombre de variable, incluyendo $ y ?
              * NODE_INDEX cubre x[k]++, x[k]--, lst[i]++, etc. */
-            ASTNode *node = node_create((op.type == TOK_INC) ? NODE_POST_INC : NODE_POST_DEC, expr->line);
+            ASTNode *node =
+                node_create((op.type == TOK_INC) ? NODE_POST_INC : NODE_POST_DEC, expr->line);
             node->data.post_op.var = expr;
             node->data.post_op.statement_context = false;
             expr = node;
@@ -819,8 +871,8 @@ static ASTNode *parse_postfix(void) {
 static ASTNode *parse_power(void) {
     ASTNode *left = parse_postfix();
     if (ts_match(TOK_POW)) {
-        ts_skip_newlines();  /* permitir '\n' tras '**' */
-        ASTNode *right = parse_unary();  // asociatividad derecha
+        ts_skip_newlines();             /* permitir '\n' tras '**' */
+        ASTNode *right = parse_unary(); // asociatividad derecha
         ASTNode *node = node_create(NODE_BINOP, left->line);
         node->data.binop.op = TOK_POW;
         node->data.binop.left = left;
@@ -858,8 +910,8 @@ static ASTNode *parse_unary() {
     if (ts_match(TOK_MINUS)) {
         /* El signo forma parte del literal para poder admitir hasta 64 bytes. */
         Token next = ts_peek();
-        if (next.type == TOK_NUMBER && !strchr(next.lexeme, '.') &&
-            !strchr(next.lexeme, 'e') && !strchr(next.lexeme, 'E')) {
+        if (next.type == TOK_NUMBER && !strchr(next.lexeme, '.') && !strchr(next.lexeme, 'e') &&
+            !strchr(next.lexeme, 'E')) {
             InfernalBigInt integer;
             if (!bigint_parse(next.lexeme, &integer))
                 error(next.line, "Número entero fuera del rango máximo de 64 bytes");
@@ -873,7 +925,8 @@ static ASTNode *parse_unary() {
                 ASTNode *node = node_create(NODE_LITERAL, next.line);
                 node->data.lit.type = TOK_INT;
                 node->data.lit.integer_wide = bigint_min_width(integer, true) > 4;
-                if (!node->data.lit.integer_wide) node->data.lit.ival = (int)small;
+                if (!node->data.lit.integer_wide)
+                    node->data.lit.ival = (int)small;
                 else {
                     node->data.lit.payload.integer_cache = malloc(sizeof(integer));
                     if (!node->data.lit.payload.integer_cache)
@@ -899,7 +952,8 @@ static ASTNode *parse_unary() {
 /* --- parse_term (interna) --- */
 static ASTNode *parse_term() {
     ASTNode *left = parse_unary();
-    while (ts_peek().type == TOK_STAR || ts_peek().type == TOK_SLASH || ts_peek().type == TOK_PERCENT) {
+    while (ts_peek().type == TOK_STAR || ts_peek().type == TOK_SLASH ||
+           ts_peek().type == TOK_PERCENT) {
         Token op = ts_advance();
         ts_skip_newlines();
         ASTNode *right = parse_unary();
@@ -917,8 +971,9 @@ static ASTNode *parse_expr() {
     ASTNode *left = parse_term();
     while (ts_peek().type == TOK_PLUS || ts_peek().type == TOK_MINUS) {
         Token op = ts_advance();
-        ts_skip_newlines();  /* permitir continuar la expresión en otra línea */
-        DEBUG_INFO("parse_expr: operador '%s', siguiente token: '%s' (tipo %d)", op.lexeme, ts_peek().lexeme, ts_peek().type);
+        ts_skip_newlines(); /* permitir continuar la expresión en otra línea */
+        DEBUG_INFO("parse_expr: operador '%s', siguiente token: '%s' (tipo %d)", op.lexeme,
+                   ts_peek().lexeme, ts_peek().type);
 
         if (op.type == TOK_MINUS && ts_peek().type == TOK_LBRACKET) {
             /* Distinguir entre un slice real (`$lista - [*]`, `$lista - [2:5]`,
@@ -983,18 +1038,18 @@ static ASTNode *parse_expr() {
 static ASTNode *parse_comparison() {
     ASTNode *left = parse_expr();
     TokenType op = ts_peek().type;
-    if (op == TOK_EEQ || op == TOK_NEQ || op == TOK_LT_OP || op == TOK_GT_OP ||
-        op == TOK_LE || op == TOK_GE) {
+    if (op == TOK_EEQ || op == TOK_NEQ || op == TOK_LT_OP || op == TOK_GT_OP || op == TOK_LE ||
+        op == TOK_GE) {
         Token t = ts_advance();
-    ts_skip_newlines();
-    ASTNode *right = parse_expr();
-    ASTNode *n = node_create(NODE_BINOP, t.line);
-    n->data.binop.op = t.type;
-    n->data.binop.left = left;
-    n->data.binop.right = right;
-    return n;
-        }
-        return left;
+        ts_skip_newlines();
+        ASTNode *right = parse_expr();
+        ASTNode *n = node_create(NODE_BINOP, t.line);
+        n->data.binop.op = t.type;
+        n->data.binop.left = left;
+        n->data.binop.right = right;
+        return n;
+    }
+    return left;
 }
 
 /* --- parse_not (interna) ---
@@ -1013,7 +1068,7 @@ static ASTNode *parse_comparison() {
 static ASTNode *parse_not(void) {
     if (ts_peek().type == TOK_NOT) {
         Token op = ts_advance();
-        ASTNode *operand = parse_not();        /* permite cadenas 'not not x' */
+        ASTNode *operand = parse_not(); /* permite cadenas 'not not x' */
         ASTNode *node = node_create(NODE_UNARY, op.line);
         node->data.unary.op = TOK_NOT;
         node->data.unary.operand = operand;

@@ -3,33 +3,38 @@
  * Copyright (C) 2026, David Baña Szymaniak
  * Este software se distribuye bajo la licencia Apache 2.0
  * Código fuente de Infernal: runtime/evaluator/eval_literal.c
-*/
+ */
 
 #include "eval_literal.h"
-#include "helpers.h"
-#include "evaluator.h"
 #include "core/value.h"
-#include "runtime/scope.h"
-#include "runtime/globals.h"
-#include "runtime/error.h"
-#include "runtime/constants.h"
 #include "developer/debug.h"
-#include <string.h>
-#include <stdlib.h>
+#include "evaluator.h"
+#include "helpers.h"
+#include "runtime/constants.h"
+#include "runtime/error.h"
+#include "runtime/globals.h"
+#include "runtime/scope.h"
 #include <setjmp.h>
+#include <stdlib.h>
+#include <string.h>
 
 Value eval_literal(ASTNode *expr) {
     if (expr->data.lit.type == TOK_INT) {
-        if (!expr->data.lit.integer_wide) return val_int(expr->data.lit.ival);
+        if (!expr->data.lit.integer_wide)
+            return val_int(expr->data.lit.ival);
         return val_bigint(*expr->data.lit.payload.integer_cache, false);
     }
     if (expr->data.lit.type == TOK_UINT) {
-        if (!expr->data.lit.integer_wide) return val_uint(expr->data.lit.uval);
+        if (!expr->data.lit.integer_wide)
+            return val_uint(expr->data.lit.uval);
         return val_bigint(*expr->data.lit.payload.integer_cache, true);
     }
-    if (expr->data.lit.type == TOK_FLOAT)  return val_float(expr->data.lit.fval);
-    if (expr->data.lit.type == TOK_BOOL)   return val_bool(expr->data.lit.bval);
-    if (expr->data.lit.type == TOK_STRING) return val_string(expr->data.lit.payload.sval);
+    if (expr->data.lit.type == TOK_FLOAT)
+        return val_float(expr->data.lit.fval);
+    if (expr->data.lit.type == TOK_BOOL)
+        return val_bool(expr->data.lit.bval);
+    if (expr->data.lit.type == TOK_STRING)
+        return val_string(expr->data.lit.payload.sval);
     return val_make_null();
 }
 
@@ -54,29 +59,31 @@ VarEntry *eval_var_find_entry(ASTNode *expr, const char *name) {
 
 Value eval_var(ASTNode *expr) {
     const char *name = expr->data.var.name;
-    if (name[0] == '$') name++;
+    if (name[0] == '$')
+        name++;
     if (name[0] == '?') {
-        error(expr->line,
-              "'?' no es un prefijo de variable en Infernal.\n"
-              "    '?nombre' solo tiene sentido dentro de un comando shell,\n"
-              "    donde se traduce a '$nombre' para que el shell lo expanda\n"
-              "    con SU entorno (por ejemplo, '?HOME' llega al shell como\n"
-              "    '$HOME'). En una expresión de Infernal, usa '$nombre'\n"
-              "    para leer la variable Infernal 'nombre'.");
+        error(expr->line, "'?' no es un prefijo de variable en Infernal.\n"
+                          "    '?nombre' solo tiene sentido dentro de un comando shell,\n"
+                          "    donde se traduce a '$nombre' para que el shell lo expanda\n"
+                          "    con SU entorno (por ejemplo, '?HOME' llega al shell como\n"
+                          "    '$HOME'). En una expresión de Infernal, usa '$nombre'\n"
+                          "    para leer la variable Infernal 'nombre'.");
     }
     if (*name == '\0')
         error(expr->line, "Nombre de variable vacío");
 
-    DEBUG_INFO("eval_var: buscando variable '%s' en current_scope=%p", name, (void*)current_scope);
+    DEBUG_INFO("eval_var: buscando variable '%s' en current_scope=%p", name, (void *)current_scope);
 
     if (strchr(name, '/') != NULL) {
         VarEntry *e = eval_var_find_entry(expr, name);
         if (!e) {
-            error(expr->line,
-                  "La variable '%s' no existe. Si intentabas concatenar una variable con una cadena, "
-                  "usa el operador '+', por ejemplo: $%s + '/ruta'. La barra '/' directa solo es válida "
-                  "en comandos shell, no en nombres de variable.",
-                  name, name);
+            error(
+                expr->line,
+                "La variable '%s' no existe. Si intentabas concatenar una variable con una cadena, "
+                "usa el operador '+', por ejemplo: $%s + '/ruta'. La barra '/' directa solo es "
+                "válida "
+                "en comandos shell, no en nombres de variable.",
+                name, name);
         }
         return copy_value_secure(e->value);
     }
@@ -85,7 +92,8 @@ Value eval_var(ASTNode *expr) {
     if (!e) {
         Value constant_value;
         if (constants_lookup(name, &constant_value)) {
-            DEBUG_INFO("eval_var: constante '%s' encontrada, valor tipo %d", name, constant_value.type);
+            DEBUG_INFO("eval_var: constante '%s' encontrada, valor tipo %d", name,
+                       constant_value.type);
             return constant_value;
         }
         error(expr->line, "Variable '%s' no definida", name);
@@ -107,7 +115,8 @@ Value eval_list(ASTNode *expr) {
 
 Value eval_map(ASTNode *expr) {
     Value *map = malloc(sizeof(*map));
-    if (!map) error(expr->line, "Memoria insuficiente para crear mapa");
+    if (!map)
+        error(expr->line, "Memoria insuficiente para crear mapa");
     *map = val_map_empty();
 
     Scope *old_scope = current_scope;
@@ -135,7 +144,9 @@ Value eval_map(ASTNode *expr) {
         /* Dentro de un mapa, una variable externa o una entrada previa se clona
          * de forma explícita con $. Un identificador desnudo es un comando. */
         if (value_node && value_node->kind == NODE_VAR && !value_node->data.var.clone) {
-            error(expr->line, "Comando '%s' no encontrado. Para usar una variable accesible dentro de un mapa, usa $%s",
+            error(expr->line,
+                  "Comando '%s' no encontrado. Para usar una variable accesible dentro de un mapa, "
+                  "usa $%s",
                   value_node->data.var.name, value_node->data.var.name);
         }
 
@@ -149,10 +160,9 @@ Value eval_map(ASTNode *expr) {
             } else if (declared_type == TOK_MAP) {
                 val = val_map_empty();
             } else {
-                error(expr->line,
-                      "'[]' no es válido para la clave '%s' del mapa con tipo '%s'",
+                error(expr->line, "'[]' no es válido para la clave '%s' del mapa con tipo '%s'",
                       key, type_name(declared_type));
-                val = val_make_null();  /* inalcanzable */
+                val = val_make_null(); /* inalcanzable */
             }
         } else {
             val = eval_expr(value_node);
@@ -166,7 +176,8 @@ Value eval_map(ASTNode *expr) {
         if (declared_type != 0 && valtype_to_tokentype(val.type) != declared_type) {
             int actual_type = valtype_to_tokentype(val.type);
             value_free(&val);
-            error(expr->line, "Error de tipado del mapa: la clave '%s' requiere un valor %s pero se obtuvo %s",
+            error(expr->line,
+                  "Error de tipado del mapa: la clave '%s' requiere un valor %s pero se obtuvo %s",
                   key, type_name(declared_type), type_name(actual_type));
         }
 

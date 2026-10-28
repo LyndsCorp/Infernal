@@ -3,13 +3,13 @@
  * Copyright (C) 2026, David Baña Szymaniak
  * Este software se distribuye bajo la licencia Apache 2.0
  * Código fuente de Infernal: core/memory.c
-*/
+ */
 
 #include "memory.h"
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdint.h>
 
 static void allocation_failed(size_t size) {
     fprintf(stderr, "Infernal: no se pudo reservar memoria (%zu bytes)\n", size);
@@ -18,7 +18,8 @@ static void allocation_failed(size_t size) {
 
 void *infernal_malloc(size_t size) {
     void *ptr = malloc(size ? size : 1);
-    if (!ptr) allocation_failed(size);
+    if (!ptr)
+        allocation_failed(size);
     return ptr;
 }
 
@@ -26,13 +27,15 @@ void *infernal_calloc(size_t count, size_t size) {
     if (count != 0 && size > SIZE_MAX / count)
         allocation_failed(SIZE_MAX);
     void *ptr = calloc(count ? count : 1, size ? size : 1);
-    if (!ptr) allocation_failed(count * size);
+    if (!ptr)
+        allocation_failed(count * size);
     return ptr;
 }
 
 void *infernal_realloc(void *ptr, size_t size) {
     void *next = realloc(ptr, size ? size : 1);
-    if (!next) allocation_failed(size);
+    if (!next)
+        allocation_failed(size);
     return next;
 }
 
@@ -47,7 +50,8 @@ char *infernal_strdup(const char *value) {
 char *infernal_strndup(const char *value, size_t n) {
     const char *source = value ? value : "";
     size_t len = strlen(source);
-    if (len > n) len = n;
+    if (len > n)
+        len = n;
     char *copy = infernal_malloc(len + 1);
     memcpy(copy, source, len);
     copy[len] = '\0';

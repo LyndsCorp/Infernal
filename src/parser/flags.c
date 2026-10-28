@@ -3,27 +3,25 @@
  * Copyright (C) 2026, David Baña Szymaniak
  * Este software se distribuye bajo la licencia Apache 2.0
  * Código fuente de Infernal: parser/flags.c
-*/
+ */
 
-#include <stdlib.h>
-#include <string.h>
-#include <ctype.h>
-#include <stdint.h>
 #include "flags.h"
 #include "core/ast.h"
+#include "core/memory.h"
+#include "expression.h"
 #include "lexer/lexer.h"
 #include "runtime/error.h"
 #include "runtime/globals.h"
-#include "expression.h"
-#include "core/memory.h"
+#include <ctype.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
 
 static bool is_valid_flag_name(const char *s) {
-    if (!s || !(isalpha((unsigned char)s[0]) || s[0] == '_' ||
-                (unsigned char)s[0] >= 0x80))
+    if (!s || !(isalpha((unsigned char)s[0]) || s[0] == '_' || (unsigned char)s[0] >= 0x80))
         return false;
     for (const char *p = s + 1; *p; p++) {
-        if (!(isalnum((unsigned char)*p) || *p == '_' ||
-              (unsigned char)*p >= 0x80))
+        if (!(isalnum((unsigned char)*p) || *p == '_' || (unsigned char)*p >= 0x80))
             return false;
     }
     return true;
@@ -34,7 +32,8 @@ static void add_flag_name(FlagSpec *spec, const char *name, int line) {
         if (strcmp(spec->names[i], name) == 0)
             error(line, "Flag o alias repetido: %s", name);
     char **names = infernal_realloc(spec->names, (size_t)(spec->name_count + 1) * sizeof(char *));
-    if (!names) error(line, "Memoria insuficiente al registrar flag");
+    if (!names)
+        error(line, "Memoria insuficiente al registrar flag");
     spec->names = names;
     /* strdup() puede devolver NULL sin abortar y dejaría un NULL en el array,
      * que reventaría en el strcmp() del siguiente add_flag_name. infernal_strdup
@@ -82,9 +81,13 @@ static char *parse_flag_name(int line) {
             error(line, "Nombre de flag demasiado largo");
         }
         if (len + add + 1 > cap) {
-            while (cap < len + add + 1) cap *= 2;
+            while (cap < len + add + 1)
+                cap *= 2;
             char *tmp = realloc(name, cap);
-            if (!tmp) { free(name); error(line, "Memoria insuficiente"); }
+            if (!tmp) {
+                free(name);
+                error(line, "Memoria insuficiente");
+            }
             name = tmp;
         }
         memcpy(name + len, pieces[i], add);
@@ -109,10 +112,12 @@ void parse_flag_body_tokens(Token **body_tokens, int *body_count, int already_co
 
     while (depth > 0 && ts.pos < ts.count) {
         Token t = ts_advance();
-        if (t.type == TOK_LBRACE) depth++;
+        if (t.type == TOK_LBRACE)
+            depth++;
         else if (t.type == TOK_RBRACE) {
             depth--;
-            if (depth == 0) break;
+            if (depth == 0)
+                break;
         }
         if (*body_count >= cap) {
             cap = cap == 0 ? 64 : cap * 2;
@@ -128,27 +133,32 @@ void parse_flag_body_tokens(Token **body_tokens, int *body_count, int already_co
 }
 
 ASTNode *parse_flags() {
-    if (!ts_match(TOK_LPAREN)) error(ts_peek().line, "Se esperaba '(' después de 'flags'");
+    if (!ts_match(TOK_LPAREN))
+        error(ts_peek().line, "Se esperaba '(' después de 'flags'");
     ASTNode *mode_expr = parse_expression(0);
-    if (!ts_match(TOK_COMMA)) error(ts_peek().line, "Se esperaba ',' después del modo");
+    if (!ts_match(TOK_COMMA))
+        error(ts_peek().line, "Se esperaba ',' después del modo");
 
     ASTNode *node = node_create(NODE_FLAGS, mode_expr->line);
     node->data.flags.mode = -1;
 
     if (mode_expr->kind == NODE_LITERAL && mode_expr->data.lit.type == TOK_INT) {
         if (mode_expr->data.lit.integer_wide) {
-            error(mode_expr->line,
-                  "Modo de flags demasiado grande (máximo %d)", MAX_FLAGS_MODES - 1);
+            error(mode_expr->line, "Modo de flags demasiado grande (máximo %d)",
+                  MAX_FLAGS_MODES - 1);
         }
         int mode = mode_expr->data.lit.ival;
-        if (mode < 0) error(mode_expr->line, "El modo de flags no puede ser negativo");
-        if (mode >= MAX_FLAGS_MODES) error(mode_expr->line, "Modo de flags demasiado grande (máximo %d)", MAX_FLAGS_MODES - 1);
+        if (mode < 0)
+            error(mode_expr->line, "El modo de flags no puede ser negativo");
+        if (mode >= MAX_FLAGS_MODES)
+            error(mode_expr->line, "Modo de flags demasiado grande (máximo %d)",
+                  MAX_FLAGS_MODES - 1);
 
         if (mode != 0) {
             if (mode > 1 && !defined_flags_modes[mode - 1]) {
                 error(mode_expr->line,
-                      "No se puede definir flags modo %d sin haber definido el modo %d antes",
-                      mode, mode - 1);
+                      "No se puede definir flags modo %d sin haber definido el modo %d antes", mode,
+                      mode - 1);
             }
             if (defined_flags_modes[mode]) {
                 error(mode_expr->line, "El modo %d de flags ya fue definido anteriormente", mode);
@@ -172,7 +182,8 @@ ASTNode *parse_flags() {
             ts_advance();
             ts_skip_newlines();
         }
-        if (ts_peek().type == TOK_RPAREN) break;  /* comas colgando al final */
+        if (ts_peek().type == TOK_RPAREN)
+            break; /* comas colgando al final */
 
         // Saltar comentarios (tokens que empiezan con '#')
         while (ts.pos < ts.count && ts_peek().type == TOK_IDENT && ts_peek().lexeme[0] == '#') {
@@ -184,18 +195,17 @@ ASTNode *parse_flags() {
          * Así, si error() dispara un longjmp a mitad de un spec,
          * ast_free_all() libera el parcial: no hay que mantener un
          * cleanup manual para un FlagSpec local en la pila. */
-        node->data.flags.specs = infernal_realloc(node->data.flags.specs,
-                                         (size_t)(node->data.flags.spec_count + 1) * sizeof(FlagSpec));
+        node->data.flags.specs = infernal_realloc(
+            node->data.flags.specs, (size_t)(node->data.flags.spec_count + 1) * sizeof(FlagSpec));
         FlagSpec *spec = &node->data.flags.specs[node->data.flags.spec_count];
         memset(spec, 0, sizeof(FlagSpec));
         node->data.flags.spec_count++;
 
         /* --- empty/arg --- */
         if (ts.pos < ts.count && ts_peek().type == TOK_IDENT &&
-            (strcmp(ts_peek().lexeme, "empty") == 0 ||
-            strcmp(ts_peek().lexeme, "arg") == 0)) {
+            (strcmp(ts_peek().lexeme, "empty") == 0 || strcmp(ts_peek().lexeme, "arg") == 0)) {
 
-            const char *kw = ts_peek().lexeme;   /* "empty" o "arg" para los mensajes */
+            const char *kw = ts_peek().lexeme; /* "empty" o "arg" para los mensajes */
 
             if (node->data.flags.mode == 0) {
                 error(ts_peek().line, "'%s' solo se puede usar en modos > 0", kw);
@@ -214,33 +224,34 @@ ASTNode *parse_flags() {
             bool is_global = false;
             if (ts.pos < ts.count &&
                 (ts_peek().type == TOK_GLOBAL || ts_peek().type == TOK_LOCAL)) {
-                if (ts_peek().type == TOK_GLOBAL) is_global = true;
+                if (ts_peek().type == TOK_GLOBAL)
+                    is_global = true;
                 ts_advance();
-                }
+            }
 
-                /* --- Tipo opcional. Si se omite, la variable es string --- */
-                TokenType t = ts_peek().type;
+            /* --- Tipo opcional. Si se omite, la variable es string --- */
+            TokenType t = ts_peek().type;
             if (t == TOK_INT || t == TOK_UINT || t == TOK_FLOAT || t == TOK_BOOL ||
                 t == TOK_STRING || t == TOK_LIST || t == TOK_MAP) {
                 spec->vtype = ts_advance().type;
-                } else if (t == TOK_IDENT) {
-                    spec->vtype = TOK_STRING;   /* tipado automático: string */
-                } else {
-                    error(ts_peek().line,
-                          "Se esperaba un tipo (int, uint, float, bool, string, list, map) "
-                          "o un nombre de variable después de '='");
-                }
-
-                if (ts_peek().type != TOK_IDENT) {
-                    error(ts_peek().line, "Se esperaba nombre de variable");
-                }
-                spec->var_name = strdup(ts_advance().lexeme);
-                spec->is_global = is_global;
-                if (ts_peek().type == TOK_LBRACE) {
-                    ts_advance();
-                    parse_flag_body_tokens(&spec->body_tokens, &spec->body_count, 1);
-                }
+            } else if (t == TOK_IDENT) {
+                spec->vtype = TOK_STRING; /* tipado automático: string */
+            } else {
+                error(ts_peek().line,
+                      "Se esperaba un tipo (int, uint, float, bool, string, list, map) "
+                      "o un nombre de variable después de '='");
             }
+
+            if (ts_peek().type != TOK_IDENT) {
+                error(ts_peek().line, "Se esperaba nombre de variable");
+            }
+            spec->var_name = strdup(ts_advance().lexeme);
+            spec->is_global = is_global;
+            if (ts_peek().type == TOK_LBRACE) {
+                ts_advance();
+                parse_flag_body_tokens(&spec->body_tokens, &spec->body_count, 1);
+            }
+        }
         /* --- catch-all (*) --- */
         else if (ts.pos < ts.count && ts_peek().type == TOK_STAR) {
             ts_advance();
@@ -275,26 +286,28 @@ ASTNode *parse_flags() {
                 bool is_global = false;
                 TokenType peek = ts_peek().type;
                 if (peek == TOK_GLOBAL || peek == TOK_LOCAL) {
-                    if (peek == TOK_GLOBAL) is_global = true;
+                    if (peek == TOK_GLOBAL)
+                        is_global = true;
                     ts_advance();
                 }
                 TokenType ttype = ts_peek().type;
-                if (ttype == TOK_INT || ttype == TOK_UINT || ttype == TOK_FLOAT || ttype == TOK_BOOL ||
-                    ttype == TOK_STRING || ttype == TOK_LIST || ttype == TOK_MAP) {
+                if (ttype == TOK_INT || ttype == TOK_UINT || ttype == TOK_FLOAT ||
+                    ttype == TOK_BOOL || ttype == TOK_STRING || ttype == TOK_LIST ||
+                    ttype == TOK_MAP) {
                     spec->vtype = ts_advance().type;
-                if (ts_peek().type != TOK_IDENT || !is_valid_flag_name(ts_peek().lexeme)) {
-                    error(ts_peek().line, "Se esperaba nombre de variable");
+                    if (ts_peek().type != TOK_IDENT || !is_valid_flag_name(ts_peek().lexeme)) {
+                        error(ts_peek().line, "Se esperaba nombre de variable");
+                    }
+                    spec->var_name = strdup(ts_advance().lexeme);
+                    spec->is_global = is_global;
+                } else {
+                    error(ts_peek().line, "Se esperaba un tipo después de '='");
                 }
-                spec->var_name = strdup(ts_advance().lexeme);
-                spec->is_global = is_global;
-                    } else {
-                        error(ts_peek().line, "Se esperaba un tipo después de '='");
-                    }
 
-                    if (ts_peek().type == TOK_LBRACE) {
-                        ts_advance();
-                        parse_flag_body_tokens(&spec->body_tokens, &spec->body_count, 1);
-                    }
+                if (ts_peek().type == TOK_LBRACE) {
+                    ts_advance();
+                    parse_flag_body_tokens(&spec->body_tokens, &spec->body_count, 1);
+                }
             }
         }
 

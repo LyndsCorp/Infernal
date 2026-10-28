@@ -3,36 +3,35 @@
  * Copyright (C) 2026, David Baña Szymaniak
  * Este software se distribuye bajo la licencia Apache 2.0
  * Código fuente de Infernal: main.c
-*/
+ */
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <errno.h>
-#include <limits.h>
-#include <string.h>
-#include <unistd.h>
-#include <limits.h>
-#include <stdbool.h>
-#include <signal.h>
-#include "core/value.h"
 #include "core/ast.h"
+#include "core/value.h"
+#include "developer/debug.h"
 #include "lexer/lexer.h"
 #include "parser/parser.h"
-#include "runtime/scope.h"
-#include "runtime/globals.h"
-#include "runtime/error.h"
 #include "runtime/command.h"
-#include "runtime/lava.h"
-#include "stdlib/builtins.h"
-#include "developer/debug.h"
 #include "runtime/constants.h"
+#include "runtime/error.h"
 #include "runtime/evaluator/evaluator.h"
+#include "runtime/globals.h"
+#include "runtime/lava.h"
+#include "runtime/scope.h"
+#include "stdlib/builtins.h"
+#include <errno.h>
+#include <limits.h>
+#include <signal.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
 
-extern const char* get_metadata(const char *type);
+extern const char *get_metadata(const char *type);
 
 static void infernal_internal_signal(int sig) {
-    static const char msg[] =
-    "Error interno de Infernal: se produjo un fallo durante la ejecución y el proceso no pudo continuar.\n";
+    static const char msg[] = "Error interno de Infernal: se produjo un fallo durante la ejecución "
+                              "y el proceso no pudo continuar.\n";
     write(STDERR_FILENO, msg, sizeof(msg) - 1);
 
     /* SIGABRT lo levanta glibc desde abort() cuando detecta
@@ -45,7 +44,7 @@ static void infernal_internal_signal(int sig) {
 }
 
 static void install_internal_error_handlers(void) {
-    #ifndef DEBUG
+#ifndef DEBUG
     struct sigaction sa;
     memset(&sa, 0, sizeof(sa));
     sigemptyset(&sa.sa_mask);
@@ -54,7 +53,7 @@ static void install_internal_error_handlers(void) {
     sigaction(SIGSEGV, &sa, NULL);
     sigaction(SIGBUS, &sa, NULL);
     sigaction(SIGFPE, &sa, NULL);
-    #endif
+#endif
 }
 
 static bool cleanup_done = false;
@@ -62,7 +61,8 @@ static bool cleanup_done = false;
 static void cleanup_runtime_state(void);
 
 static void cleanup_all(void) {
-    if (cleanup_done) return;
+    if (cleanup_done)
+        return;
     cleanup_done = true;
 
     if (ts.tokens) {
@@ -73,7 +73,8 @@ static void cleanup_all(void) {
     }
     ts_free_arena();
     if (source_lines) {
-        for (int i = 0; i < source_line_count; i++) free(source_lines[i]);
+        for (int i = 0; i < source_line_count; i++)
+            free(source_lines[i]);
         free(source_lines);
         source_lines = NULL;
         source_line_count = 0;
@@ -117,61 +118,73 @@ static void cleanup_runtime_state(void) {
     }
 
     value_free(&return_value);
-    if (infernal_shell) { free(infernal_shell); infernal_shell = NULL; }
+    if (infernal_shell) {
+        free(infernal_shell);
+        infernal_shell = NULL;
+    }
 }
 
 int main(int argc, char **argv) {
     install_internal_error_handlers();
     if (argc < 2) {
         const char *welcome = get_metadata("WELCOME");
-        if (welcome) printf("%s\n", welcome);
-        else printf("Infernal: sin mensaje de bienvenida.\n");
+        if (welcome)
+            printf("%s\n", welcome);
+        else
+            printf("Infernal: sin mensaje de bienvenida.\n");
         return 0;
     }
 
     if (strcmp(argv[1], "--version") == 0) {
         const char *version = get_metadata("VERSION");
-        if (version) printf("%s", version);
-        else printf("Infernal version desconocida\n");
+        if (version)
+            printf("%s", version);
+        else
+            printf("Infernal version desconocida\n");
         return 0;
     }
 
     if (strcmp(argv[1], "--edition") == 0) {
         const char *edition = get_metadata("EDITION");
-        if (edition) printf("%s", edition);
-        else printf("Infernal edición desconocida\n");
+        if (edition)
+            printf("%s", edition);
+        else
+            printf("Infernal edición desconocida\n");
         return 0;
     }
 
     if (strcmp(argv[1], "--help") == 0) {
         const char *help = get_metadata("HELP");
-        if (help) printf("%s\n", help);
-        else printf("Ayuda no disponible.\n");
+        if (help)
+            printf("%s\n", help);
+        else
+            printf("Ayuda no disponible.\n");
         return 0;
     }
 
     // --- Procesar argumentos: --shell, -c y script ----------
     char *script_file = NULL;
-    const char *code_string = NULL;   // código inline pasado con -c
-    int code_start_idx = -1;          // posición de "-c" en argv
+    const char *code_string = NULL; // código inline pasado con -c
+    int code_start_idx = -1;        // posición de "-c" en argv
 
     for (int i = 1; i < argc; i++) {
         if (strncmp(argv[i], "--shell=", 8) == 0) {
-            if (infernal_shell) free(infernal_shell);
+            if (infernal_shell)
+                free(infernal_shell);
             infernal_shell = strdup(argv[i] + 8);
             DEBUG_INFO("Shell especificado por línea de comandos: %s", infernal_shell);
             continue;
         }
         if (strcmp(argv[i], "--shell") == 0) {
-            if (i + 1 < argc && argv[i+1][0] != '-') {
-                const char *next = argv[i+1];
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                const char *next = argv[i + 1];
                 size_t nlen = strlen(next);
-                bool looks_like_script =
-                    (nlen >= 5 && strcmp(next + nlen - 5, ".fire") == 0) ||
-                    (nlen >= 5 && strcmp(next + nlen - 5, ".lava") == 0) ||
-                    (nlen >= 4 && strcmp(next + nlen - 4, ".inf")  == 0);
+                bool looks_like_script = (nlen >= 5 && strcmp(next + nlen - 5, ".fire") == 0) ||
+                                         (nlen >= 5 && strcmp(next + nlen - 5, ".lava") == 0) ||
+                                         (nlen >= 4 && strcmp(next + nlen - 4, ".inf") == 0);
                 if (!looks_like_script) {
-                    if (infernal_shell) free(infernal_shell);
+                    if (infernal_shell)
+                        free(infernal_shell);
                     infernal_shell = strdup(next);
                     DEBUG_INFO("Shell especificado por línea de comandos: %s", infernal_shell);
                     i++;
@@ -222,7 +235,8 @@ int main(int argc, char **argv) {
     //                     y `flags(...)` funciona igual que en modo archivo.
     if (code_string) {
         int trailing = argc - code_start_idx - 2;
-        if (trailing < 0) trailing = 0;
+        if (trailing < 0)
+            trailing = 0;
         script_argc = 2 + trailing;
         script_argv = malloc((size_t)(script_argc + 1) * sizeof(char *));
         if (!script_argv) {
@@ -303,8 +317,11 @@ int main(int argc, char **argv) {
                     char *end = NULL;
                     errno = 0;
                     long parsed = strtol(val + 2, &end, 10);
-                    if (errno != 0 || end == val + 2 || *end != '\0' || parsed < INT_MIN || parsed > INT_MAX) {
-                        fprintf(stderr, "Valor inválido para INFERNAL_VAR_%s: se esperaba int en rango %d..%d\n",
+                    if (errno != 0 || end == val + 2 || *end != '\0' || parsed < INT_MIN ||
+                        parsed > INT_MAX) {
+                        fprintf(stderr,
+                                "Valor inválido para INFERNAL_VAR_%s: se esperaba int en rango "
+                                "%d..%d\n",
                                 name, INT_MIN, INT_MAX);
                         free(line);
                         continue;
@@ -315,7 +332,8 @@ int main(int argc, char **argv) {
                     errno = 0;
                     double parsed = strtod(val + 2, &end);
                     if (errno != 0 || end == val + 2 || *end != '\0') {
-                        fprintf(stderr, "Valor inválido para INFERNAL_VAR_%s: se esperaba float\n", name);
+                        fprintf(stderr, "Valor inválido para INFERNAL_VAR_%s: se esperaba float\n",
+                                name);
                         free(line);
                         continue;
                     }
@@ -367,8 +385,8 @@ int main(int argc, char **argv) {
 
         program = parse_block(NULL);
 
-        DEBUG_INFO("main: parse_block devolvió %d sentencias (stmts=%p)",
-                   program.count, (void*)program.stmts);
+        DEBUG_INFO("main: parse_block devolvió %d sentencias (stmts=%p)", program.count,
+                   (void *)program.stmts);
 
         /* Ejecutar directamente con el evaluador (más estable que el compilador) */
         if (program.count > 0 && program.stmts != NULL) {
@@ -384,12 +402,15 @@ int main(int argc, char **argv) {
         /* Cerrar el archivo si la tokenización no llegó a cerrarlo.
          * `fp` es volatile precisamente para que este valor sea fiable
          * después del longjmp. */
-        if (fp) { fclose((FILE *)fp); fp = NULL; }
+        if (fp) {
+            fclose((FILE *)fp);
+            fp = NULL;
+        }
 
         /* No usamos `program` aquí: su valor es indeterminado tras el
          * longjmp. ast_free_all() ya se encarga de liberar todo el AST
          * registrado, así como los NodeList huérfanos. */
-        parser_cleanup_on_error();      /* = ast_free_all() */
+        parser_cleanup_on_error(); /* = ast_free_all() */
         cleanup_all();
         fprintf(stderr, "%s\n", exception_msg);
         return 1;

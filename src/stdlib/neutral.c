@@ -5,16 +5,15 @@
  * Código fuente de Infernal: stdlib/neutral.c
  *
  * Funciones polimórficas que trabajan con varios tipos (string, lista, mapa).
-*/
+ */
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 #include "neutral.h"
 #include "core/value.h"
 #include "runtime/error.h"
 #include "runtime/globals.h"
-
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 /* ================================================
  *  Funciones de la biblioteca
@@ -22,10 +21,11 @@
 
 /* --- has() --- */
 static Value builtin_has(int argc, Value *args) {
-    if (argc != 2) error(current_eval_line, "has() espera exactamente 2 argumentos");
+    if (argc != 2)
+        error(current_eval_line, "has() espera exactamente 2 argumentos");
 
     Value container = args[0];
-    Value element   = args[1];
+    Value element = args[1];
 
     /* Caso: string */
     if (container.type == VAL_STRING) {
@@ -42,15 +42,26 @@ static Value builtin_has(int argc, Value *args) {
             Value item = container.data.list.items[i];
             if (item.type == element.type) {
                 switch (item.type) {
-                    case VAL_INT: case VAL_UINT:
-                        if ((element.type == VAL_INT || element.type == VAL_UINT) &&
-                            value_integer_compare(item, element) == 0)
-                            return val_bool(true);
-                        break;
-                    case VAL_FLOAT:  if (item.data.fval == element.data.fval) return val_bool(true); break;
-                    case VAL_BOOL:   if (item.data.bval == element.data.bval) return val_bool(true); break;
-                    case VAL_STRING: if (strcmp(item.data.sval, element.data.sval) == 0) return val_bool(true); break;
-                    default: /* listas y mapas no se comparan por simplicidad */ break;
+                case VAL_INT:
+                case VAL_UINT:
+                    if ((element.type == VAL_INT || element.type == VAL_UINT) &&
+                        value_integer_compare(item, element) == 0)
+                        return val_bool(true);
+                    break;
+                case VAL_FLOAT:
+                    if (item.data.fval == element.data.fval)
+                        return val_bool(true);
+                    break;
+                case VAL_BOOL:
+                    if (item.data.bval == element.data.bval)
+                        return val_bool(true);
+                    break;
+                case VAL_STRING:
+                    if (strcmp(item.data.sval, element.data.sval) == 0)
+                        return val_bool(true);
+                    break;
+                default: /* listas y mapas no se comparan por simplicidad */
+                    break;
                 }
             }
         }
@@ -76,7 +87,8 @@ static Value builtin_has(int argc, Value *args) {
 
 /* --- size() --- */
 static Value builtin_size(int argc, Value *args) {
-    if (argc != 1) error(current_eval_line, "size() espera exactamente 1 argumento");
+    if (argc != 1)
+        error(current_eval_line, "size() espera exactamente 1 argumento");
 
     Value v = args[0];
     if (v.type == VAL_MAP) {
@@ -89,7 +101,6 @@ static Value builtin_size(int argc, Value *args) {
     }
     return val_make_null();
 }
-
 
 /* ================================================
  *  Registro de funciones

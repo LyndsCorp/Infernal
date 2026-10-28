@@ -3,15 +3,16 @@
  * Copyright (C) 2026, David Baña Szymaniak
  * Este software se distribuye bajo la licencia Apache 2.0
  * Código fuente de Infernal: runtime/error.c
-*/
+ */
 
+#include "error.h"
+#include "runtime/globals.h"
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
-#include "error.h"
-#include "runtime/globals.h"
 
-static void __attribute__((noreturn)) error_build(int line, int column, const char *fmt, va_list ap) {
+static void __attribute__((noreturn)) error_build(int line, int column, const char *fmt,
+                                                  va_list ap) {
     char base[1024];
     vsnprintf(base, sizeof(base), fmt, ap);
 
@@ -30,7 +31,8 @@ static void __attribute__((noreturn)) error_build(int line, int column, const ch
         /* Las columnas del lexer son offsets de bytes. Para que un tabulador
          * no desplace el '^' visualmente, reproducimos los tabs del prefijo
          * en el marcador en lugar de convertirlos en espacios. */
-        while (source[source_pos] && source_pos < (size_t)target && marker_len < sizeof(marker) - 2) {
+        while (source[source_pos] && source_pos < (size_t)target &&
+               marker_len < sizeof(marker) - 2) {
             marker[marker_len++] = source[source_pos] == '\t' ? '\t' : ' ';
             source_pos++;
         }
@@ -41,11 +43,10 @@ static void __attribute__((noreturn)) error_build(int line, int column, const ch
                  file, line, column, source, marker, base);
     } else if (source) {
         snprintf(exception_msg, sizeof(exception_msg),
-                 "Error en '%-.240s', línea %d:\n    %-.240s\n    %-.900s",
-                 file, line, source, base);
+                 "Error en '%-.240s', línea %d:\n    %-.240s\n    %-.900s", file, line, source,
+                 base);
     } else {
-        snprintf(exception_msg, sizeof(exception_msg),
-                 "Error en '%-.240s', línea %d: %-.900s",
+        snprintf(exception_msg, sizeof(exception_msg), "Error en '%-.240s', línea %d: %-.900s",
                  file, line, base);
     }
 

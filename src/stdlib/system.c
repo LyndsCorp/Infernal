@@ -5,17 +5,16 @@
  * Código fuente de Infernal: stdlib/system.c
  *
  * Funciones para trabajar con el sistema
-*/
+ */
 
-#include <stdlib.h>
-#include <limits.h>
-#include <string.h>
 #include "system.h"
 #include "core/value.h"
-#include "runtime/globals.h"
-#include "runtime/error.h"
 #include "runtime/command.h"
-
+#include "runtime/error.h"
+#include "runtime/globals.h"
+#include <limits.h>
+#include <stdlib.h>
+#include <string.h>
 
 /* ================================================
  *  Funciones de la biblioteca
@@ -26,8 +25,9 @@ static Value builtin_exit(int argc, Value *args) {
     int code = 0;
     if (argc > 0) {
         Value v = args[0];
-        code = (v.type == VAL_INT) ? v.data.ival :
-               (v.type == VAL_UINT && v.data.uval <= INT_MAX) ? (int)v.data.uval : 0;
+        code = (v.type == VAL_INT)                              ? v.data.ival
+               : (v.type == VAL_UINT && v.data.uval <= INT_MAX) ? (int)v.data.uval
+                                                                : 0;
     }
     exit(code);
     /* Inalcanzable: exit() no retorna. Pero el compilador exige un
@@ -40,19 +40,21 @@ static Value builtin_here(int argc, Value *args) {
     (void)argc;
     (void)args;
     const char *dir = script_dir;
-    if (!dir || dir[0] == '\0') dir = ".";
+    if (!dir || dir[0] == '\0')
+        dir = ".";
     return val_string(dir);
 }
 
 /* --- exited() --- */
 static Value builtin_exited(int argc, Value *args) {
-    if (argc != 1) error(0, "exited requiere un argumento (el comando)");
-    if (args[0].type != VAL_STRING) error(0, "exited espera un string");
+    if (argc != 1)
+        error(0, "exited requiere un argumento (el comando)");
+    if (args[0].type != VAL_STRING)
+        error(0, "exited espera un string");
     const char *cmd = args[0].data.sval;
     int code = run_command_get_exit_code(cmd);
     return val_int(code);
 }
-
 
 /* ================================================
  *  Registro de funciones
