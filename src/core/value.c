@@ -378,9 +378,18 @@ Value val_map_copy(Value *src) {
     if (src->type != VAL_MAP) return val_make_null();
     Value dst = val_map_empty();
     MapData *md_src = src->data.map;
-    for (int i = 0; i < md_src->count; i++) {
-        val_map_set_typed(&dst, md_src->pairs[i].key, md_src->pairs[i].value, md_src->pairs[i].value_type);
+    int n = md_src->count;
+    if (n == 0) return dst;
+    /* Pre-dimensionamos al tamaño exacto: val_map_set_typed
+     * crecería por duplicación. */
+    dst.data.map->pairs = infernal_malloc((size_t)n * sizeof(MapPair));
+    dst.data.map->cap = n;
+    for (int i = 0; i < n; i++) {
+        dst.data.map->pairs[i].key = infernal_strdup(md_src->pairs[i].key);
+        dst.data.map->pairs[i].value = copy_value_secure(md_src->pairs[i].value);
+        dst.data.map->pairs[i].value_type = md_src->pairs[i].value_type;
     }
+    dst.data.map->count = n;
     return dst;
 }
 
