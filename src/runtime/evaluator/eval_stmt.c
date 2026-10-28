@@ -987,7 +987,7 @@ void exec_stmt(ASTNode *stmt) {
                     VarEntry *var = scope_find(current_scope, stmt->data.assign.name);
                     if (var) {
                         DEBUG_INFO("Variable '%s' encontrada en ámbito %p, actualizando", stmt->data.assign.name, (void*)var);
-                        scope_assign(current_scope, stmt->data.assign.name, val, stmt->line);
+                        scope_assign_direct(var, val, stmt->line);
                         value_free(&val);
                         if (vtype != 0) var->vtype = vtype;
                     } else {

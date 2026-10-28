@@ -46,6 +46,11 @@ VarEntry *scope_find_script(Scope *scope, const char *name);
 void scope_define(Scope *scope, const char *name, int vtype, Value val);
 void scope_assign(Scope *scope, const char *name, Value val, int line);
 
+/* Igual que scope_assign() pero recibe directamente el VarEntry ya
+ * localizado. Evita repetir el scope_find() cuando el llamador ya
+ * tiene el puntero. */
+void scope_assign_direct(VarEntry *e, Value val, int line);
+
 PortalEntry *portal_find(Scope *scope, const char *name);
 PortalEntry *portal_find_in_scope(Scope *scope, const char *name);
 void portal_define(Scope *scope, const char *name, int line);

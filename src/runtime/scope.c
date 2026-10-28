@@ -289,6 +289,51 @@ void scope_assign(Scope *scope, const char *name, Value val, int line) {
     scope_define(scope, name, 0, val);
 }
 
+/* Variante de scope_assign() que recibe el VarEntry ya localizado.
+ * Hace exactamente lo mismo que la rama `if (e)` de scope_assign(),
+ * pero sin repetir el scope_find(). */
+void scope_assign_direct(VarEntry *e, Value val, int line) {
+    if (!e) return;
+    if (constants_is_reserved(e->name)) {
+        value_free(&val);
+        error(line, "La constante '%s' no se puede sobreescribir", e->name);
+    }
+    if (e->value.type == VAL_REFERENCE) {
+        assign_reference(&e->value, val, line);
+        return;
+    }
+    if (e->vtype == 0) {
+        Value copied = copy_value_secure(val);
+        value_free(&e->value);
+        e->value = copied;
+        e->vtype = valtype_to_tokentype(val.type);
+        return;
+    }
+    if (e->vtype == TOK_STRING && val.type == VAL_LIST) {
+        if (!try_convert_value(&val, TOK_STRING)) {
+            value_free(&val);
+            error(line, "No se pudo convertir lista a string en la asignación a '%s'", e->name);
+        }
+    }
+    int expected = e->vtype;
+    int new_type = valtype_to_tokentype(val.type);
+    if (expected == TOK_UINT && new_type != TOK_UINT) {
+        if (!try_convert_value(&val, TOK_UINT)) {
+            value_free(&val);
+            error(line, "La variable uint '%s' requiere un entero válido", e->name);
+        }
+        new_type = valtype_to_tokentype(val.type);
+    }
+    if (expected != 0 && new_type != expected) {
+        value_free(&val);
+        error(line, "Tipado fijo: la variable '%s' es de tipo %s, no se puede asignar un valor de tipo %s",
+              e->name, type_name(expected), type_name(new_type));
+    }
+    Value copied = copy_value_secure(val);
+    value_free(&e->value);
+    e->value = copied;
+}
+
 /* --- Búsqueda de portal en la cadena de ámbitos --- */
 PortalEntry *portal_find(Scope *scope, const char *name) {
     while (scope) {
