@@ -173,8 +173,21 @@ void scope_define(Scope *scope, const char *name, int vtype, Value val) {
         value_free(&val);
         error(current_eval_line, "El nombre '%s' está reservado por una constante y no se puede usar como variable", name);
     }
-    if (val.type == VAL_NULL) {
-        vtype = 0;
+    /* Si el valor es NULL pero el llamador declaró un tipo explícito,
+     * sustituimos por el valor por defecto de ese tipo. Antes se
+     * degradaba vtype a 0 (dinámico), rompiendo silenciosamente el
+     * chequeo de tipos en asignaciones posteriores. */
+    if (val.type == VAL_NULL && vtype != 0) {
+        switch (vtype) {
+            case TOK_INT:    val = val_int(0); break;
+            case TOK_UINT:   val = val_uint(0); break;
+            case TOK_FLOAT:  val = val_float(0.0); break;
+            case TOK_BOOL:   val = val_bool(false); break;
+            case TOK_STRING: val = val_string(""); break;
+            case TOK_LIST:   val = val_list_empty(); break;
+            case TOK_MAP:    val = val_map_empty(); break;
+            default: break;
+        }
     }
     if (vtype == TOK_UINT && !try_convert_value(&val, TOK_UINT)) {
         value_free(&val);
