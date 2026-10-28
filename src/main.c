@@ -103,6 +103,7 @@ static void cleanup_runtime_state(void) {
             free(obj);
         }
         free(entry->name);
+        free(entry->module);
         free(entry);
     }
 
@@ -115,6 +116,7 @@ static void cleanup_runtime_state(void) {
             free(obj);
         }
         free(entry->name);
+        free(entry->module);
         free(entry);
     }
 
