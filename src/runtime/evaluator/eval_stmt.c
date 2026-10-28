@@ -1784,8 +1784,7 @@ void exec_stmt(ASTNode *stmt) {
                 ts = saved_ts;
                 ts_arena_restore(saved_arena_mark);
                 if (source_lines) {
-                    for (int i = 0; i < source_line_count; i++)
-                        free(source_lines[i]);
+                    /* Los source_lines viven en la arena. */
                     free(source_lines);
                 }
                 source_lines = saved_source_lines;
@@ -1926,8 +1925,7 @@ void exec_stmt(ASTNode *stmt) {
                 free(ts.tokens);
             }
             if (source_lines) {
-                for (int i = 0; i < source_line_count; i++)
-                    free(source_lines[i]);
+                /* Los source_lines viven en la arena. */
                 free(source_lines);
             }
             ts = saved_ts;

@@ -73,8 +73,9 @@ static void cleanup_all(void) {
     }
     ts_free_arena();
     if (source_lines) {
-        for (int i = 0; i < source_line_count; i++)
-            free(source_lines[i]);
+        /* source_lines[i] apunta a memoria de la arena (arena_strdup),
+         * no a bloques malloc individuales. Solo liberamos el array de
+         * punteros; los strings se liberan con ts_free_arena(). */
         free(source_lines);
         source_lines = NULL;
         source_line_count = 0;

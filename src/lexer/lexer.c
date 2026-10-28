@@ -243,8 +243,7 @@ void tokenize_file(FILE *fp) {
     int lineno = 0;
     bool in_block_comment = false;
     if (source_lines) {
-        for (int i = 0; i < source_line_count; i++)
-            free(source_lines[i]);
+        /* source_lines[i] apunta a memoria de la arena. */
         free(source_lines);
         source_lines = NULL;
         source_line_count = 0;

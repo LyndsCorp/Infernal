@@ -1790,8 +1790,7 @@ NodeList parse_block(const char *terminator) {
                     ts = old_ts;
                     ts_arena_restore(old_arena_mark);
                     if (source_lines) {
-                        for (int i = 0; i < source_line_count; i++)
-                            free(source_lines[i]);
+                        /* Los source_lines viven en la arena. */
                         free(source_lines);
                     }
                     source_lines = old_source_lines;
@@ -1810,8 +1809,7 @@ NodeList parse_block(const char *terminator) {
                 ts = old_ts;
                 ts_arena_restore(old_arena_mark);
 
-                for (int i = 0; i < source_line_count; i++)
-                    free(source_lines[i]);
+                /* Los source_lines viven en la arena. */
                 free(source_lines);
                 source_lines = old_source_lines;
                 source_line_count = old_source_line_count;
