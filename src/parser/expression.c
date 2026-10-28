@@ -239,8 +239,10 @@ ASTNode *parse_index_or_slice(int line) {
     Token t = ts_peek();
     ASTNode *node = NULL;
 
-    if (t.type == TOK_STAR || (t.type == TOK_NUMBER && (ts.tokens[ts.pos + 1].type == TOK_COLON ||
-                                                        ts.tokens[ts.pos + 1].type == TOK_STAR))) {
+    if (t.type == TOK_STAR ||
+        (t.type == TOK_NUMBER && ts.pos + 1 < ts.count &&
+         (ts.tokens[ts.pos + 1].type == TOK_COLON ||
+          ts.tokens[ts.pos + 1].type == TOK_STAR))) {
         node = parse_slice_content(line);
     } else {
         ASTNode *idx = parse_expression(0);
