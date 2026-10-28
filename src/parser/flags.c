@@ -271,7 +271,7 @@ ASTNode *parse_flags() {
                 }
                 TokenType ttype = ts_peek().type;
                 if (ttype == TOK_INT || ttype == TOK_UINT || ttype == TOK_FLOAT || ttype == TOK_BOOL ||
-                    ttype == TOK_STRING || ttype == TOK_LIST) {
+                    ttype == TOK_STRING || ttype == TOK_LIST || ttype == TOK_MAP) {
                     spec.vtype = ts_advance().type;
                 if (ts_peek().type != TOK_IDENT || !is_valid_flag_name(ts_peek().lexeme)) {
                     error(ts_peek().line, "Se esperaba nombre de variable");
